@@ -68,6 +68,11 @@
     border-radius: 14px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.12);
   }
   .user-card .name { font-size: 1.2em; font-weight: 700; margin: 0; }
+  .user-card .zairyu-name {
+    font-size: 0.78em; opacity: 0.85; margin: 2px 0 0;
+    letter-spacing: 0.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   .user-card .meta { font-size: 0.85em; opacity: 0.85; margin-top: 4px; }
   .amount-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 6px; }
   .amount-btn {
@@ -214,6 +219,7 @@
 
   <div class="user-card">
     <p class="name" id="home-name">―</p>
+    <p class="zairyu-name" id="home-zairyu-name"></p>
     <p class="meta"><span id="home-shainno">―</span> ｜ <span id="home-hakensaki">―</span></p>
   </div>
 
@@ -610,6 +616,10 @@ function logout() {
 function renderHome() {
   if (!state.profile) return;
   document.getElementById('home-name').textContent = state.profile.name || '―';
+  const zn = state.profile.zairyuName || '';
+  const znEl = document.getElementById('home-zairyu-name');
+  if (zn) { znEl.textContent = zn; znEl.style.display = ''; }
+  else { znEl.textContent = ''; znEl.style.display = 'none'; }
   document.getElementById('home-shainno').textContent = 'No. ' + (state.profile.shainNo || '―');
   document.getElementById('home-hakensaki').textContent = state.profile.hakensaki || '―';
   // 未確認の承認/却下件数バッジを更新 (履歴はキャッシュせず鮮度優先)
