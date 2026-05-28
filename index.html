@@ -271,6 +271,31 @@
   .modal-box.error .modal-btn { background: linear-gradient(135deg, #ef5350, #c62828); box-shadow: 0 4px 10px rgba(198,40,40,0.3); }
   .modal-box.warning .modal-btn { background: linear-gradient(135deg, #ffa726, #ef6c00); box-shadow: 0 4px 10px rgba(239,108,0,0.3); }
   .modal-box.success .modal-btn { background: linear-gradient(135deg, #66bb6a, #2e7d32); box-shadow: 0 4px 10px rgba(46,125,50,0.3); }
+  /* ルールモーダル */
+  .rules-box { max-width: 440px; text-align: left; padding: 24px 20px 18px; border-top: 5px solid #2e5a99; }
+  .rules-box .modal-title { text-align: center; font-size: 1.1em; margin-bottom: 14px; }
+  .rules-box .modal-icon { text-align: center; }
+  .rules-list { padding-left: 22px; margin: 0 0 16px; font-size: 0.88em; line-height: 1.55; color: #333; }
+  .rules-list li { margin-bottom: 8px; }
+  .rules-list li b { color: #1f3864; }
+  .rules-agree {
+    display: flex; align-items: flex-start; gap: 8px;
+    background: #fff3cd; border: 1.5px solid #f0ad4e;
+    padding: 10px 14px; border-radius: 10px;
+    font-size: 0.92em; color: #6d4c00; cursor: pointer;
+    margin-bottom: 14px; font-weight: 600;
+  }
+  .rules-agree input[type="checkbox"] {
+    width: 20px; height: 20px; margin: 0; flex-shrink: 0;
+    accent-color: #2e5a99; cursor: pointer;
+  }
+  .rules-buttons { display: flex; gap: 10px; }
+  .rules-buttons .modal-btn { flex: 1; min-width: 0; padding: 12px; font-size: 0.95em; }
+  .modal-btn-secondary {
+    background: #f0f3f8 !important; color: #1f3864 !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06) !important;
+  }
+  .modal-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -317,7 +342,7 @@
   </div>
 
   <div class="menu-grid">
-    <div class="menu-card" onclick="showScreen('request')">
+    <div class="menu-card" onclick="openRequestWithRules()">
       <span class="card-num">①</span>
       <span class="icon">💴</span>
       <span class="label" data-i18n="menuApply">前払い申請</span>
@@ -421,6 +446,23 @@
     <div class="modal-title" id="modal-title"></div>
     <div class="modal-message" id="modal-message"></div>
     <button type="button" class="modal-btn" id="modal-ok-btn" onclick="closeAlert()">OK</button>
+  </div>
+</div>
+
+<!-- ルール説明モーダル (前払い申請の前に表示) -->
+<div id="modal-rules" class="modal-backdrop hidden">
+  <div class="modal-box rules-box">
+    <div class="modal-icon">📜</div>
+    <div class="modal-title" data-i18n="rulesTitle">前払い申請のルール</div>
+    <ol class="rules-list" id="rules-list"></ol>
+    <label class="rules-agree">
+      <input type="checkbox" id="rules-agree-check" onchange="onRulesAgreeChange()">
+      <span data-i18n="rulesAgree">上記の内容を理解しました</span>
+    </label>
+    <div class="rules-buttons">
+      <button type="button" class="modal-btn modal-btn-secondary" onclick="closeRulesModal()" data-i18n="cancel">キャンセル</button>
+      <button type="button" class="modal-btn" id="rules-next-btn" onclick="acceptRules()" disabled data-i18n="next">次へ</button>
+    </div>
   </div>
 </div>
 
@@ -604,6 +646,41 @@ I18N.pt.updating = "Atualizando...";
 I18N.ja.appTitleStacked = "従業員\nポータル";
 I18N.en.appTitleStacked = "Employee\nPortal";
 I18N.pt.appTitleStacked = "Portal\ndo Funcionário";
+// 前払い申請のルール説明
+I18N.ja.rulesTitle = "前払い申請のルール";
+I18N.ja.rulesAgree = "上記の内容を理解しました";
+I18N.ja.next = "次へ";
+I18N.en.rulesTitle = "Advance Request Rules";
+I18N.en.rulesAgree = "I have read and understood the above";
+I18N.en.next = "Next";
+I18N.pt.rulesTitle = "Regras do Pedido de Adiantamento";
+I18N.pt.rulesAgree = "Li e entendi as regras acima";
+I18N.pt.next = "Próximo";
+// ルール本文 (HTMLで強調可能)
+I18N.ja.rulesItems = [
+  "<b>希望日</b>: 毎週 <b>金曜日のみ</b> 選択できます。給料日週・GW・お盆・年末年始は不可。",
+  "<b>金額</b>: 10,000円〜130,000円 (10,000円単位)。",
+  "<b>手数料</b>: 50,000円以上 → 440円 / 50,000円未満 → 275円 (振込時に差し引き)。",
+  "<b>重複禁止</b>: 同じ希望日への複数の申請はできません。",
+  "<b>取り消し</b>: 承認待ち (pending) のみ取り消し可能。承認後は取り消せません。",
+  "<b>振込</b>: 担当者の承認後、希望日に通常の振込口座へ送金されます。"
+];
+I18N.en.rulesItems = [
+  "<b>Preferred date</b>: <b>Fridays only</b>. Salary week, Golden Week, Obon, and year-end holidays are unavailable.",
+  "<b>Amount</b>: ¥10,000–¥130,000 (in ¥10,000 increments).",
+  "<b>Fee</b>: ¥440 if ¥50,000 or more / ¥275 if less than ¥50,000 (deducted from payment).",
+  "<b>No duplicates</b>: You cannot apply more than once for the same preferred date.",
+  "<b>Cancellation</b>: Only while <b>pending</b>. Cannot cancel after approval.",
+  "<b>Payment</b>: After supervisor approval, the amount is transferred to your registered account on the preferred date."
+];
+I18N.pt.rulesItems = [
+  "<b>Data desejada</b>: Apenas <b>sextas-feiras</b>. Semana do salário, Golden Week, Obon e fim de ano não estão disponíveis.",
+  "<b>Valor</b>: ¥10.000 a ¥130.000 (múltiplos de ¥10.000).",
+  "<b>Taxa</b>: ¥440 se ¥50.000 ou mais / ¥275 se menos de ¥50.000 (descontado no pagamento).",
+  "<b>Sem duplicatas</b>: Não pode solicitar mais de uma vez para a mesma data.",
+  "<b>Cancelamento</b>: Apenas enquanto <b>pendente</b>. Não pode cancelar após aprovação.",
+  "<b>Pagamento</b>: Após aprovação do supervisor, o valor será transferido para a conta cadastrada na data desejada."
+];
 // 金額選択 UI
 I18N.ja.amountSelectPlaceholder = "— 選択してください —";
 I18N.ja.amountOther = "その他 (手動入力)";
@@ -732,8 +809,45 @@ document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') {
     const m = document.getElementById('modal-alert');
     if (m && !m.classList.contains('hidden')) closeAlert();
+    const r = document.getElementById('modal-rules');
+    if (r && !r.classList.contains('hidden')) closeRulesModal();
   }
 });
+
+// ====== ルール説明モーダル (前払い申請の前に表示) ======
+function openRequestWithRules() {
+  // ルール本文を現在の言語で描画
+  const list = document.getElementById('rules-list');
+  list.innerHTML = '';
+  const items = (I18N[currentLang] && I18N[currentLang].rulesItems) || I18N.ja.rulesItems || [];
+  items.forEach(html => {
+    const li = document.createElement('li');
+    li.innerHTML = html;  // <b> タグを許容するため innerHTML
+    list.appendChild(li);
+  });
+  // チェック状態リセット
+  document.getElementById('rules-agree-check').checked = false;
+  document.getElementById('rules-next-btn').disabled = true;
+  // i18n をモーダル内にも適用 (title/agree/next/cancel ラベル)
+  applyI18n();
+  // 表示
+  document.getElementById('modal-rules').classList.remove('hidden');
+}
+
+function onRulesAgreeChange() {
+  const checked = document.getElementById('rules-agree-check').checked;
+  document.getElementById('rules-next-btn').disabled = !checked;
+}
+
+function closeRulesModal() {
+  document.getElementById('modal-rules').classList.add('hidden');
+}
+
+function acceptRules() {
+  if (!document.getElementById('rules-agree-check').checked) return;
+  closeRulesModal();
+  showScreen('request');
+}
 
 // ====== 画面遷移 ======
 function showScreen(name) {
