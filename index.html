@@ -11,9 +11,7 @@
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
     background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-    color: #1f3864;
-    min-height: 100vh;
-    padding-bottom: 40px;
+    color: #1f3864; min-height: 100vh; padding-bottom: 40px;
   }
   .container { max-width: 480px; margin: 0 auto; padding: 16px; }
   .header {
@@ -24,14 +22,13 @@
     margin-bottom: 16px;
   }
   .header h1 { margin: 0; font-size: 1.15em; font-weight: 700; }
-  .header .lang-switch {
+  .header .lang-switch, .header .logout-btn {
     background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
     color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 0.85em; cursor: pointer;
   }
   .card {
     background: #fff; border-radius: 14px; padding: 20px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    margin-bottom: 16px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 16px;
   }
   .card h2 { margin: 0 0 14px; font-size: 1.05em; color: #1f3864; }
   .label { display: block; font-size: 0.85em; color: #666; margin: 14px 0 6px; }
@@ -47,9 +44,9 @@
     transition: transform 0.05s, box-shadow 0.1s;
   }
   .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-primary { background: linear-gradient(135deg, #2e5a99, #1f3864); color: #fff; box-shadow: 0 4px 10px rgba(31,56,100,0.3); }
   .btn-secondary { background: #f0f3f8; color: #1f3864; }
-  .btn-danger { background: #f44336; color: #fff; }
   .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .menu-card {
     background: #fff; border-radius: 14px; padding: 20px 12px; text-align: center;
@@ -61,6 +58,7 @@
   .menu-card .icon { font-size: 2.4em; display: block; margin-bottom: 6px; }
   .menu-card .label { font-size: 0.9em; font-weight: 700; color: #1f3864; margin: 0; display: block; }
   .menu-card .badge { display: inline-block; background: #f44336; color: #fff; font-size: 0.7em; padding: 2px 6px; border-radius: 10px; margin-top: 4px; }
+  .menu-card.coming-soon { opacity: 0.6; }
   .user-card {
     background: linear-gradient(135deg, #1f3864, #2e5a99); color: #fff;
     border-radius: 14px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.12);
@@ -77,6 +75,10 @@
   .info-banner {
     background: #fff3cd; border-left: 4px solid #f0ad4e; color: #8a6d3b;
     padding: 12px 14px; border-radius: 6px; font-size: 0.85em; margin-bottom: 12px;
+  }
+  .error-banner {
+    background: #f8d7da; border-left: 4px solid #d9534f; color: #721c24;
+    padding: 12px 14px; border-radius: 6px; font-size: 0.9em; margin-bottom: 12px;
   }
   .friday-btn {
     padding: 10px; border: 2px solid #e0e6ed; border-radius: 10px; background: #fff;
@@ -101,37 +103,53 @@
   .status-rejected { background: #f44336; }
   .history-item .meta { font-size: 0.85em; color: #666; }
   .history-item .reject-reason { background: #ffebee; color: #c62828; padding: 8px 10px; border-radius: 6px; margin-top: 8px; font-size: 0.85em; }
-  .footer {
-    text-align: center; padding: 30px 0 10px; color: #888; font-size: 0.8em;
-  }
-  .back-link {
-    display: inline-flex; align-items: center; gap: 4px;
-    color: #2e5a99; font-size: 0.9em; margin-bottom: 12px; cursor: pointer; user-select: none;
-  }
+  .footer { text-align: center; padding: 30px 0 10px; color: #888; font-size: 0.8em; }
   .hidden { display: none !important; }
+  .spinner {
+    display: inline-block; width: 20px; height: 20px;
+    border: 3px solid #e0e6ed; border-radius: 50%;
+    border-top-color: #2e5a99;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-overlay {
+    position: fixed; inset: 0; background: rgba(255,255,255,0.7);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000;
+  }
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: rgba(33,33,33,0.92); color: #fff; padding: 12px 20px;
+    border-radius: 10px; font-size: 0.9em; max-width: 90%; z-index: 1001;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+  .toast.success { background: rgba(46,125,50,0.95); }
+  .toast.error { background: rgba(198,40,40,0.95); }
 </style>
 </head>
 <body>
 
 <!-- ====== Screen: ログイン ====== -->
-<div id="screen-login" class="container">
+<div id="screen-login" class="container hidden">
   <div style="text-align: center; margin: 40px 0 30px;">
     <div style="font-size: 3em;">🌱</div>
-    <div style="font-size: 1.6em; font-weight: 700; color: #1f3864; margin-top: 8px;">従業員ポータル</div>
+    <div style="font-size: 1.6em; font-weight: 700; color: #1f3864; margin-top: 8px;" data-i18n="appTitle">従業員ポータル</div>
     <div style="font-size: 0.9em; color: #666; margin-top: 4px;">有限会社ステップ・アップ</div>
   </div>
 
   <div class="card">
-    <h2>ログイン</h2>
-    <label class="label">社員番号</label>
+    <h2 data-i18n="login">ログイン</h2>
+    <div id="login-error" class="error-banner hidden"></div>
+    <label class="label" data-i18n="shainNoLabel">社員番号</label>
     <input id="login-shainno" type="number" placeholder="例: 70342" inputmode="numeric">
-    <label class="label">生年月日</label>
+    <label class="label" data-i18n="birthdayLabel">生年月日</label>
     <input id="login-birthday" type="date">
-    <label class="label">電話番号 (下4桁)</label>
+    <label class="label" data-i18n="telLabel">電話番号 (下4桁)</label>
     <input id="login-tel" type="number" placeholder="例: 1234" inputmode="numeric" maxlength="4">
-    <button class="btn btn-primary" onclick="mockLogin()">ログイン</button>
+    <button id="login-btn" class="btn btn-primary" data-i18n="loginButton">ログイン</button>
     <div style="text-align: center; margin-top: 14px; font-size: 0.85em; color: #888;">
-      <span class="lang-switch" onclick="alert('ポルトガル語切り替えは実装後追加')" style="background:#e0e6ed; color:#666;">🌐 Português</span>
+      <span class="lang-switch" onclick="toggleLang()" style="background:#e0e6ed; color:#666; padding:4px 10px; border-radius:6px; cursor:pointer;" id="lang-switch-login">🌐 Português</span>
     </div>
   </div>
 </div>
@@ -139,159 +157,503 @@
 <!-- ====== Screen: ホームメニュー ====== -->
 <div id="screen-home" class="container hidden">
   <div class="header">
-    <h1>🌱 従業員ポータル</h1>
-    <span class="lang-switch" onclick="logout()">ログアウト</span>
+    <h1>🌱 <span data-i18n="appTitle">従業員ポータル</span></h1>
+    <span class="logout-btn" onclick="logout()" data-i18n="logout">ログアウト</span>
   </div>
 
   <div class="user-card">
-    <p class="name">ゴトウ デ オリベイラ ジヤケリネ ハルミ</p>
-    <p class="meta">No. 70342 ｜ ASTI㈱浜松 (N3)</p>
+    <p class="name" id="home-name">―</p>
+    <p class="meta"><span id="home-shainno">―</span> ｜ <span id="home-hakensaki">―</span></p>
   </div>
 
   <div class="menu-grid">
     <div class="menu-card" onclick="showScreen('request')">
       <span class="icon">💴</span>
-      <span class="label">前払い申請</span>
+      <span class="label" data-i18n="menuApply">前払い申請</span>
     </div>
     <div class="menu-card" onclick="showScreen('history')">
       <span class="icon">📋</span>
-      <span class="label">申請履歴</span>
-      <span class="badge">2</span>
+      <span class="label" data-i18n="menuHistory">申請履歴</span>
     </div>
-    <div class="menu-card" onclick="alert('在留カード更新（Phase 1.5 で実装予定）')">
+    <div class="menu-card coming-soon" onclick="toast(t('comingSoon15'))">
       <span class="icon">🪪</span>
-      <span class="label">在留カード更新</span>
+      <span class="label" data-i18n="menuZairyu">在留カード更新</span>
     </div>
-    <div class="menu-card" onclick="alert('Phase 2 以降で実装予定')">
+    <div class="menu-card coming-soon" onclick="toast(t('comingSoonPhase2'))">
       <span class="icon">📅</span>
-      <span class="label">有給残数</span>
+      <span class="label" data-i18n="menuYukyu">有給残数</span>
     </div>
+  </div>
+
+  <div style="text-align: center; margin-top: 16px;">
+    <span class="lang-switch" onclick="toggleLang()" style="background:#fff; color:#1f3864; padding:6px 12px; border-radius:6px; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.08);" id="lang-switch-home">🌐 Português</span>
   </div>
 </div>
 
 <!-- ====== Screen: 前払い申請 ====== -->
 <div id="screen-request" class="container hidden">
   <div class="header">
-    <h1>💴 前払い申請</h1>
-    <span class="lang-switch" onclick="showScreen('home')">✕</span>
+    <h1>💴 <span data-i18n="screenApplyTitle">前払い申請</span></h1>
+    <span class="logout-btn" onclick="showScreen('home')">✕</span>
   </div>
 
-  <div class="info-banner">
+  <div class="info-banner" data-i18n="applyInfoBanner">
     📌 給料日週・GW・お盆・年末年始は申請できません。希望日は金曜日のみ。
   </div>
+  <div id="apply-error" class="error-banner hidden"></div>
 
   <div class="card">
-    <h2>① 金額を選択</h2>
-    <div class="amount-grid">
-      <button type="button" class="amount-btn" onclick="selectAmount(this, 5000)">5,000円</button>
-      <button type="button" class="amount-btn" onclick="selectAmount(this, 10000)">10,000円</button>
-      <button type="button" class="amount-btn" onclick="selectAmount(this, 20000)">20,000円</button>
-      <button type="button" class="amount-btn" onclick="selectAmount(this, 30000)">30,000円</button>
-      <button type="button" class="amount-btn selected" onclick="selectAmount(this, 40000)">40,000円</button>
-      <button type="button" class="amount-btn" onclick="selectAmount(this, 50000)">50,000円</button>
-      <button type="button" class="amount-btn" onclick="selectAmount(this, 60000)">60,000円</button>
-      <button type="button" class="amount-btn" onclick="selectAmount(this, 70000)">70,000円</button>
-      <button type="button" class="amount-btn" onclick="selectAmount(this, 80000)">80,000円</button>
-      <button type="button" class="amount-btn" onclick="selectAmount(this, 90000)">90,000円</button>
-      <button type="button" class="amount-btn" onclick="selectAmount(this, 100000)">100,000円</button>
-      <button type="button" class="amount-btn" onclick="selectAmount(this, 110000)">110,000円</button>
-    </div>
+    <h2>① <span data-i18n="step1">金額を選択</span></h2>
+    <div class="amount-grid" id="amount-grid"></div>
   </div>
 
   <div class="card">
-    <h2>② 希望日 (金曜日のみ)</h2>
-    <p style="font-size: 0.85em; color: #666; margin: 0 0 10px;">直近の選択可能な金曜日：</p>
-    <button type="button" class="friday-btn" onclick="selectFriday(this, '2026-05-22')">
-      <span>2026/05/22 (金)</span>
-      <span class="reason">⚠ 給料日週</span>
-    </button>
-    <button type="button" class="friday-btn selected" onclick="selectFriday(this, '2026-05-29')">
-      <span>2026/05/29 (金)</span>
-    </button>
-    <button type="button" class="friday-btn" onclick="selectFriday(this, '2026-06-05')">
-      <span>2026/06/05 (金)</span>
-    </button>
-    <button type="button" class="friday-btn disabled">
-      <span>2026/06/12 (金)</span>
-      <span class="reason">⚠ 給料日週</span>
-    </button>
+    <h2>② <span data-i18n="step2">希望日 (金曜日のみ)</span></h2>
+    <div id="dates-loading" style="text-align:center; padding:20px;"><div class="spinner"></div></div>
+    <div id="dates-list"></div>
   </div>
 
   <div class="card">
-    <h2>③ 理由 (任意)</h2>
-    <textarea placeholder="例: 医療費のため (記入不要)"></textarea>
+    <h2>③ <span data-i18n="step3">理由 (任意)</span></h2>
+    <textarea id="apply-reason" placeholder="例: 医療費のため (記入不要)"></textarea>
   </div>
 
-  <button class="btn btn-primary" onclick="mockSubmit()">この内容で申請する</button>
-  <button class="btn btn-secondary" onclick="showScreen('home')">キャンセル</button>
+  <button id="apply-submit-btn" class="btn btn-primary" data-i18n="submit">この内容で申請する</button>
+  <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="cancel">キャンセル</button>
 </div>
 
 <!-- ====== Screen: 申請履歴 ====== -->
 <div id="screen-history" class="container hidden">
   <div class="header">
-    <h1>📋 申請履歴</h1>
-    <span class="lang-switch" onclick="showScreen('home')">✕</span>
+    <h1>📋 <span data-i18n="screenHistoryTitle">申請履歴</span></h1>
+    <span class="logout-btn" onclick="showScreen('home')">✕</span>
   </div>
 
-  <div class="history-item pending">
-    <div class="row1">
-      <span class="amount">¥40,000</span>
-      <span class="status-badge status-pending">承認待ち</span>
-    </div>
-    <div class="meta">希望日: 2026/05/29 (金) ｜ 申請: 2026/05/22 10:15</div>
+  <div id="history-loading" style="text-align:center; padding:30px;"><div class="spinner"></div></div>
+  <div id="history-list"></div>
+  <div id="history-empty" class="card hidden" style="text-align:center; color:#999;" data-i18n="historyEmpty">
+    申請はまだありません。
   </div>
 
-  <div class="history-item approved">
-    <div class="row1">
-      <span class="amount">¥30,000</span>
-      <span class="status-badge status-approved">承認</span>
-    </div>
-    <div class="meta">希望日: 2026/05/15 (金) ｜ 承認日: 2026/05/13 14:22</div>
-  </div>
-
-  <div class="history-item rejected">
-    <div class="row1">
-      <span class="amount">¥50,000</span>
-      <span class="status-badge status-rejected">却下</span>
-    </div>
-    <div class="meta">希望日: 2026/04/24 (金) ｜ 却下日: 2026/04/22 09:30</div>
-    <div class="reject-reason">📝 却下理由: 給料日週のため申請不可。次週以降にお願いします。</div>
-  </div>
-
-  <button class="btn btn-secondary" onclick="showScreen('home')">戻る</button>
+  <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="back">戻る</button>
 </div>
 
 <div class="footer">© 2026 有限会社ステップ・アップ</div>
 
+<!-- ====== Loading & Toast ====== -->
+<div id="loading" class="loading-overlay hidden"><div class="spinner" style="width:36px; height:36px;"></div></div>
+
 <script>
-// ===== モック動作 =====
+// ====== 設定 ======
+const API_BASE = "https://func-employee-portal-7833.azurewebsites.net/api";
+const AMOUNT_CHOICES = [5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000,
+                        50000, 60000, 70000, 80000, 90000, 100000, 110000, 130000, 150000];
+
+// ====== i18n ======
+const I18N = {
+  ja: {
+    appTitle: "従業員ポータル",
+    login: "ログイン",
+    shainNoLabel: "社員番号",
+    birthdayLabel: "生年月日",
+    telLabel: "電話番号 (下4桁)",
+    loginButton: "ログイン",
+    logout: "ログアウト",
+    menuApply: "前払い申請",
+    menuHistory: "申請履歴",
+    menuZairyu: "在留カード更新",
+    menuYukyu: "有給残数",
+    screenApplyTitle: "前払い申請",
+    screenHistoryTitle: "申請履歴",
+    step1: "金額を選択",
+    step2: "希望日 (金曜日のみ)",
+    step3: "理由 (任意)",
+    submit: "この内容で申請する",
+    cancel: "キャンセル",
+    back: "戻る",
+    applyInfoBanner: "📌 給料日週・GW・お盆・年末年始は申請できません。希望日は金曜日のみ。",
+    historyEmpty: "申請はまだありません。",
+    statusPending: "承認待ち",
+    statusApproved: "承認",
+    statusRejected: "却下",
+    statusCancelled: "取消",
+    appliedAt: "申請",
+    approvedAt: "承認日",
+    rejectedAt: "却下日",
+    rejectReason: "却下理由",
+    salaryWeek: "⚠ 給料日週",
+    companyHoliday: "⚠ 会社休日",
+    selectAmountFirst: "金額を選択してください",
+    selectDateFirst: "希望日を選択してください",
+    missingLoginFields: "社員番号・生年月日・電話番号下4桁をすべて入力してください。",
+    applySuccess: "申請を受け付けました。担当者に通知します。",
+    authFailed: "社員番号・生年月日・電話番号下4桁が一致しません。総務にお問い合わせください。",
+    notActive: "在職データが確認できません。総務にお問い合わせください。",
+    networkError: "ネットワークエラーです。少し時間をおいて再度お試しください。",
+    comingSoon15: "在留カード更新は Phase 1.5 で実装予定です。",
+    comingSoonPhase2: "Phase 2 以降で実装予定です。",
+    logoutConfirm: "ログアウトしますか？",
+    kibobi: "希望日",
+  },
+  pt: {
+    appTitle: "Portal do Funcionário",
+    login: "Entrar",
+    shainNoLabel: "Nº do Funcionário",
+    birthdayLabel: "Data de Nascimento",
+    telLabel: "Telefone (últimos 4 dígitos)",
+    loginButton: "Entrar",
+    logout: "Sair",
+    menuApply: "Adiantamento",
+    menuHistory: "Histórico",
+    menuZairyu: "Atualizar Zairyū",
+    menuYukyu: "Saldo de Férias",
+    screenApplyTitle: "Pedido de Adiantamento",
+    screenHistoryTitle: "Histórico de Pedidos",
+    step1: "Selecione o valor",
+    step2: "Data desejada (só sextas)",
+    step3: "Motivo (opcional)",
+    submit: "Enviar pedido",
+    cancel: "Cancelar",
+    back: "Voltar",
+    applyInfoBanner: "📌 Não é possível na semana do salário, Golden Week, Obon ou Ano Novo. Apenas sextas.",
+    historyEmpty: "Ainda não há pedidos.",
+    statusPending: "Aguardando",
+    statusApproved: "Aprovado",
+    statusRejected: "Rejeitado",
+    statusCancelled: "Cancelado",
+    appliedAt: "Solicitado",
+    approvedAt: "Aprovado em",
+    rejectedAt: "Rejeitado em",
+    rejectReason: "Motivo",
+    salaryWeek: "⚠ Semana do salário",
+    companyHoliday: "⚠ Feriado",
+    selectAmountFirst: "Selecione o valor primeiro",
+    selectDateFirst: "Selecione a data primeiro",
+    missingLoginFields: "Preencha número, data de nascimento e últimos 4 dígitos do telefone.",
+    applySuccess: "Pedido enviado. O responsável será notificado.",
+    authFailed: "Número, data de nascimento ou telefone não conferem. Procure o RH.",
+    notActive: "Status não ativo. Procure o RH.",
+    networkError: "Erro de rede. Tente novamente em instantes.",
+    comingSoon15: "Disponível na Fase 1.5.",
+    comingSoonPhase2: "Disponível a partir da Fase 2.",
+    logoutConfirm: "Deseja sair?",
+    kibobi: "Data",
+  }
+};
+
+let currentLang = localStorage.getItem("lang") || "ja";
+function t(key) { return (I18N[currentLang] && I18N[currentLang][key]) || I18N.ja[key] || key; }
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    el.textContent = t(key);
+  });
+  document.documentElement.lang = currentLang === 'pt' ? 'pt' : 'ja';
+  ['lang-switch-login', 'lang-switch-home'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = currentLang === 'ja' ? '🌐 Português' : '🌐 日本語';
+  });
+}
+function toggleLang() {
+  currentLang = currentLang === 'ja' ? 'pt' : 'ja';
+  localStorage.setItem("lang", currentLang);
+  applyI18n();
+  // Refresh dynamic UI strings
+  if (state.profile && !document.getElementById('screen-home').classList.contains('hidden')) {
+    renderHome();
+  }
+  if (!document.getElementById('screen-history').classList.contains('hidden')) {
+    renderHistory();
+  }
+  if (!document.getElementById('screen-request').classList.contains('hidden')) {
+    renderAmounts();
+    if (state.datesCache) renderDates(state.datesCache);
+  }
+}
+
+// ====== グローバル状態 ======
+const state = {
+  token: localStorage.getItem("token") || null,
+  profile: null,
+  selectedAmount: null,
+  selectedDate: null,
+  datesCache: null,
+  historyCache: null,
+};
+
+// ====== API ======
+async function callApi(method, path, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
+  const opts = { method, headers };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  const res = await fetch(API_BASE + path, opts);
+  let data;
+  try { data = await res.json(); } catch (e) { data = { error: 'invalid_response' }; }
+  if (res.status === 401 && state.token) {
+    // トークン期限切れ
+    state.token = null;
+    state.profile = null;
+    localStorage.removeItem("token");
+    showScreen('login');
+    const err = new Error('unauthorized');
+    err.status = 401;
+    err.data = data;
+    throw err;
+  }
+  if (!res.ok) {
+    const err = new Error(data.error || 'api_error');
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+function showLoading(show) {
+  document.getElementById('loading').classList.toggle('hidden', !show);
+}
+
+function toast(msg, kind) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind ? ' ' + kind : '');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.4s'; }, 2600);
+  setTimeout(() => { el.remove(); }, 3100);
+}
+
+// ====== 画面遷移 ======
 function showScreen(name) {
   ['login','home','request','history'].forEach(s => {
     document.getElementById('screen-' + s).classList.add('hidden');
   });
   document.getElementById('screen-' + name).classList.remove('hidden');
   window.scrollTo(0, 0);
+  if (name === 'request') initRequestScreen();
+  if (name === 'history') initHistoryScreen();
+  if (name === 'home') renderHome();
 }
-function mockLogin() {
-  // 本実装では SP「社員」List で 3要素照合
-  showScreen('home');
+
+// ====== ログイン ======
+async function tryLogin() {
+  const shainNo = parseInt(document.getElementById('login-shainno').value, 10);
+  const birthday = document.getElementById('login-birthday').value;
+  const telLast4 = document.getElementById('login-tel').value;
+  const errBox = document.getElementById('login-error');
+  errBox.classList.add('hidden');
+  if (!shainNo || !birthday || !telLast4) {
+    errBox.textContent = t('missingLoginFields');
+    errBox.classList.remove('hidden');
+    return;
+  }
+  showLoading(true);
+  try {
+    const data = await callApi('POST', '/auth/login', {
+      shainNo: shainNo, birthday: birthday, telLast4: String(telLast4).slice(-4),
+    });
+    state.token = data.token;
+    state.profile = data.profile;
+    localStorage.setItem("token", data.token);
+    showScreen('home');
+  } catch (e) {
+    if (e.status === 401) errBox.textContent = t('authFailed');
+    else if (e.status === 403) errBox.textContent = t('notActive');
+    else errBox.textContent = t('networkError') + ' (' + (e.data && e.data.detail ? e.data.detail : e.message) + ')';
+    errBox.classList.remove('hidden');
+  } finally {
+    showLoading(false);
+  }
 }
+
 function logout() {
-  if (confirm('ログアウトしますか？')) showScreen('login');
+  if (!confirm(t('logoutConfirm'))) return;
+  state.token = null;
+  state.profile = null;
+  state.datesCache = null;
+  state.historyCache = null;
+  localStorage.removeItem("token");
+  showScreen('login');
 }
-function selectAmount(btn, amount) {
-  document.querySelectorAll('.amount-btn').forEach(b => b.classList.remove('selected'));
-  btn.classList.add('selected');
+
+// ====== ホーム ======
+function renderHome() {
+  if (!state.profile) return;
+  document.getElementById('home-name').textContent = state.profile.name || '―';
+  document.getElementById('home-shainno').textContent = 'No. ' + (state.profile.shainNo || '―');
+  document.getElementById('home-hakensaki').textContent = state.profile.hakensaki || '―';
 }
-function selectFriday(btn, date) {
-  if (btn.classList.contains('disabled')) return;
-  document.querySelectorAll('.friday-btn').forEach(b => b.classList.remove('selected'));
-  btn.classList.add('selected');
+
+async function ensureProfile() {
+  if (state.profile) return;
+  const data = await callApi('GET', '/profile');
+  state.profile = data.profile;
 }
-function mockSubmit() {
-  alert('（モック）申請内容を「前払い申請」 List に保存しました。\n担当者に Teams 通知します。');
-  showScreen('history');
+
+// ====== 前払い申請 ======
+function renderAmounts() {
+  const grid = document.getElementById('amount-grid');
+  grid.innerHTML = '';
+  AMOUNT_CHOICES.forEach(a => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'amount-btn' + (state.selectedAmount === a ? ' selected' : '');
+    btn.textContent = a.toLocaleString() + '円';
+    btn.onclick = () => {
+      state.selectedAmount = a;
+      renderAmounts();
+    };
+    grid.appendChild(btn);
+  });
 }
+
+function renderDates(data) {
+  const list = document.getElementById('dates-list');
+  document.getElementById('dates-loading').classList.add('hidden');
+  list.innerHTML = '';
+  if (!data || !data.dates) return;
+  data.dates.forEach(d => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    const isSelected = state.selectedDate === d.date;
+    btn.className = 'friday-btn' + (d.available ? (isSelected ? ' selected' : '') : ' disabled');
+    const dateObj = new Date(d.date + 'T00:00:00');
+    const label = dateObj.getFullYear() + '/' + String(dateObj.getMonth()+1).padStart(2,'0') + '/' + String(dateObj.getDate()).padStart(2,'0') + ' (金)';
+    const span1 = document.createElement('span'); span1.textContent = label;
+    btn.appendChild(span1);
+    if (d.reasons && d.reasons.length) {
+      const span2 = document.createElement('span'); span2.className = 'reason';
+      const reasonText = d.reasons.map(r => r === '給料日週' ? t('salaryWeek') : r === '会社休日' ? t('companyHoliday') : '⚠ ' + r).join(' ');
+      span2.textContent = reasonText;
+      btn.appendChild(span2);
+    }
+    if (d.available) {
+      btn.onclick = () => {
+        state.selectedDate = d.date;
+        renderDates(data);
+      };
+    }
+    list.appendChild(btn);
+  });
+}
+
+async function initRequestScreen() {
+  state.selectedAmount = null;
+  state.selectedDate = null;
+  document.getElementById('apply-error').classList.add('hidden');
+  document.getElementById('apply-reason').value = '';
+  renderAmounts();
+  document.getElementById('dates-loading').classList.remove('hidden');
+  document.getElementById('dates-list').innerHTML = '';
+  try {
+    const data = await callApi('GET', '/maebarai/dates');
+    state.datesCache = data;
+    renderDates(data);
+  } catch (e) {
+    document.getElementById('dates-loading').classList.add('hidden');
+    document.getElementById('dates-list').innerHTML = '<div class="error-banner">' + t('networkError') + '</div>';
+  }
+}
+
+async function submitApply() {
+  const errBox = document.getElementById('apply-error');
+  errBox.classList.add('hidden');
+  if (!state.selectedAmount) { errBox.textContent = t('selectAmountFirst'); errBox.classList.remove('hidden'); return; }
+  if (!state.selectedDate) { errBox.textContent = t('selectDateFirst'); errBox.classList.remove('hidden'); return; }
+  const reason = document.getElementById('apply-reason').value.trim();
+  const btn = document.getElementById('apply-submit-btn');
+  btn.disabled = true;
+  showLoading(true);
+  try {
+    await callApi('POST', '/maebarai/apply', {
+      amount: state.selectedAmount,
+      date: state.selectedDate,
+      reason: reason,
+    });
+    toast(t('applySuccess'), 'success');
+    state.historyCache = null;
+    setTimeout(() => showScreen('history'), 800);
+  } catch (e) {
+    errBox.textContent = (e.data && e.data.error) ? (e.data.error + ' ' + (e.data.detail || '')) : t('networkError');
+    errBox.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+    showLoading(false);
+  }
+}
+
+// ====== 申請履歴 ======
+function renderHistory() {
+  const list = document.getElementById('history-list');
+  const empty = document.getElementById('history-empty');
+  document.getElementById('history-loading').classList.add('hidden');
+  list.innerHTML = '';
+  const items = (state.historyCache && state.historyCache.items) || [];
+  if (items.length === 0) {
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  items.forEach(it => {
+    const status = (it.status || 'pending').toLowerCase();
+    const item = document.createElement('div');
+    item.className = 'history-item ' + status;
+    const row1 = document.createElement('div'); row1.className = 'row1';
+    const amount = document.createElement('span'); amount.className = 'amount'; amount.textContent = '¥' + Number(it.amount || 0).toLocaleString();
+    const badge = document.createElement('span'); badge.className = 'status-badge status-' + status;
+    badge.textContent = t('status' + status.charAt(0).toUpperCase() + status.slice(1));
+    row1.append(amount, badge);
+    item.append(row1);
+    const meta = document.createElement('div'); meta.className = 'meta';
+    let mtext = t('kibobi') + ': ' + (it.date || '―');
+    if (it.createdAt) mtext += ' ｜ ' + t('appliedAt') + ': ' + it.createdAt;
+    if (status === 'approved' && it.approvedAt) mtext += ' ｜ ' + t('approvedAt') + ': ' + it.approvedAt;
+    meta.textContent = mtext;
+    item.append(meta);
+    if (status === 'rejected' && it.rejectReason) {
+      const rr = document.createElement('div'); rr.className = 'reject-reason';
+      rr.textContent = '📝 ' + t('rejectReason') + ': ' + it.rejectReason;
+      item.append(rr);
+    }
+    list.appendChild(item);
+  });
+}
+
+async function initHistoryScreen() {
+  document.getElementById('history-loading').classList.remove('hidden');
+  document.getElementById('history-list').innerHTML = '';
+  document.getElementById('history-empty').classList.add('hidden');
+  try {
+    const data = await callApi('GET', '/maebarai/history');
+    state.historyCache = data;
+    renderHistory();
+  } catch (e) {
+    document.getElementById('history-loading').classList.add('hidden');
+    toast(t('networkError') + ' (' + (e.message || '') + ')', 'error');
+  }
+}
+
+// ====== Init ======
+async function bootstrap() {
+  applyI18n();
+  document.getElementById('login-btn').addEventListener('click', tryLogin);
+  document.getElementById('apply-submit-btn').addEventListener('click', submitApply);
+  if (state.token) {
+    showLoading(true);
+    try {
+      await ensureProfile();
+      showScreen('home');
+    } catch (e) {
+      showScreen('login');
+    } finally {
+      showLoading(false);
+    }
+  } else {
+    showScreen('login');
+  }
+}
+
+bootstrap();
 </script>
 </body>
 </html>
