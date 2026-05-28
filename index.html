@@ -25,6 +25,17 @@
     margin-bottom: 16px;
   }
   .header h1 { margin: 0; font-size: 1.15em; font-weight: 700; }
+  .header-logo {
+    height: 28px; width: auto;
+    background: #fff; border-radius: 6px;
+    padding: 3px 6px; margin-right: 8px;
+    object-fit: contain;
+  }
+  .brand-logo {
+    max-width: 220px; width: 70%;
+    height: auto; display: block; margin: 0 auto;
+    filter: drop-shadow(0 2px 6px rgba(31,56,100,0.15));
+  }
   .header .lang-switch, .header .logout-btn {
     background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
     color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 0.85em; cursor: pointer;
@@ -186,9 +197,9 @@
 
 <!-- ====== Screen: ログイン ====== -->
 <div id="screen-login" class="container hidden">
-  <div style="text-align: center; margin: 40px 0 30px;">
-    <div style="font-size: 3em;">🌱</div>
-    <div style="font-size: 1.6em; font-weight: 700; color: #1f3864; margin-top: 8px;" data-i18n="appTitle">従業員ポータル</div>
+  <div style="text-align: center; margin: 30px 0 24px;">
+    <img src="logo.png" alt="ステップ・アップ" class="brand-logo">
+    <div style="font-size: 1.45em; font-weight: 700; color: #1f3864; margin-top: 14px;" data-i18n="appTitle">従業員ポータル</div>
     <div style="font-size: 0.9em; color: #666; margin-top: 4px;">有限会社ステップ・アップ</div>
   </div>
 
@@ -213,7 +224,8 @@
 <!-- ====== Screen: ホームメニュー ====== -->
 <div id="screen-home" class="container hidden">
   <div class="header">
-    <h1>🌱 <span data-i18n="appTitle">従業員ポータル</span></h1>
+    <img src="logo.png" alt="" class="header-logo">
+    <h1 style="flex:1;"><span data-i18n="appTitle">従業員ポータル</span></h1>
     <span class="logout-btn" onclick="logout()" data-i18n="logout">ログアウト</span>
   </div>
 
