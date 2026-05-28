@@ -272,25 +272,42 @@
   .modal-box.warning .modal-btn { background: linear-gradient(135deg, #ffa726, #ef6c00); box-shadow: 0 4px 10px rgba(239,108,0,0.3); }
   .modal-box.success .modal-btn { background: linear-gradient(135deg, #66bb6a, #2e7d32); box-shadow: 0 4px 10px rgba(46,125,50,0.3); }
   /* ルールモーダル */
-  .rules-box { max-width: 440px; text-align: left; padding: 24px 20px 18px; border-top: 5px solid #2e5a99; }
-  .rules-box .modal-title { text-align: center; font-size: 1.1em; margin-bottom: 14px; }
-  .rules-box .modal-icon { text-align: center; }
-  .rules-list { padding-left: 22px; margin: 0 0 16px; font-size: 0.88em; line-height: 1.55; color: #333; }
-  .rules-list li { margin-bottom: 8px; }
+  .rules-box {
+    max-width: 440px; text-align: left; padding: 18px 18px 14px;
+    border-top: 5px solid #2e5a99;
+    max-height: 88vh; display: flex; flex-direction: column;
+  }
+  .rules-box .modal-icon { text-align: center; font-size: 2.2em; margin-bottom: 4px; flex-shrink: 0; }
+  .rules-box .modal-title { text-align: center; font-size: 1.05em; margin-bottom: 10px; flex-shrink: 0; }
+  .rules-list {
+    padding-left: 22px; margin: 0 0 10px;
+    font-size: 0.82em; line-height: 1.5; color: #333;
+    flex: 1 1 auto; overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    /* スクロールヒント (上下にうっすらシャドウ) */
+    background:
+      linear-gradient(#fff 30%, rgba(255,255,255,0)) center top / 100% 16px no-repeat,
+      linear-gradient(rgba(255,255,255,0), #fff 70%) center bottom / 100% 16px no-repeat,
+      radial-gradient(ellipse at center top, rgba(0,0,0,0.08), transparent 60%) center top / 100% 8px no-repeat,
+      radial-gradient(ellipse at center bottom, rgba(0,0,0,0.08), transparent 60%) center bottom / 100% 8px no-repeat;
+    background-attachment: local, local, scroll, scroll;
+  }
+  .rules-list li { margin-bottom: 6px; }
   .rules-list li b { color: #1f3864; }
   .rules-agree {
     display: flex; align-items: flex-start; gap: 8px;
     background: #fff3cd; border: 1.5px solid #f0ad4e;
-    padding: 10px 14px; border-radius: 10px;
-    font-size: 0.92em; color: #6d4c00; cursor: pointer;
-    margin-bottom: 14px; font-weight: 600;
+    padding: 9px 12px; border-radius: 10px;
+    font-size: 0.88em; color: #6d4c00; cursor: pointer;
+    margin-bottom: 10px; font-weight: 600;
+    flex-shrink: 0;
   }
   .rules-agree input[type="checkbox"] {
     width: 20px; height: 20px; margin: 0; flex-shrink: 0;
     accent-color: #2e5a99; cursor: pointer;
   }
-  .rules-buttons { display: flex; gap: 10px; }
-  .rules-buttons .modal-btn { flex: 1; min-width: 0; padding: 12px; font-size: 0.95em; }
+  .rules-buttons { display: flex; gap: 10px; flex-shrink: 0; }
+  .rules-buttons .modal-btn { flex: 1; min-width: 0; padding: 11px; font-size: 0.92em; }
   .modal-btn-secondary {
     background: #f0f3f8 !important; color: #1f3864 !important;
     box-shadow: 0 2px 6px rgba(0,0,0,0.06) !important;
@@ -299,10 +316,12 @@
   .rules-video-link {
     display: block; text-align: center;
     background: #eef2f7; color: #1f3864;
-    padding: 10px 14px; border-radius: 10px;
-    text-decoration: none; font-size: 0.88em; font-weight: 600;
-    margin-bottom: 12px;
+    padding: 8px 10px; border-radius: 10px;
+    text-decoration: none; font-size: 0.8em; font-weight: 600;
+    margin-bottom: 10px;
     border: 1.5px solid #cfd8dc;
+    flex-shrink: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .rules-video-link:active { background: #e3e8f0; }
 </style>
