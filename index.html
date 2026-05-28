@@ -418,7 +418,7 @@
       <span id="history-new-badge" class="new-badge hidden">0</span>
       <span id="history-new-status" class="new-status hidden"></span>
     </div>
-    <div class="menu-card" onclick="showScreen('zairyu')">
+    <div class="menu-card" id="menu-card-zairyu" onclick="showScreen('zairyu')">
       <span class="card-num">③</span>
       <span class="icon">🪪</span>
       <span class="label" data-i18n="menuZairyu">在留カード提出</span>
@@ -1141,6 +1141,10 @@ function renderHome() {
   else { znEl.textContent = ''; znEl.style.display = 'none'; }
   document.getElementById('home-shainno').textContent = 'No. ' + (state.profile.shainNo || '―');
   document.getElementById('home-hakensaki').textContent = state.profile.hakensaki || '―';
+  // 在留カード提出ボタン: 日本国籍の方には不要なので非表示
+  const isJapanese = String(state.profile.kokuseki || '').includes('日本');
+  const zairyuCard = document.getElementById('menu-card-zairyu');
+  if (zairyuCard) zairyuCard.style.display = isJapanese ? 'none' : '';
   // 未確認の承認/却下件数バッジを更新 (履歴はキャッシュせず鮮度優先)
   state.historyCache = null;
   updateHistoryBadge();
