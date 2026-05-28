@@ -253,6 +253,29 @@ def sp_get_items(list_guid: str, select: Optional[str] = None,
     return items
 
 
+def sp_patch_item(list_guid: str, item_id: int, fields: Dict[str, Any]) -> None:
+    """SP List アイテムを PATCH (MERGE)。verbose POST + X-HTTP-Method=MERGE。"""
+    # ListItemEntityTypeFullName を取得
+    list_url = f"{SITE_URL}/_api/web/lists(guid'{list_guid}')"
+    type_resp = requests.get(f"{list_url}?$select=ListItemEntityTypeFullName",
+                             headers=_sp_headers(verbose=True), timeout=30)
+    type_resp.raise_for_status()
+    entity_type = type_resp.json()["d"]["ListItemEntityTypeFullName"]
+    body = {"__metadata": {"type": entity_type}}
+    body.update(fields)
+    h = {
+        "Authorization": f"Bearer {_get_sp_token()}",
+        "Accept": "application/json;odata=verbose",
+        "Content-Type": "application/json;odata=verbose",
+        "IF-MATCH": "*",
+        "X-HTTP-Method": "MERGE",
+    }
+    r = requests.post(f"{list_url}/items({item_id})", headers=h,
+                      data=json.dumps(body), timeout=60)
+    if not r.ok:
+        raise RuntimeError(f"PATCH failed: {r.status_code} {r.text[:300]}")
+
+
 def sp_post_item(list_guid: str, fields: Dict[str, Any]) -> int:
     """SP List に新規アイテムを INSERT。AddValidateUpdateItemUsingPath を使用。
     成功時は新規 ID を返す。"""
@@ -679,6 +702,23 @@ def maebarai_apply(req: func.HttpRequest) -> func.HttpResponse:
         next_payday = get_next_payday_for_friday(haraibi, d)
         if is_in_kaisha_kyujitsu_week(d, kyujitsu) or (next_payday and is_in_payday_week(d, next_payday)):
             return _json_response({"error": "date_not_available"}, 400)
+        # 重複チェック: 同じ社員番号 + 同じ希望日 で status が pending または approved の申請があれば拒否
+        dup_filter = (
+            f"OData__x793e__x54e1__x756a__x53f7_ eq {shain_no} and "
+            f"OData__x5e0c__x671b__x65e5_ eq datetime'{d.isoformat()}T00:00:00' and "
+            f"(Status eq 'pending' or Status eq 'approved')"
+        )
+        try:
+            dup_items = sp_get_items(LIST_MAEBARAI_SHINSEI, select="Id,Status", filter_=dup_filter, top=5)
+        except Exception:
+            dup_items = []
+        if dup_items:
+            existing_status = dup_items[0].get("Status") or "pending"
+            return _json_response({
+                "error": "duplicate_application",
+                "existingStatus": existing_status,
+                "existingId": dup_items[0].get("Id"),
+            }, 409)
         # INSERT
         buka_no = parse_buka_no(buka_text)
         tantou = get_tantou(buka_no)
@@ -748,6 +788,56 @@ def maebarai_history(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"items": out})
     except Exception as e:
         logging.exception("maebarai_history failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+@app.route(route="maebarai/cancel", methods=["POST", "OPTIONS"])
+def maebarai_cancel(req: func.HttpRequest) -> func.HttpResponse:
+    """本人が pending 申請を取り消す。
+    Body: { id: <listItemId> }
+    成功時: Status を cancelled に PATCH (履歴には残る、cancelled 表示)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = payload["shainNo"]
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    item_id = body.get("id")
+    if not item_id:
+        return _json_response({"error": "missing_id"}, 400)
+    try:
+        item_id = int(item_id)
+    except (TypeError, ValueError):
+        return _json_response({"error": "invalid_id"}, 400)
+
+    try:
+        # 申請が本人のもの & status が pending か確認
+        items = sp_get_items(
+            LIST_MAEBARAI_SHINSEI,
+            select=f"Id,Status,OData__x793e__x54e1__x756a__x53f7_",
+            filter_=f"Id eq {item_id}",
+            top=1,
+        )
+        if not items:
+            return _json_response({"error": "not_found"}, 404)
+        it = items[0]
+        if int(it.get("OData__x793e__x54e1__x756a__x53f7_") or 0) != int(shain_no):
+            return _json_response({"error": "forbidden"}, 403)
+        if (it.get("Status") or "").lower() != "pending":
+            return _json_response({"error": "cannot_cancel", "currentStatus": it.get("Status")}, 400)
+        # PATCH Status → cancelled
+        sp_patch_item(LIST_MAEBARAI_SHINSEI, item_id, {
+            "Status": "cancelled",
+            "OData__x627f__x8a8d__x65e5__x6642_": _dt.datetime.utcnow().isoformat() + "Z",
+        })
+        return _json_response({"ok": True})
+    except Exception as e:
+        logging.exception("maebarai_cancel failed")
         return _json_response({"error": "internal", "detail": str(e)}, 500)
 
 

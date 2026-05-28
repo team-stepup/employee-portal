@@ -125,6 +125,21 @@
   .new-status.approved { background: #c8e6c9; color: #1b5e20; }
   .new-status.rejected { background: #ffcdd2; color: #b71c1c; }
   .new-status.both { background: #ffe082; color: #6d4c00; }
+  .card-num {
+    position: absolute; top: 6px; left: 8px;
+    font-size: 1.05em; font-weight: 800;
+    color: #2e5a99; opacity: 0.55;
+    line-height: 1;
+  }
+  .btn-cancel-apply {
+    background: #f5f5f5; color: #666;
+    border: 1px solid #ccc; border-radius: 8px;
+    padding: 6px 14px; font-size: 0.85em; font-weight: 600;
+    cursor: pointer; margin-top: 8px;
+  }
+  .btn-cancel-apply:active { background: #e0e0e0; }
+  .status-cancelled { background: #9e9e9e; }
+  .history-item.cancelled { border-left-color: #9e9e9e; opacity: 0.7; }
   .spinner {
     display: inline-block; width: 20px; height: 20px;
     border: 3px solid #e0e6ed; border-radius: 50%;
@@ -188,20 +203,24 @@
 
   <div class="menu-grid">
     <div class="menu-card" onclick="showScreen('request')">
+      <span class="card-num">①</span>
       <span class="icon">💴</span>
       <span class="label" data-i18n="menuApply">前払い申請</span>
     </div>
     <div class="menu-card" onclick="showScreen('history')" style="position:relative;">
+      <span class="card-num">②</span>
       <span class="icon">📋</span>
       <span class="label" data-i18n="menuHistory">申請履歴</span>
       <span id="history-new-badge" class="new-badge hidden">0</span>
       <span id="history-new-status" class="new-status hidden"></span>
     </div>
     <div class="menu-card coming-soon" onclick="toast(t('comingSoon15'))">
+      <span class="card-num">③</span>
       <span class="icon">🪪</span>
       <span class="label" data-i18n="menuZairyu">在留カード更新</span>
     </div>
     <div class="menu-card coming-soon" onclick="toast(t('comingSoonPhase2'))">
+      <span class="card-num">④</span>
       <span class="icon">📅</span>
       <span class="label" data-i18n="menuYukyu">有給残数</span>
     </div>
@@ -362,24 +381,89 @@ const I18N = {
     logoutConfirm: "Deseja sair?",
     kibobi: "Data",
     lockedOut: "Muitas falhas de login. Aguarde cerca de {min} minutos antes de tentar de novo.",
+    duplicateApplication: "Já existe um pedido para esta data (status: {status}). Cancele o anterior ou escolha outra data.",
+    cancelConfirm: "Deseja cancelar este pedido?",
+    cancelSuccess: "Pedido cancelado.",
+    cancelError: "Falha ao cancelar.",
+    cancelButton: "Cancelar pedido",
+  },
+  en: {
+    appTitle: "Employee Portal",
+    login: "Sign In",
+    shainNoLabel: "Employee No.",
+    birthdayLabel: "Date of Birth",
+    telLabel: "Phone (last 4 digits)",
+    loginButton: "Sign In",
+    logout: "Sign Out",
+    menuApply: "Advance Request",
+    menuHistory: "Request History",
+    menuZairyu: "Zairyū Card Update",
+    menuYukyu: "Leave Balance",
+    screenApplyTitle: "Advance Request",
+    screenHistoryTitle: "Request History",
+    step1: "Select amount",
+    step2: "Preferred date (Fridays only)",
+    step3: "Reason (optional)",
+    submit: "Submit this request",
+    cancel: "Cancel",
+    back: "Back",
+    applyInfoBanner: "📌 Cannot apply during salary week, Golden Week, Obon, or year-end/new-year. Fridays only.",
+    historyEmpty: "No requests yet.",
+    statusPending: "Pending",
+    statusApproved: "Approved",
+    statusRejected: "Rejected",
+    statusCancelled: "Cancelled",
+    appliedAt: "Submitted",
+    approvedAt: "Approved on",
+    rejectedAt: "Rejected on",
+    rejectReason: "Reason",
+    salaryWeek: "⚠ Salary week",
+    companyHoliday: "⚠ Company holiday",
+    selectAmountFirst: "Please select an amount.",
+    selectDateFirst: "Please select a preferred date.",
+    missingLoginFields: "Please enter employee no., date of birth, and last 4 digits of phone.",
+    applySuccess: "Request submitted. The supervisor will be notified.",
+    authFailed: "Employee no., date of birth, or phone digits don't match. Please contact HR.",
+    notActive: "Active employment record not found. Please contact HR.",
+    networkError: "Network error. Please try again in a moment.",
+    comingSoon15: "Available in Phase 1.5.",
+    comingSoonPhase2: "Available from Phase 2.",
+    logoutConfirm: "Sign out?",
+    kibobi: "Date",
+    lockedOut: "Too many failed login attempts. Please try again in about {min} minutes.",
+    duplicateApplication: "There is already a request for this date (status: {status}). Please cancel the existing one or choose another date.",
+    cancelConfirm: "Cancel this request?",
+    cancelSuccess: "Request cancelled.",
+    cancelError: "Failed to cancel.",
+    cancelButton: "Cancel request",
   }
 };
 
+// 日本語訳の追加分 (i18n オブジェクト内に追記)
+I18N.ja.duplicateApplication = "同じ希望日に既に申請があります (状態: {status})。既存の申請を取り消すか、別の日を選んでください。";
+I18N.ja.cancelConfirm = "この申請を取り消しますか？";
+I18N.ja.cancelSuccess = "申請を取り消しました。";
+I18N.ja.cancelError = "取り消しに失敗しました。";
+I18N.ja.cancelButton = "申請を取り消す";
+
 let currentLang = localStorage.getItem("lang") || "ja";
+const LANG_CYCLE = ['ja', 'en', 'pt'];
+const LANG_NEXT_LABEL = { ja: '🌐 English', en: '🌐 Português', pt: '🌐 日本語' };
 function t(key) { return (I18N[currentLang] && I18N[currentLang][key]) || I18N.ja[key] || key; }
 function applyI18n() {
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.getAttribute('data-i18n');
     el.textContent = t(key);
   });
-  document.documentElement.lang = currentLang === 'pt' ? 'pt' : 'ja';
+  document.documentElement.lang = currentLang;
   ['lang-switch-login', 'lang-switch-home'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.textContent = currentLang === 'ja' ? '🌐 Português' : '🌐 日本語';
+    if (el) el.textContent = LANG_NEXT_LABEL[currentLang] || '🌐 English';
   });
 }
 function toggleLang() {
-  currentLang = currentLang === 'ja' ? 'pt' : 'ja';
+  const i = LANG_CYCLE.indexOf(currentLang);
+  currentLang = LANG_CYCLE[(i + 1) % LANG_CYCLE.length];
   localStorage.setItem("lang", currentLang);
   applyI18n();
   // Refresh dynamic UI strings
@@ -606,10 +690,31 @@ async function submitApply() {
     state.historyCache = null;
     setTimeout(() => showScreen('history'), 800);
   } catch (e) {
-    errBox.textContent = (e.data && e.data.error) ? (e.data.error + ' ' + (e.data.detail || '')) : t('networkError');
+    if (e.status === 409 && e.data && e.data.error === 'duplicate_application') {
+      const stKey = 'status' + (e.data.existingStatus || 'pending').charAt(0).toUpperCase() + (e.data.existingStatus || 'pending').slice(1);
+      errBox.textContent = t('duplicateApplication').replace('{status}', t(stKey));
+    } else {
+      errBox.textContent = (e.data && e.data.error) ? (e.data.error + ' ' + (e.data.detail || '')) : t('networkError');
+    }
     errBox.classList.remove('hidden');
   } finally {
     btn.disabled = false;
+    showLoading(false);
+  }
+}
+
+// 申請取消 (pending のみ)
+async function cancelApply(id) {
+  if (!confirm(t('cancelConfirm'))) return;
+  showLoading(true);
+  try {
+    await callApi('POST', '/maebarai/cancel', { id: id });
+    toast(t('cancelSuccess'), 'success');
+    state.historyCache = null;
+    await initHistoryScreen();
+  } catch (e) {
+    toast(t('cancelError') + ' ' + (e.data && e.data.error ? e.data.error : ''), 'error');
+  } finally {
     showLoading(false);
   }
 }
@@ -646,6 +751,13 @@ function renderHistory() {
       const rr = document.createElement('div'); rr.className = 'reject-reason';
       rr.textContent = '📝 ' + t('rejectReason') + ': ' + it.rejectReason;
       item.append(rr);
+    }
+    if (status === 'pending') {
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'btn-cancel-apply';
+      cancelBtn.textContent = '✕ ' + t('cancelButton');
+      cancelBtn.onclick = () => cancelApply(it.id);
+      item.append(cancelBtn);
     }
     list.appendChild(item);
   });
