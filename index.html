@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#1f3864">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://func-employee-portal-7833.azurewebsites.net; frame-ancestors 'none'; base-uri 'self'; form-action 'self';">
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <title>従業員ポータル｜有限会社ステップ・アップ</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -294,6 +297,7 @@ const I18N = {
     comingSoonPhase2: "Phase 2 以降で実装予定です。",
     logoutConfirm: "ログアウトしますか？",
     kibobi: "希望日",
+    lockedOut: "ログイン失敗が続いたため、一時的にロックされています。約 {min} 分後に再試行してください。",
   },
   pt: {
     appTitle: "Portal do Funcionário",
@@ -338,6 +342,7 @@ const I18N = {
     comingSoonPhase2: "Disponível a partir da Fase 2.",
     logoutConfirm: "Deseja sair?",
     kibobi: "Data",
+    lockedOut: "Muitas falhas de login. Aguarde cerca de {min} minutos antes de tentar de novo.",
   }
 };
 
@@ -457,7 +462,12 @@ async function tryLogin() {
     localStorage.setItem("token", data.token);
     showScreen('home');
   } catch (e) {
-    if (e.status === 401) errBox.textContent = t('authFailed');
+    if (e.status === 429) {
+      const remainSec = (e.data && e.data.remainingSeconds) || (30 * 60);
+      const remainMin = Math.ceil(remainSec / 60);
+      errBox.textContent = t('lockedOut').replace('{min}', remainMin);
+    }
+    else if (e.status === 401) errBox.textContent = t('authFailed');
     else if (e.status === 403) errBox.textContent = t('notActive');
     else errBox.textContent = t('networkError') + ' (' + (e.data && e.data.detail ? e.data.detail : e.message) + ')';
     errBox.classList.remove('hidden');
