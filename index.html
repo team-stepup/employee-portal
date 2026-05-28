@@ -108,6 +108,23 @@
   .history-item .reject-reason { background: #ffebee; color: #c62828; padding: 8px 10px; border-radius: 6px; margin-top: 8px; font-size: 0.85em; }
   .footer { text-align: center; padding: 30px 0 10px; color: #888; font-size: 0.8em; }
   .hidden { display: none !important; }
+  .new-badge {
+    position: absolute; top: 6px; right: 6px;
+    background: linear-gradient(135deg, #f44336, #c62828);
+    color: #fff; font-size: 0.75em; font-weight: 800;
+    padding: 2px 8px; border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(198,40,40,0.4);
+    min-width: 18px; text-align: center;
+  }
+  .new-status {
+    position: absolute; top: 32px; right: 6px;
+    font-size: 0.7em; font-weight: 700;
+    padding: 1px 6px; border-radius: 8px;
+    line-height: 1.4;
+  }
+  .new-status.approved { background: #c8e6c9; color: #1b5e20; }
+  .new-status.rejected { background: #ffcdd2; color: #b71c1c; }
+  .new-status.both { background: #ffe082; color: #6d4c00; }
   .spinner {
     display: inline-block; width: 20px; height: 20px;
     border: 3px solid #e0e6ed; border-radius: 50%;
@@ -174,9 +191,11 @@
       <span class="icon">💴</span>
       <span class="label" data-i18n="menuApply">前払い申請</span>
     </div>
-    <div class="menu-card" onclick="showScreen('history')">
+    <div class="menu-card" onclick="showScreen('history')" style="position:relative;">
       <span class="icon">📋</span>
       <span class="label" data-i18n="menuHistory">申請履歴</span>
+      <span id="history-new-badge" class="new-badge hidden">0</span>
+      <span id="history-new-status" class="new-status hidden"></span>
     </div>
     <div class="menu-card coming-soon" onclick="toast(t('comingSoon15'))">
       <span class="icon">🪪</span>
@@ -492,6 +511,9 @@ function renderHome() {
   document.getElementById('home-name').textContent = state.profile.name || '―';
   document.getElementById('home-shainno').textContent = 'No. ' + (state.profile.shainNo || '―');
   document.getElementById('home-hakensaki').textContent = state.profile.hakensaki || '―';
+  // 未確認の承認/却下件数バッジを更新 (履歴はキャッシュせず鮮度優先)
+  state.historyCache = null;
+  updateHistoryBadge();
 }
 
 async function ensureProfile() {
@@ -637,10 +659,63 @@ async function initHistoryScreen() {
     const data = await callApi('GET', '/maebarai/history');
     state.historyCache = data;
     renderHistory();
+    // 履歴画面を開いた瞬間に「最終確認時刻」を記録 → 次にホーム戻ったらバッジ消える
+    localStorage.setItem('lastHistoryViewAt', new Date().toISOString());
+    updateHistoryBadge();  // 即時クリア表示
   } catch (e) {
     document.getElementById('history-loading').classList.add('hidden');
     toast(t('networkError') + ' (' + (e.message || '') + ')', 'error');
   }
+}
+
+// ホーム画面で「未確認の承認/却下件数」をバッジ表示
+async function updateHistoryBadge() {
+  const badge = document.getElementById('history-new-badge');
+  const status = document.getElementById('history-new-status');
+  if (!badge || !status) return;
+  try {
+    // 履歴を取得 (キャッシュがあれば再利用、なければフェッチ)
+    let items;
+    if (state.historyCache && state.historyCache.items) {
+      items = state.historyCache.items;
+    } else {
+      const data = await callApi('GET', '/maebarai/history');
+      state.historyCache = data;
+      items = data.items || [];
+    }
+    const lastSeen = localStorage.getItem('lastHistoryViewAt');
+    const lastSeenTime = lastSeen ? new Date(lastSeen).getTime() : 0;
+    let approvedNew = 0, rejectedNew = 0;
+    items.forEach(it => {
+      if (!it.approvedAt) return;
+      // approvedAt は YYYY-MM-DD 形式 — その日の終わりまでを「変化があった瞬間」と簡易扱い
+      const at = new Date(String(it.approvedAt).length > 10 ? it.approvedAt : (it.approvedAt + 'T23:59:59'));
+      if (isNaN(at.getTime())) return;
+      if (at.getTime() <= lastSeenTime) return;
+      if (it.status === 'approved') approvedNew++;
+      else if (it.status === 'rejected') rejectedNew++;
+    });
+    const total = approvedNew + rejectedNew;
+    if (total > 0) {
+      badge.textContent = String(total);
+      badge.classList.remove('hidden');
+      // ステータスチップ (承認/却下/両方)
+      if (approvedNew > 0 && rejectedNew > 0) {
+        status.textContent = '✓' + approvedNew + ' ✗' + rejectedNew;
+        status.className = 'new-status both';
+      } else if (approvedNew > 0) {
+        status.textContent = '✓ ' + t('statusApproved');
+        status.className = 'new-status approved';
+      } else {
+        status.textContent = '✗ ' + t('statusRejected');
+        status.className = 'new-status rejected';
+      }
+      status.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+      status.classList.add('hidden');
+    }
+  } catch (e) { /* silent */ }
 }
 
 // ====== Init ======
