@@ -234,6 +234,43 @@
   }
   .toast.success { background: rgba(46,125,50,0.95); }
   .toast.error { background: rgba(198,40,40,0.95); }
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 2000; padding: 20px;
+    animation: fadeIn 0.18s ease-out;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .modal-box {
+    background: #fff; border-radius: 16px;
+    max-width: 380px; width: 100%; padding: 26px 22px 22px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+    text-align: center;
+    animation: popIn 0.22s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+  }
+  @keyframes popIn { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .modal-box.error { border-top: 5px solid #f44336; }
+  .modal-box.warning { border-top: 5px solid #f57c00; }
+  .modal-box.info { border-top: 5px solid #2196f3; }
+  .modal-box.success { border-top: 5px solid #4caf50; }
+  .modal-icon { font-size: 2.8em; line-height: 1; margin-bottom: 8px; }
+  .modal-title { font-size: 1.05em; font-weight: 700; color: #1f3864; margin-bottom: 8px; }
+  .modal-title:empty { display: none; }
+  .modal-message {
+    font-size: 0.95em; color: #333; line-height: 1.5;
+    margin-bottom: 22px; white-space: pre-line;
+  }
+  .modal-btn {
+    background: linear-gradient(135deg, #2e5a99, #1f3864);
+    color: #fff; border: none; border-radius: 10px;
+    padding: 12px 36px; font-size: 1em; font-weight: 700;
+    cursor: pointer; min-width: 130px;
+    box-shadow: 0 4px 10px rgba(31,56,100,0.3);
+  }
+  .modal-btn:active { transform: translateY(1px); }
+  .modal-box.error .modal-btn { background: linear-gradient(135deg, #ef5350, #c62828); box-shadow: 0 4px 10px rgba(198,40,40,0.3); }
+  .modal-box.warning .modal-btn { background: linear-gradient(135deg, #ffa726, #ef6c00); box-shadow: 0 4px 10px rgba(239,108,0,0.3); }
+  .modal-box.success .modal-btn { background: linear-gradient(135deg, #66bb6a, #2e7d32); box-shadow: 0 4px 10px rgba(46,125,50,0.3); }
 </style>
 </head>
 <body>
@@ -375,8 +412,17 @@
 
 <div class="footer">© 2026 有限会社ステップ・アップ</div>
 
-<!-- ====== Loading & Toast ====== -->
+<!-- ====== Loading & Toast & Alert Modal ====== -->
 <div id="loading" class="loading-overlay hidden"><div class="spinner" style="width:36px; height:36px;"></div></div>
+
+<div id="modal-alert" class="modal-backdrop hidden" onclick="onAlertBackdropClick(event)">
+  <div class="modal-box" id="modal-box">
+    <div class="modal-icon" id="modal-icon">⚠️</div>
+    <div class="modal-title" id="modal-title"></div>
+    <div class="modal-message" id="modal-message"></div>
+    <button type="button" class="modal-btn" id="modal-ok-btn" onclick="closeAlert()">OK</button>
+  </div>
+</div>
 
 <script>
 // ====== 設定 ======
@@ -659,6 +705,36 @@ function toast(msg, kind) {
   setTimeout(() => { el.remove(); }, 3100);
 }
 
+// ====== ポップアップ アラート (各言語対応・モーダル) ======
+function showAlert(message, type, title) {
+  const modal = document.getElementById('modal-alert');
+  const box = document.getElementById('modal-box');
+  const icon = document.getElementById('modal-icon');
+  const titleEl = document.getElementById('modal-title');
+  const msg = document.getElementById('modal-message');
+  type = type || 'error';
+  box.className = 'modal-box ' + type;
+  icon.textContent = type === 'error' ? '⚠️' : type === 'warning' ? '🚨' : type === 'success' ? '✅' : type === 'info' ? 'ℹ️' : '⚠️';
+  titleEl.textContent = title || '';
+  msg.textContent = message || '';
+  modal.classList.remove('hidden');
+}
+
+function closeAlert() {
+  document.getElementById('modal-alert').classList.add('hidden');
+}
+
+function onAlertBackdropClick(e) {
+  if (e.target.id === 'modal-alert') closeAlert();
+}
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') {
+    const m = document.getElementById('modal-alert');
+    if (m && !m.classList.contains('hidden')) closeAlert();
+  }
+});
+
 // ====== 画面遷移 ======
 function showScreen(name) {
   ['login','home','request','history'].forEach(s => {
@@ -676,11 +752,8 @@ async function tryLogin() {
   const shainNo = parseInt(document.getElementById('login-shainno').value, 10);
   const birthday = document.getElementById('login-birthday').value;
   const telLast4 = document.getElementById('login-tel').value;
-  const errBox = document.getElementById('login-error');
-  errBox.classList.add('hidden');
   if (!shainNo || !birthday || !telLast4) {
-    errBox.textContent = t('missingLoginFields');
-    errBox.classList.remove('hidden');
+    showAlert(t('missingLoginFields'), 'warning');
     return;
   }
   showLoading(true);
@@ -696,12 +769,11 @@ async function tryLogin() {
     if (e.status === 429) {
       const remainSec = (e.data && e.data.remainingSeconds) || (30 * 60);
       const remainMin = Math.ceil(remainSec / 60);
-      errBox.textContent = t('lockedOut').replace('{min}', remainMin);
+      showAlert(t('lockedOut').replace('{min}', remainMin), 'warning');
     }
-    else if (e.status === 401) errBox.textContent = t('authFailed');
-    else if (e.status === 403) errBox.textContent = t('notActive');
-    else errBox.textContent = t('networkError') + ' (' + (e.data && e.data.detail ? e.data.detail : e.message) + ')';
-    errBox.classList.remove('hidden');
+    else if (e.status === 401) showAlert(t('authFailed'), 'error');
+    else if (e.status === 403) showAlert(t('notActive'), 'error');
+    else showAlert(t('networkError') + '\n(' + (e.data && e.data.detail ? e.data.detail : e.message) + ')', 'error');
   } finally {
     showLoading(false);
   }
@@ -873,10 +945,8 @@ async function initRequestScreen() {
 }
 
 async function submitApply() {
-  const errBox = document.getElementById('apply-error');
-  errBox.classList.add('hidden');
-  if (!state.selectedAmount) { errBox.textContent = t('selectAmountFirst'); errBox.classList.remove('hidden'); return; }
-  if (!state.selectedDate) { errBox.textContent = t('selectDateFirst'); errBox.classList.remove('hidden'); return; }
+  if (!state.selectedAmount) { showAlert(t('selectAmountFirst'), 'warning'); return; }
+  if (!state.selectedDate) { showAlert(t('selectDateFirst'), 'warning'); return; }
   const reason = document.getElementById('apply-reason').value.trim();
   const btn = document.getElementById('apply-submit-btn');
   btn.disabled = true;
@@ -893,11 +963,11 @@ async function submitApply() {
   } catch (e) {
     if (e.status === 409 && e.data && e.data.error === 'duplicate_application') {
       const stKey = 'status' + (e.data.existingStatus || 'pending').charAt(0).toUpperCase() + (e.data.existingStatus || 'pending').slice(1);
-      errBox.textContent = t('duplicateApplication').replace('{status}', t(stKey));
+      showAlert(t('duplicateApplication').replace('{status}', t(stKey)), 'warning');
     } else {
-      errBox.textContent = (e.data && e.data.error) ? (e.data.error + ' ' + (e.data.detail || '')) : t('networkError');
+      const detail = (e.data && (e.data.detail || e.data.error)) ? '\n(' + (e.data.detail || e.data.error) + ')' : '';
+      showAlert(t('networkError') + detail, 'error');
     }
-    errBox.classList.remove('hidden');
   } finally {
     btn.disabled = false;
     showLoading(false);
@@ -914,7 +984,8 @@ async function cancelApply(id) {
     state.historyCache = null;
     await initHistoryScreen();
   } catch (e) {
-    toast(t('cancelError') + ' ' + (e.data && e.data.error ? e.data.error : ''), 'error');
+    const detail = (e.data && e.data.error) ? '\n(' + e.data.error + ')' : '';
+    showAlert(t('cancelError') + detail, 'error');
   } finally {
     showLoading(false);
   }
@@ -997,7 +1068,7 @@ async function initHistoryScreen() {
     updateHistoryBadge();  // 即時クリア表示
   } catch (e) {
     document.getElementById('history-loading').classList.add('hidden');
-    toast(t('networkError') + ' (' + (e.message || '') + ')', 'error');
+    showAlert(t('networkError') + '\n(' + (e.message || '') + ')', 'error');
   }
 }
 
