@@ -296,6 +296,15 @@
     box-shadow: 0 2px 6px rgba(0,0,0,0.06) !important;
   }
   .modal-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .rules-video-link {
+    display: block; text-align: center;
+    background: #eef2f7; color: #1f3864;
+    padding: 10px 14px; border-radius: 10px;
+    text-decoration: none; font-size: 0.88em; font-weight: 600;
+    margin-bottom: 12px;
+    border: 1.5px solid #cfd8dc;
+  }
+  .rules-video-link:active { background: #e3e8f0; }
 </style>
 </head>
 <body>
@@ -455,6 +464,7 @@
     <div class="modal-icon">📜</div>
     <div class="modal-title" data-i18n="rulesTitle">前払い申請のルール</div>
     <ol class="rules-list" id="rules-list"></ol>
+    <a id="rules-video-link" class="rules-video-link" target="_blank" rel="noopener" href="#"></a>
     <label class="rules-agree">
       <input type="checkbox" id="rules-agree-check" onchange="onRulesAgreeChange()">
       <span data-i18n="rulesAgree">上記の内容を理解しました</span>
@@ -656,31 +666,47 @@ I18N.en.next = "Next";
 I18N.pt.rulesTitle = "Regras do Pedido de Adiantamento";
 I18N.pt.rulesAgree = "Li e entendi as regras acima";
 I18N.pt.next = "Próximo";
-// ルール本文 (HTMLで強調可能)
+// ルール本文 (HTMLで強調可能、staff-portal の前払い制度動画/資料の要点を集約)
 I18N.ja.rulesItems = [
-  "<b>希望日</b>: 毎週 <b>金曜日のみ</b> 選択できます。給料日週・GW・お盆・年末年始は不可。",
-  "<b>金額</b>: 10,000円〜130,000円 (10,000円単位)。",
-  "<b>手数料</b>: 50,000円以上 → 440円 / 50,000円未満 → 275円 (振込時に差し引き)。",
-  "<b>重複禁止</b>: 同じ希望日への複数の申請はできません。",
-  "<b>取り消し</b>: 承認待ち (pending) のみ取り消し可能。承認後は取り消せません。",
-  "<b>振込</b>: 担当者の承認後、希望日に通常の振込口座へ送金されます。"
+  "<b>対象</b>: 現在 <b>在職中の方</b> のみ申請できます (派遣先退社日が決まっている方は不可)。",
+  "<b>希望日</b>: 毎週 <b>金曜日のみ</b> 選択できます。給料日と同じ週 (月〜日) ・GW・お盆・年末年始は不可。",
+  "<b>金額</b>: <b>10,000円〜130,000円</b> の範囲、<b>10,000円単位</b>。",
+  "<b>手数料</b>: 50,000円以上 → <b>440円</b> / 50,000円未満 → <b>275円</b>。振込時に金額から差し引かれます。",
+  "<b>重複禁止</b>: 同じ希望日に複数の申請はできません (取消後の再申請は可)。",
+  "<b>取り消し</b>: 承認待ち (pending) の間のみ「申請を取り消す」で取り消し可能。承認後は取り消せません。",
+  "<b>振込</b>: 担当者の承認後、希望日に登録口座へ送金されます。",
+  "<b>運用</b>: 急な出費の補填を目的とした制度です。計画的な利用をお願いします。"
 ];
 I18N.en.rulesItems = [
-  "<b>Preferred date</b>: <b>Fridays only</b>. Salary week, Golden Week, Obon, and year-end holidays are unavailable.",
-  "<b>Amount</b>: ¥10,000–¥130,000 (in ¥10,000 increments).",
-  "<b>Fee</b>: ¥440 if ¥50,000 or more / ¥275 if less than ¥50,000 (deducted from payment).",
-  "<b>No duplicates</b>: You cannot apply more than once for the same preferred date.",
+  "<b>Eligibility</b>: Only <b>currently active employees</b> can apply (excluded if your last work date is fixed).",
+  "<b>Preferred date</b>: <b>Fridays only</b>. Salary-payment week (Mon–Sun), Golden Week, Obon, and year-end holidays are unavailable.",
+  "<b>Amount</b>: <b>¥10,000–¥130,000</b>, in <b>¥10,000 increments</b>.",
+  "<b>Fee</b>: <b>¥440</b> if ¥50,000 or more / <b>¥275</b> if less than ¥50,000. Deducted from the payment.",
+  "<b>No duplicates</b>: Cannot apply more than once for the same date (re-apply after cancel is OK).",
   "<b>Cancellation</b>: Only while <b>pending</b>. Cannot cancel after approval.",
-  "<b>Payment</b>: After supervisor approval, the amount is transferred to your registered account on the preferred date."
+  "<b>Payment</b>: After supervisor approval, the amount is sent to your registered bank account on the preferred date.",
+  "<b>Purpose</b>: This system is meant for sudden expenses. Please use it sparingly and plan ahead."
 ];
 I18N.pt.rulesItems = [
-  "<b>Data desejada</b>: Apenas <b>sextas-feiras</b>. Semana do salário, Golden Week, Obon e fim de ano não estão disponíveis.",
-  "<b>Valor</b>: ¥10.000 a ¥130.000 (múltiplos de ¥10.000).",
-  "<b>Taxa</b>: ¥440 se ¥50.000 ou mais / ¥275 se menos de ¥50.000 (descontado no pagamento).",
-  "<b>Sem duplicatas</b>: Não pode solicitar mais de uma vez para a mesma data.",
+  "<b>Elegibilidade</b>: Apenas <b>funcionários ativos</b> podem solicitar (excluído se a data de desligamento já estiver definida).",
+  "<b>Data desejada</b>: Apenas <b>sextas-feiras</b>. Semana do salário (seg–dom), Golden Week, Obon e fim de ano não estão disponíveis.",
+  "<b>Valor</b>: <b>¥10.000 a ¥130.000</b>, em <b>múltiplos de ¥10.000</b>.",
+  "<b>Taxa</b>: <b>¥440</b> se ¥50.000 ou mais / <b>¥275</b> se menos de ¥50.000. Descontada do pagamento.",
+  "<b>Sem duplicatas</b>: Não pode solicitar mais de uma vez para a mesma data (reenvio após cancelamento permitido).",
   "<b>Cancelamento</b>: Apenas enquanto <b>pendente</b>. Não pode cancelar após aprovação.",
-  "<b>Pagamento</b>: Após aprovação do supervisor, o valor será transferido para a conta cadastrada na data desejada."
+  "<b>Pagamento</b>: Após aprovação do supervisor, o valor será transferido para a conta cadastrada na data desejada.",
+  "<b>Uso</b>: Sistema destinado a despesas inesperadas. Por favor use com moderação e planeje seu orçamento."
 ];
+
+// 公式の詳細動画/資料リンク (staff-portal より)
+const RULES_VIDEO_LINKS = {
+  ja: 'https://drive.google.com/file/d/1swYySIx5S57i2exn9wGO5-MwP4l2cU1P/view',
+  pt: 'https://drive.google.com/file/d/1H76S0F25x0PmLQrAfOj2H7XGsHAnC1bX/view',
+  en: 'https://team-stepup.github.io/staff-portal/#kiyosoku'
+};
+I18N.ja.rulesVideoLink = '📺 公式の説明動画を見る (日本語)';
+I18N.en.rulesVideoLink = '📺 Watch the official explanation';
+I18N.pt.rulesVideoLink = '📺 Assistir vídeo explicativo (Português)';
 // 金額選択 UI
 I18N.ja.amountSelectPlaceholder = "— 選択してください —";
 I18N.ja.amountOther = "その他 (手動入力)";
@@ -825,10 +851,14 @@ function openRequestWithRules() {
     li.innerHTML = html;  // <b> タグを許容するため innerHTML
     list.appendChild(li);
   });
+  // 公式動画/資料リンクを言語に応じて設定
+  const linkEl = document.getElementById('rules-video-link');
+  linkEl.href = RULES_VIDEO_LINKS[currentLang] || RULES_VIDEO_LINKS.ja;
+  linkEl.textContent = t('rulesVideoLink');
   // チェック状態リセット
   document.getElementById('rules-agree-check').checked = false;
   document.getElementById('rules-next-btn').disabled = true;
-  // i18n をモーダル内にも適用 (title/agree/next/cancel ラベル)
+  // i18n をモーダル内にも適用
   applyI18n();
   // 表示
   document.getElementById('modal-rules').classList.remove('hidden');
