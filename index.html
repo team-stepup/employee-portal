@@ -750,6 +750,8 @@ function setLang(lang) {
   if (!['ja', 'en', 'pt'].includes(lang)) return;
   currentLang = lang;
   localStorage.setItem("lang", currentLang);
+  // 本人が明示的に切り替えた → 以降は自動切替しない
+  localStorage.setItem("langExplicit", "1");
   applyI18n();
   // Refresh dynamic UI strings
   if (state.profile && !document.getElementById('screen-home').classList.contains('hidden')) {
@@ -912,6 +914,7 @@ async function tryLogin() {
     state.token = data.token;
     state.profile = data.profile;
     localStorage.setItem("token", data.token);
+    applyPreferredLangIfNotSet();
     showScreen('home');
   } catch (e) {
     if (e.status === 429) {
@@ -934,7 +937,23 @@ function logout() {
   state.datesCache = null;
   state.historyCache = null;
   localStorage.removeItem("token");
+  // 言語の明示選択フラグもリセット (次の人がログインしたら推奨言語で開く)
+  localStorage.removeItem("langExplicit");
   showScreen('login');
+}
+
+// プロフィール取得後、ユーザーが明示的に言語を選んでいない場合のみ
+// 社員データの「本(国)籍」由来の preferredLang に自動切替
+function applyPreferredLangIfNotSet() {
+  if (!state.profile || !state.profile.preferredLang) return;
+  // 明示選択フラグがあれば尊重 (= 本人がここで切り替えた)
+  if (localStorage.getItem("langExplicit") === "1") return;
+  const pref = state.profile.preferredLang;
+  if (!['ja', 'en', 'pt'].includes(pref)) return;
+  if (currentLang === pref) return;
+  currentLang = pref;
+  localStorage.setItem("lang", currentLang);
+  applyI18n();
 }
 
 // ====== ホーム ======
@@ -1351,6 +1370,7 @@ async function bootstrap() {
     showLoading(true);
     try {
       await ensureProfile();
+      applyPreferredLangIfNotSet();
       showScreen('home');
     } catch (e) {
       showScreen('login');

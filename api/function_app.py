@@ -50,6 +50,24 @@ F_SHITEN = "OData__x7d66__x4e0e__xff1a__x652f__x5e"
 F_KOUZA = "OData__x7d66__x4e0e__xff1a__x53e3__x5e"
 F_MEIGI = "OData__x53e3__x5ea7__x6c0f__x540d__x30"
 F_ZAIRYU_NAME = "OData__x7279__x8a18__x4e8b__x9805__xff"  # 特記事項１ = 在留カード氏名 (英字フルネーム)
+F_KOKUSEKI = "OData__x672c__x0028__x56fd__x0029__x7c"  # 本(国)籍
+
+
+def guess_lang_from_kokuseki(kokuseki: Optional[str]) -> str:
+    """本(国)籍 から推奨言語を推定。
+    日本/日本人 → ja
+    ブラジル → pt
+    フィリピン/中国/ペルー/ボリビア/その他 → en (default)
+    """
+    if not kokuseki:
+        return "ja"
+    k = str(kokuseki).strip()
+    if "日本" in k:
+        return "ja"
+    if "ブラジル" in k:
+        return "pt"
+    # その他外国籍は英語をデフォルトに
+    return "en"
 
 # 派遣先情報040623 List フィールド
 F_HAKEN_BANGO = "OData__x756a__x53f7_"  # 番号
@@ -408,6 +426,7 @@ def find_active_employee(shain_no: int, birthday: str, tel_last4: str) -> Option
         select=",".join([
             "Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_BIRTHDAY, F_TEL,
             F_TAISHA_DATE, F_ZAIYOKU, F_GINKO, F_SHITEN, F_KOUZA, F_MEIGI, F_ZAIRYU_NAME,
+            F_KOKUSEKI,
         ]),
         filter_=f"{F_SHAIN_NO} eq {shain_no}",
         orderby="Id desc",
@@ -587,10 +606,13 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
 
 def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
     buka_text = emp.get(F_BUKA) or ""
+    kokuseki = emp.get(F_KOKUSEKI) or ""
     return {
         "shainNo": emp.get(F_SHAIN_NO),
         "name": emp.get(F_SHAIN_NAME),
         "zairyuName": emp.get(F_ZAIRYU_NAME) or "",
+        "kokuseki": kokuseki,
+        "preferredLang": guess_lang_from_kokuseki(kokuseki),
         "hakensaki": strip_buka_prefix(buka_text),
         "bukaRaw": buka_text,
         "bukaNo": parse_buka_no(buka_text),
@@ -626,6 +648,7 @@ def find_active_employee_by_shain(shain_no: int) -> Optional[Dict[str, Any]]:
         select=",".join([
             "Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_BIRTHDAY, F_TEL,
             F_TAISHA_DATE, F_ZAIYOKU, F_GINKO, F_SHITEN, F_KOUZA, F_MEIGI, F_ZAIRYU_NAME,
+            F_KOKUSEKI,
         ]),
         filter_=f"{F_SHAIN_NO} eq {shain_no}",
         orderby="Id desc",
