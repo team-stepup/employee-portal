@@ -1,0 +1,26 @@
+{
+  "name": "従業員ポータル｜有限会社ステップ・アップ",
+  "short_name": "ポータル",
+  "description": "前払い申請・在留カード・有給管理など、従業員向け各種申請の窓口",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#e3f2fd",
+  "theme_color": "#1f3864",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

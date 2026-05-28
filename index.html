@@ -4,9 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#1f3864">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://func-employee-portal-7833.azurewebsites.net; frame-ancestors 'none'; base-uri 'self'; form-action 'self';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://func-employee-portal-7833.azurewebsites.net; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; manifest-src 'self'; worker-src 'self';">
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta name="referrer" content="strict-origin-when-cross-origin">
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ポータル">
+<meta name="mobile-web-app-capable" content="yes">
 <title>従業員ポータル｜有限会社ステップ・アップ</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -170,6 +178,23 @@
     box-shadow: 0 2px 6px rgba(31,56,100,0.3);
   }
   .lang-btn:active:not(.active) { background: #eef2f7; }
+  .check-update-btn {
+    background: #fff; color: #1f3864;
+    border: 1.5px solid #cfd8dc; border-radius: 20px;
+    padding: 6px 18px; font-size: 0.85em; font-weight: 600;
+    cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+  }
+  .check-update-btn:active { background: #eef2f7; }
+  .check-update-btn.has-update {
+    background: linear-gradient(135deg, #f9a825, #f57c00);
+    color: #fff; border-color: #ef6c00;
+    animation: pulse-update 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse-update {
+    0%, 100% { box-shadow: 0 2px 4px rgba(245,124,0,0.3); }
+    50% { box-shadow: 0 4px 12px rgba(245,124,0,0.6); }
+  }
+  .version-tag { font-size: 0.7em; color: #999; margin-top: 6px; }
   .spinner {
     display: inline-block; width: 20px; height: 20px;
     border: 3px solid #e0e6ed; border-radius: 50%;
@@ -264,6 +289,11 @@
     <button type="button" class="lang-btn" data-lang="ja" onclick="setLang('ja')">🇯🇵 日本語</button>
     <button type="button" class="lang-btn" data-lang="en" onclick="setLang('en')">🇬🇧 English</button>
     <button type="button" class="lang-btn" data-lang="pt" onclick="setLang('pt')">🇧🇷 Português</button>
+  </div>
+
+  <div style="text-align:center; margin-top:14px;">
+    <button type="button" id="check-update-btn" class="check-update-btn" onclick="checkUpdate()" data-i18n="checkUpdate">🔄 更新を確認</button>
+    <div id="version-tag" class="version-tag"></div>
   </div>
 </div>
 
@@ -481,6 +511,18 @@ I18N.ja.cancelConfirm = "この申請を取り消しますか？";
 I18N.ja.cancelSuccess = "申請を取り消しました。";
 I18N.ja.cancelError = "取り消しに失敗しました。";
 I18N.ja.cancelButton = "申請を取り消す";
+I18N.ja.checkUpdate = "🔄 更新を確認";
+I18N.ja.updateAvailable = "🎉 新しいバージョンがあります";
+I18N.ja.updateNone = "最新です ✓";
+I18N.ja.updating = "更新中...";
+I18N.en.checkUpdate = "🔄 Check for update";
+I18N.en.updateAvailable = "🎉 New version available";
+I18N.en.updateNone = "Up to date ✓";
+I18N.en.updating = "Updating...";
+I18N.pt.checkUpdate = "🔄 Buscar atualização";
+I18N.pt.updateAvailable = "🎉 Nova versão disponível";
+I18N.pt.updateNone = "Atualizado ✓";
+I18N.pt.updating = "Atualizando...";
 
 let currentLang = localStorage.getItem("lang") || "ja";
 function t(key) { return (I18N[currentLang] && I18N[currentLang][key]) || I18N.ja[key] || key; }
@@ -887,11 +929,85 @@ async function updateHistoryBadge() {
   } catch (e) { /* silent */ }
 }
 
+// ====== Service Worker (PWA) ======
+const APP_VERSION = 'v9';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+let _swRegistration = null;
+let _swUpdateAvailable = false;
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    _swRegistration = await navigator.serviceWorker.register('service-worker.js');
+    // 新しい SW が waiting 状態になったら通知
+    if (_swRegistration.waiting) markUpdateAvailable();
+    _swRegistration.addEventListener('updatefound', () => {
+      const nw = _swRegistration.installing;
+      if (!nw) return;
+      nw.addEventListener('statechange', () => {
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+          markUpdateAvailable();
+        }
+      });
+    });
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      // 新 SW がアクティブ化されたらリロード
+      if (window._reloadAfterUpdate) window.location.reload();
+    });
+  } catch (e) { console.warn('SW register error:', e); }
+}
+
+function markUpdateAvailable() {
+  _swUpdateAvailable = true;
+  const btn = document.getElementById('check-update-btn');
+  if (btn) {
+    btn.classList.add('has-update');
+    btn.textContent = t('updateAvailable');
+  }
+}
+
+async function checkUpdate() {
+  const btn = document.getElementById('check-update-btn');
+  const verEl = document.getElementById('version-tag');
+  if (btn) btn.textContent = t('updating');
+  // SW の登録があれば更新チェック
+  if (_swRegistration) {
+    try { await _swRegistration.update(); } catch (e) {}
+  }
+  // waiting 状態の SW があれば即時切替
+  if (_swRegistration && _swRegistration.waiting) {
+    window._reloadAfterUpdate = true;
+    _swRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
+    return;
+  }
+  // 強制リロード (キャッシュバイパス)
+  try {
+    if ('caches' in window) {
+      const names = await caches.keys();
+      await Promise.all(names.map(n => caches.delete(n)));
+    }
+  } catch (e) {}
+  // 数秒待って SW 検知に時間を与える
+  setTimeout(() => {
+    if (_swUpdateAvailable) return;  // 更新があった場合は markUpdateAvailable() でUI更新済み
+    if (btn) {
+      btn.textContent = t('updateNone');
+      setTimeout(() => { btn.textContent = t('checkUpdate'); btn.classList.remove('has-update'); }, 2000);
+    }
+    // 強制リロードしておく (キャッシュが古い場合に最新を取りに行く)
+    window.location.reload();
+  }, 1500);
+}
+
 // ====== Init ======
 async function bootstrap() {
   applyI18n();
   document.getElementById('login-btn').addEventListener('click', tryLogin);
   document.getElementById('apply-submit-btn').addEventListener('click', submitApply);
+  // バージョン表示 (任意)
+  const verEl = document.getElementById('version-tag');
+  if (verEl) verEl.textContent = 'Build: ' + APP_VERSION;
+  // Service Worker 登録 (PWA: スマホホーム画面に追加可能化 + オフラインキャッシュ)
+  registerServiceWorker();
   if (state.token) {
     showLoading(true);
     try {
