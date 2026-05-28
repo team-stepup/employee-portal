@@ -213,6 +213,42 @@
     background: #ffebee; color: #c62828; padding: 8px 12px;
     border-radius: 6px; font-size: 0.85em; margin-top: 6px;
   }
+  /* 在留カード撮影 UI */
+  .btn-camera {
+    display: block; width: 100%;
+    padding: 18px 14px;
+    background: linear-gradient(135deg, #f57c00, #ef6c00);
+    color: #fff; border: none; border-radius: 12px;
+    font-size: 1.1em; font-weight: 700; cursor: pointer;
+    box-shadow: 0 4px 10px rgba(245,124,0,0.3);
+    transition: transform 0.05s, box-shadow 0.1s;
+  }
+  .btn-camera:active { transform: translateY(1px); box-shadow: 0 2px 4px rgba(245,124,0,0.3); }
+  .btn-camera .cam-icon { font-size: 1.3em; margin-right: 6px; }
+  .zairyu-preview {
+    margin-top: 12px;
+    border-radius: 12px;
+    background: #f5f7fa;
+    padding: 10px;
+    box-shadow: inset 0 0 0 1px #e0e6ed;
+  }
+  .zairyu-preview img {
+    width: 100%; height: auto; display: block;
+    border-radius: 6px;
+    max-height: 280px; object-fit: contain;
+    background: #000;
+  }
+  .zairyu-preview .retake-btn {
+    display: block; width: 100%; margin-top: 8px;
+    background: rgba(0,0,0,0.06); border: none;
+    padding: 10px; border-radius: 8px; cursor: pointer;
+    font-size: 0.88em; color: #555; font-weight: 600;
+  }
+  .zairyu-preview .retake-btn:active { background: rgba(0,0,0,0.12); }
+  .zairyu-preview .photo-meta {
+    text-align: center; margin-top: 6px;
+    font-size: 0.75em; color: #888;
+  }
   .spinner {
     display: inline-block; width: 20px; height: 20px;
     border: 3px solid #e0e6ed; border-radius: 50%;
@@ -382,10 +418,10 @@
       <span id="history-new-badge" class="new-badge hidden">0</span>
       <span id="history-new-status" class="new-status hidden"></span>
     </div>
-    <div class="menu-card coming-soon" onclick="toast(t('comingSoon15'))">
+    <div class="menu-card" onclick="showScreen('zairyu')">
       <span class="card-num">③</span>
       <span class="icon">🪪</span>
-      <span class="label" data-i18n="menuZairyu">在留カード更新</span>
+      <span class="label" data-i18n="menuZairyu">在留カード提出</span>
     </div>
     <div class="menu-card coming-soon" onclick="toast(t('comingSoonPhase2'))">
       <span class="card-num">④</span>
@@ -444,6 +480,39 @@
   </div>
 
   <button id="apply-submit-btn" class="btn btn-primary" data-i18n="submit">この内容で申請する</button>
+  <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="cancel">キャンセル</button>
+</div>
+
+<!-- ====== Screen: 在留カード提出 ====== -->
+<div id="screen-zairyu" class="container hidden">
+  <div class="header">
+    <h1>🪪 <span data-i18n="screenZairyuTitle">在留カード提出</span></h1>
+    <span class="logout-btn" onclick="showScreen('home')">✕</span>
+  </div>
+
+  <div class="info-banner" data-i18n="zairyuInfo">
+    📌 在留カードの<b>表面</b>と<b>裏面</b>を順に撮影してください。
+  </div>
+
+  <div class="card">
+    <h2>① <span data-i18n="zairyuFront">在留カード 表面</span></h2>
+    <input type="file" accept="image/*" capture="environment" id="zairyu-front-input" onchange="onZairyuFileSelect('front', event)" style="display:none;">
+    <button type="button" class="btn-camera" onclick="document.getElementById('zairyu-front-input').click()">
+      <span class="cam-icon">📷</span> <span data-i18n="zairyuTakePhoto">撮影する</span>
+    </button>
+    <div id="zairyu-front-preview" class="zairyu-preview hidden"></div>
+  </div>
+
+  <div class="card">
+    <h2>② <span data-i18n="zairyuBack">在留カード 裏面</span></h2>
+    <input type="file" accept="image/*" capture="environment" id="zairyu-back-input" onchange="onZairyuFileSelect('back', event)" style="display:none;">
+    <button type="button" class="btn-camera" onclick="document.getElementById('zairyu-back-input').click()">
+      <span class="cam-icon">📷</span> <span data-i18n="zairyuTakePhoto">撮影する</span>
+    </button>
+    <div id="zairyu-back-preview" class="zairyu-preview hidden"></div>
+  </div>
+
+  <button class="btn btn-primary" id="zairyu-next-btn" disabled onclick="zairyuProceed()" data-i18n="zairyuNext">次へ (確認画面)</button>
   <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="cancel">キャンセル</button>
 </div>
 
@@ -670,6 +739,34 @@ I18N.pt.checkUpdate = "🔄 Buscar atualização";
 I18N.pt.updateAvailable = "🎉 Nova versão disponível";
 I18N.pt.updateNone = "Atualizado ✓";
 I18N.pt.updating = "Atualizando...";
+// 在留カード提出
+I18N.ja.menuZairyu = "在留カード提出";
+I18N.en.menuZairyu = "Submit Zairyu Card";
+I18N.pt.menuZairyu = "Enviar Cartão Zairyu";
+I18N.ja.screenZairyuTitle = "在留カード提出（更新など）";
+I18N.en.screenZairyuTitle = "Submit Zairyu Card (Renewal etc.)";
+I18N.pt.screenZairyuTitle = "Enviar Cartão Zairyu (Renovação)";
+I18N.ja.zairyuInfo = "📌 在留カードの表面と裏面を順に撮影してください。撮影後、内容を確認して提出します。";
+I18N.en.zairyuInfo = "📌 Please take photos of the FRONT and BACK of your Zairyu Card. You'll review the data before submitting.";
+I18N.pt.zairyuInfo = "📌 Tire foto da FRENTE e do VERSO do seu cartão Zairyu. Você poderá revisar antes de enviar.";
+I18N.ja.zairyuFront = "在留カード 表面";
+I18N.en.zairyuFront = "Zairyu Card – Front";
+I18N.pt.zairyuFront = "Cartão Zairyu – Frente";
+I18N.ja.zairyuBack = "在留カード 裏面";
+I18N.en.zairyuBack = "Zairyu Card – Back";
+I18N.pt.zairyuBack = "Cartão Zairyu – Verso";
+I18N.ja.zairyuTakePhoto = "撮影する";
+I18N.en.zairyuTakePhoto = "Take photo";
+I18N.pt.zairyuTakePhoto = "Tirar foto";
+I18N.ja.zairyuRetake = "📸 撮り直す";
+I18N.en.zairyuRetake = "📸 Retake";
+I18N.pt.zairyuRetake = "📸 Refazer";
+I18N.ja.zairyuNext = "次へ（確認画面）";
+I18N.en.zairyuNext = "Next (Review)";
+I18N.pt.zairyuNext = "Próximo (Revisar)";
+I18N.ja.zairyuComingSoon = "OCR（自動読み取り）と確認画面は近日対応予定です。今日は撮影プレビューまで動作します。";
+I18N.en.zairyuComingSoon = "OCR (auto-read) and review screen will be added soon. For today, photo preview works.";
+I18N.pt.zairyuComingSoon = "OCR (leitura automática) e tela de revisão serão adicionados em breve. Hoje, a pré-visualização funciona.";
 // アプリタイトル (ログイン画面の2段表示用)
 I18N.ja.appTitleStacked = "従業員\nポータル";
 I18N.en.appTitleStacked = "Employee\nPortal";
@@ -850,6 +947,83 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
+// ====== 在留カード提出 (撮影UI) ======
+const zairyuState = { frontDataUrl: null, backDataUrl: null, frontName: null, backName: null };
+
+function initZairyuScreen() {
+  zairyuState.frontDataUrl = null;
+  zairyuState.backDataUrl = null;
+  zairyuState.frontName = null;
+  zairyuState.backName = null;
+  document.getElementById('zairyu-front-preview').classList.add('hidden');
+  document.getElementById('zairyu-back-preview').classList.add('hidden');
+  document.getElementById('zairyu-front-preview').innerHTML = '';
+  document.getElementById('zairyu-back-preview').innerHTML = '';
+  document.getElementById('zairyu-front-input').value = '';
+  document.getElementById('zairyu-back-input').value = '';
+  document.getElementById('zairyu-next-btn').disabled = true;
+}
+
+function onZairyuFileSelect(side, event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  // 画像のみ
+  if (!file.type.startsWith('image/')) {
+    showAlert(t('networkError'), 'error');
+    return;
+  }
+  // サイズ警告 (10MB 超は圧縮警告だがそのまま続行)
+  const sizeKB = Math.round(file.size / 1024);
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const dataUrl = ev.target.result;
+    if (side === 'front') {
+      zairyuState.frontDataUrl = dataUrl;
+      zairyuState.frontName = file.name;
+      renderZairyuPreview('front', dataUrl, sizeKB);
+    } else {
+      zairyuState.backDataUrl = dataUrl;
+      zairyuState.backName = file.name;
+      renderZairyuPreview('back', dataUrl, sizeKB);
+    }
+    updateZairyuNextBtn();
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderZairyuPreview(side, dataUrl, sizeKB) {
+  const previewId = 'zairyu-' + side + '-preview';
+  const inputId = 'zairyu-' + side + '-input';
+  const el = document.getElementById(previewId);
+  el.innerHTML = '';
+  const img = document.createElement('img');
+  img.src = dataUrl;
+  img.alt = side === 'front' ? '表面' : '裏面';
+  el.appendChild(img);
+  const meta = document.createElement('div');
+  meta.className = 'photo-meta';
+  meta.textContent = sizeKB.toLocaleString() + ' KB';
+  el.appendChild(meta);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'retake-btn';
+  btn.textContent = t('zairyuRetake');
+  btn.onclick = function () { document.getElementById(inputId).click(); };
+  el.appendChild(btn);
+  el.classList.remove('hidden');
+}
+
+function updateZairyuNextBtn() {
+  const ok = !!(zairyuState.frontDataUrl && zairyuState.backDataUrl);
+  document.getElementById('zairyu-next-btn').disabled = !ok;
+}
+
+function zairyuProceed() {
+  if (!(zairyuState.frontDataUrl && zairyuState.backDataUrl)) return;
+  // Phase: 確認画面 + OCR + SP保存 は次セッションで実装
+  showAlert(t('zairyuComingSoon'), 'info');
+}
+
 // ====== ルール説明モーダル (前払い申請の前に表示) ======
 function openRequestWithRules() {
   // ルール本文を現在の言語で描画
@@ -887,7 +1061,7 @@ function acceptRules() {
 
 // ====== 画面遷移 ======
 function showScreen(name) {
-  ['login','home','request','history'].forEach(s => {
+  ['login','home','request','history','zairyu'].forEach(s => {
     document.getElementById('screen-' + s).classList.add('hidden');
   });
   document.getElementById('screen-' + name).classList.remove('hidden');
@@ -895,6 +1069,7 @@ function showScreen(name) {
   if (name === 'request') initRequestScreen();
   if (name === 'history') initHistoryScreen();
   if (name === 'home') renderHome();
+  if (name === 'zairyu') initZairyuScreen();
 }
 
 // ====== ログイン ======
