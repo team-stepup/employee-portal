@@ -44,6 +44,13 @@
     height: auto; display: block; margin: 0 auto;
     filter: drop-shadow(0 2px 6px rgba(31,56,100,0.15));
   }
+  .brand-title {
+    font-size: 1.3em; font-weight: 700; color: #1f3864;
+    margin-top: 12px; line-height: 1.25;
+    white-space: pre-line; letter-spacing: 1px;
+  }
+  /* 言語ボタンの文字小さく */
+  .lang-btn { font-size: 0.75em !important; padding: 5px 10px !important; }
   .header .lang-switch, .header .logout-btn {
     background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
     color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 0.85em; cursor: pointer;
@@ -235,8 +242,9 @@
 <div id="screen-login" class="container hidden">
   <div style="text-align: center; margin: 30px 0 24px;">
     <img src="logo.png" alt="ステップ・アップ" class="brand-logo">
-    <div style="font-size: 1.45em; font-weight: 700; color: #1f3864; margin-top: 14px;" data-i18n="appTitle">従業員ポータル</div>
-    <div style="font-size: 0.9em; color: #666; margin-top: 4px;">有限会社ステップ・アップ</div>
+    <div class="brand-title" data-i18n="appTitleStacked">従業員
+ポータル</div>
+    <div style="font-size: 0.85em; color: #666; margin-top: 4px;">有限会社ステップ・アップ</div>
   </div>
 
   <div class="card">
@@ -546,6 +554,10 @@ I18N.pt.checkUpdate = "🔄 Buscar atualização";
 I18N.pt.updateAvailable = "🎉 Nova versão disponível";
 I18N.pt.updateNone = "Atualizado ✓";
 I18N.pt.updating = "Atualizando...";
+// アプリタイトル (ログイン画面の2段表示用)
+I18N.ja.appTitleStacked = "従業員\nポータル";
+I18N.en.appTitleStacked = "Employee\nPortal";
+I18N.pt.appTitleStacked = "Portal\ndo Funcionário";
 // 金額選択 UI
 I18N.ja.amountSelectPlaceholder = "— 選択してください —";
 I18N.ja.amountOther = "その他 (手動入力)";
