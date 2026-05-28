@@ -483,7 +483,6 @@
     <div class="modal-icon">📜</div>
     <div class="modal-title" data-i18n="rulesTitle">前払い申請のルール</div>
     <ol class="rules-list" id="rules-list"></ol>
-    <a id="rules-video-link" class="rules-video-link" target="_blank" rel="noopener" href="#"></a>
     <label class="rules-agree">
       <input type="checkbox" id="rules-agree-check" onchange="onRulesAgreeChange()">
       <span data-i18n="rulesAgree">上記の内容を理解しました</span>
@@ -870,10 +869,6 @@ function openRequestWithRules() {
     li.innerHTML = html;  // <b> タグを許容するため innerHTML
     list.appendChild(li);
   });
-  // 公式動画/資料リンクを言語に応じて設定
-  const linkEl = document.getElementById('rules-video-link');
-  linkEl.href = RULES_VIDEO_LINKS[currentLang] || RULES_VIDEO_LINKS.ja;
-  linkEl.textContent = t('rulesVideoLink');
   // チェック状態リセット
   document.getElementById('rules-agree-check').checked = false;
   document.getElementById('rules-next-btn').disabled = true;
