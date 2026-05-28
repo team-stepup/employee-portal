@@ -161,9 +161,21 @@ def clear_attempts(shain_no: int):
     except Exception as e:
         logging.warning(f"clear_attempts failed: {e}")
 
-# 金額の選択肢 (Choice 18種)
-AMOUNT_CHOICES = [5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000,
-                  50000, 60000, 70000, 80000, 90000, 100000, 110000, 130000, 150000]
+# 金額: ドロップダウン候補 (10,000〜100,000) + 「その他」手動入力 (〜130,000、10,000円刻み)
+AMOUNT_MIN = 10000
+AMOUNT_MAX = 130000
+AMOUNT_STEP = 10000
+AMOUNT_DROPDOWN = [10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000]
+
+
+def is_valid_amount(amount) -> bool:
+    if not isinstance(amount, int):
+        return False
+    if amount < AMOUNT_MIN or amount > AMOUNT_MAX:
+        return False
+    if amount % AMOUNT_STEP != 0:
+        return False
+    return True
 
 # 部課番号 → 担当者 マッピング (memory ベース)
 TANTOU_YOSHIURA = {"114", "083", "086", "105", "043"}
@@ -684,8 +696,8 @@ def maebarai_apply(req: func.HttpRequest) -> func.HttpResponse:
     amount = body.get("amount")
     date = body.get("date")
     reason = (body.get("reason") or "")[:500]
-    if amount not in AMOUNT_CHOICES:
-        return _json_response({"error": "invalid_amount", "allowed": AMOUNT_CHOICES}, 400)
+    if not is_valid_amount(amount):
+        return _json_response({"error": "invalid_amount", "min": AMOUNT_MIN, "max": AMOUNT_MAX, "step": AMOUNT_STEP}, 400)
     try:
         d = _dt.date.fromisoformat(date)
     except Exception:

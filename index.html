@@ -195,6 +195,17 @@
     50% { box-shadow: 0 4px 12px rgba(245,124,0,0.6); }
   }
   .version-tag { font-size: 0.7em; color: #999; margin-top: 6px; }
+  .amount-select {
+    width: 100%; padding: 14px 14px; border: 2px solid #e0e6ed;
+    border-radius: 10px; font-size: 1.05em; font-weight: 600;
+    background: #fafbfc; color: #1f3864; cursor: pointer;
+  }
+  .amount-select:focus { outline: none; border-color: #2e5a99; }
+  .amount-custom-wrap { margin-top: 12px; }
+  .amount-custom-error {
+    background: #ffebee; color: #c62828; padding: 8px 12px;
+    border-radius: 6px; font-size: 0.85em; margin-top: 6px;
+  }
   .spinner {
     display: inline-block; width: 20px; height: 20px;
     border: 3px solid #e0e6ed; border-radius: 50%;
@@ -311,7 +322,16 @@
 
   <div class="card">
     <h2>① <span data-i18n="step1">金額を選択</span></h2>
-    <div class="amount-grid" id="amount-grid"></div>
+    <select id="amount-select" class="amount-select" onchange="onAmountSelectChange()">
+      <option value="" data-i18n="amountSelectPlaceholder">— 選択してください —</option>
+    </select>
+    <div id="amount-custom-wrap" class="amount-custom-wrap hidden">
+      <label class="label" data-i18n="amountCustomLabel">金額を入力 (5,000〜130,000円、1,000円単位)</label>
+      <input id="amount-custom" type="number" min="5000" max="130000" step="1000"
+             placeholder="5000〜130000" inputmode="numeric"
+             oninput="onAmountCustomChange()">
+      <div id="amount-custom-error" class="amount-custom-error hidden"></div>
+    </div>
   </div>
 
   <div class="card">
@@ -353,8 +373,11 @@
 <script>
 // ====== 設定 ======
 const API_BASE = "https://func-employee-portal-7833.azurewebsites.net/api";
-const AMOUNT_CHOICES = [5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000,
-                        50000, 60000, 70000, 80000, 90000, 100000, 110000, 130000, 150000];
+// ドロップダウン: 10,000〜100,000 (10,000円刻み) + 「その他」で手動入力 (10,000〜130,000、10,000円刻み)
+const AMOUNT_DROPDOWN = [10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000];
+const AMOUNT_MIN = 10000;
+const AMOUNT_MAX = 130000;
+const AMOUNT_STEP = 10000;
 
 // ====== i18n ======
 const I18N = {
@@ -523,6 +546,22 @@ I18N.pt.checkUpdate = "🔄 Buscar atualização";
 I18N.pt.updateAvailable = "🎉 Nova versão disponível";
 I18N.pt.updateNone = "Atualizado ✓";
 I18N.pt.updating = "Atualizando...";
+// 金額選択 UI
+I18N.ja.amountSelectPlaceholder = "— 選択してください —";
+I18N.ja.amountOther = "その他 (手動入力)";
+I18N.ja.amountCustomLabel = "金額を入力 (10,000〜130,000円、10,000円単位)";
+I18N.ja.amountOutOfRange = "10,000〜130,000円の範囲で入力してください";
+I18N.ja.amountNotMultiple = "10,000円単位で入力してください";
+I18N.en.amountSelectPlaceholder = "— Select amount —";
+I18N.en.amountOther = "Other (manual entry)";
+I18N.en.amountCustomLabel = "Enter amount (¥10,000〜¥130,000, ¥10,000 increments)";
+I18N.en.amountOutOfRange = "Please enter ¥10,000〜¥130,000";
+I18N.en.amountNotMultiple = "Please enter in ¥10,000 increments";
+I18N.pt.amountSelectPlaceholder = "— Selecione o valor —";
+I18N.pt.amountOther = "Outro (entrada manual)";
+I18N.pt.amountCustomLabel = "Digite o valor (¥10.000〜¥130.000, múltiplo de ¥10.000)";
+I18N.pt.amountOutOfRange = "Digite entre ¥10.000 e ¥130.000";
+I18N.pt.amountNotMultiple = "Digite em múltiplos de ¥10.000";
 
 let currentLang = localStorage.getItem("lang") || "ja";
 function t(key) { return (I18N[currentLang] && I18N[currentLang][key]) || I18N.ja[key] || key; }
@@ -689,19 +728,82 @@ async function ensureProfile() {
 
 // ====== 前払い申請 ======
 function renderAmounts() {
-  const grid = document.getElementById('amount-grid');
-  grid.innerHTML = '';
-  AMOUNT_CHOICES.forEach(a => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'amount-btn' + (state.selectedAmount === a ? ' selected' : '');
-    btn.textContent = a.toLocaleString() + '円';
-    btn.onclick = () => {
-      state.selectedAmount = a;
-      renderAmounts();
-    };
-    grid.appendChild(btn);
+  const sel = document.getElementById('amount-select');
+  if (!sel) return;
+  // 現在値を保持
+  const cur = sel.value;
+  // 全 option クリア (placeholder と「その他」だけ後で追加)
+  sel.innerHTML = '';
+  // Placeholder
+  const ph = document.createElement('option');
+  ph.value = '';
+  ph.textContent = t('amountSelectPlaceholder');
+  sel.appendChild(ph);
+  // ドロップダウン候補 (10K〜100K)
+  AMOUNT_DROPDOWN.forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = String(a);
+    opt.textContent = a.toLocaleString() + '円';
+    sel.appendChild(opt);
   });
+  // 「その他」
+  const other = document.createElement('option');
+  other.value = 'other';
+  other.textContent = '⋯ ' + t('amountOther');
+  sel.appendChild(other);
+  // 値復元
+  if (cur) {
+    sel.value = cur;
+  } else if (state.selectedAmount != null) {
+    if (AMOUNT_DROPDOWN.includes(state.selectedAmount)) {
+      sel.value = String(state.selectedAmount);
+    } else {
+      sel.value = 'other';
+      document.getElementById('amount-custom-wrap').classList.remove('hidden');
+      document.getElementById('amount-custom').value = state.selectedAmount;
+    }
+  }
+}
+
+function onAmountSelectChange() {
+  const sel = document.getElementById('amount-select').value;
+  const wrap = document.getElementById('amount-custom-wrap');
+  const errEl = document.getElementById('amount-custom-error');
+  errEl.classList.add('hidden');
+  if (sel === 'other') {
+    wrap.classList.remove('hidden');
+    state.selectedAmount = null;
+    setTimeout(() => { try { document.getElementById('amount-custom').focus(); } catch (e) {} }, 50);
+  } else if (sel === '') {
+    wrap.classList.add('hidden');
+    state.selectedAmount = null;
+  } else {
+    wrap.classList.add('hidden');
+    state.selectedAmount = parseInt(sel, 10);
+  }
+}
+
+function onAmountCustomChange() {
+  const inp = document.getElementById('amount-custom');
+  const errEl = document.getElementById('amount-custom-error');
+  const raw = inp.value.trim();
+  if (!raw) { state.selectedAmount = null; errEl.classList.add('hidden'); return; }
+  const v = parseInt(raw, 10);
+  if (isNaN(v)) { state.selectedAmount = null; errEl.classList.add('hidden'); return; }
+  if (v < AMOUNT_MIN || v > AMOUNT_MAX) {
+    state.selectedAmount = null;
+    errEl.textContent = t('amountOutOfRange');
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if (v % AMOUNT_STEP !== 0) {
+    state.selectedAmount = null;
+    errEl.textContent = t('amountNotMultiple');
+    errEl.classList.remove('hidden');
+    return;
+  }
+  errEl.classList.add('hidden');
+  state.selectedAmount = v;
 }
 
 function renderDates(data) {
@@ -739,6 +841,12 @@ async function initRequestScreen() {
   state.selectedDate = null;
   document.getElementById('apply-error').classList.add('hidden');
   document.getElementById('apply-reason').value = '';
+  // 金額 UI リセット
+  try {
+    document.getElementById('amount-custom-wrap').classList.add('hidden');
+    document.getElementById('amount-custom').value = '';
+    document.getElementById('amount-custom-error').classList.add('hidden');
+  } catch (e) {}
   renderAmounts();
   document.getElementById('dates-loading').classList.remove('hidden');
   document.getElementById('dates-list').innerHTML = '';
