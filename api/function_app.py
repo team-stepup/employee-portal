@@ -55,18 +55,22 @@ F_KOKUSEKI = "OData__x672c__x0028__x56fd__x0029__x7c"  # 本(国)籍
 
 def guess_lang_from_kokuseki(kokuseki: Optional[str]) -> str:
     """本(国)籍 から推奨言語を推定。
-    日本/日本人 → ja
-    ブラジル → pt
-    フィリピン/中国/ペルー/ボリビア/その他 → en (default)
+    日本/日本人/中国 → ja
+    ブラジル/ペルー/ボリビア/アルゼンチン/パラグアイ → pt
+    その他 (フィリピン等) → en
     """
     if not kokuseki:
         return "ja"
     k = str(kokuseki).strip()
-    if "日本" in k:
+    # 日本語ネイティブ + 中国 (中国人は日本語と英語が選択肢、デフォは日本語)
+    if "日本" in k or "中国" in k:
         return "ja"
-    if "ブラジル" in k:
-        return "pt"
-    # その他外国籍は英語をデフォルトに
+    # ポルトガル/スペイン語圏 (南米)
+    pt_countries = ("ブラジル", "ペルー", "ボリビア", "アルゼンチン", "パラグアイ", "ウルグアイ", "コロンビア", "ベネズエラ", "チリ", "エクアドル")
+    for c in pt_countries:
+        if c in k:
+            return "pt"
+    # その他外国籍 (フィリピン・東南アジア等) は英語
     return "en"
 
 # 派遣先情報040623 List フィールド
