@@ -482,6 +482,26 @@ def is_in_payday_week(friday: _dt.date, payday: _dt.date) -> bool:
     return mon <= payday <= sun
 
 
+def get_paydays_around(haraibi: str, friday: _dt.date) -> List[_dt.date]:
+    """指定金曜日の前後 2 ヶ月分の給料日リスト。
+    申請可能な金曜日 f の同週に「どこかの月分の」給料日が落ちるかを判定するため、
+    前後数ヶ月の給料日を列挙する。"""
+    out = []
+    for offset in (-2, -1, 0, 1, 2):
+        y, m = friday.year, friday.month + offset
+        while m > 12:
+            y += 1
+            m -= 12
+        while m < 1:
+            y -= 1
+            m += 12
+        ref = _dt.date(y, m, 1)
+        pd = parse_payday_rule(haraibi, ref)
+        if pd:
+            out.append(pd)
+    return out
+
+
 # ====== Functions ======
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
@@ -601,14 +621,11 @@ def maebarai_dates(req: func.HttpRequest) -> func.HttpResponse:
         fridays = upcoming_fridays(weeks=6)
         out = []
         for f in fridays:
-            # 給料日: f が含まれる月の前月分の給料 = f の翌月 or 同月の支払日
-            # 簡略: 「翌月X日」型なら、申請週 f に対する給料日は f の月の支払日（基準月 = 月初）
-            ref_month = _dt.date(f.year, f.month, 1)
-            payday = parse_payday_rule(haraibi, ref_month)
+            paydays = get_paydays_around(haraibi, f)
             reasons = []
             if is_in_kaisha_kyujitsu_week(f, kyujitsu):
                 reasons.append("会社休日")
-            if payday and is_in_payday_week(f, payday):
+            if any(is_in_payday_week(f, pd) for pd in paydays):
                 reasons.append("給料日週")
             out.append({
                 "date": f.isoformat(),
@@ -658,9 +675,8 @@ def maebarai_apply(req: func.HttpRequest) -> func.HttpResponse:
         hakensaki = fetch_hakensaki(buka_text)
         haraibi = (hakensaki or {}).get(F_HAKEN_HARAIBI) or "翌月末日"
         kyujitsu = list_kaisha_kyujitsu_dates()
-        ref_month = _dt.date(d.year, d.month, 1)
-        payday = parse_payday_rule(haraibi, ref_month)
-        if is_in_kaisha_kyujitsu_week(d, kyujitsu) or (payday and is_in_payday_week(d, payday)):
+        paydays = get_paydays_around(haraibi, d)
+        if is_in_kaisha_kyujitsu_week(d, kyujitsu) or any(is_in_payday_week(d, pd) for pd in paydays):
             return _json_response({"error": "date_not_available"}, 400)
         # INSERT
         buka_no = parse_buka_no(buka_text)
@@ -669,7 +685,9 @@ def maebarai_apply(req: func.HttpRequest) -> func.HttpResponse:
             "Title": f"{shain_no} {d.isoformat()}",
             P_SHAIN_NO: str(shain_no),
             P_KINGAKU: str(amount),
-            P_KIBOUBI: d.isoformat() + "T00:00:00Z",
+            # AddValidateUpdateItemUsingPath は SP の表示ロケール (ja-JP) でパース。
+            # 日本テナントは yyyy/MM/dd 形式で渡す必要がある。
+            P_KIBOUBI: d.strftime("%Y/%m/%d"),
             P_RIYUU: reason,
             P_HAKENSAKI: strip_buka_prefix(buka_text),
             P_TANTOU: tantou,
