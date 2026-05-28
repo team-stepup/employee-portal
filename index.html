@@ -249,6 +249,78 @@
     text-align: center; margin-top: 6px;
     font-size: 0.75em; color: #888;
   }
+  /* カメラ全画面ビュー */
+  .camera-fullscreen {
+    position: fixed; inset: 0;
+    background: #000; z-index: 3000;
+    overflow: hidden;
+  }
+  .camera-fullscreen video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    background: #000;
+  }
+  .card-guide-overlay {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .card-guide-frame {
+    position: relative;
+    width: 86%; max-width: 560px;
+    aspect-ratio: 1.586 / 1;  /* 在留カードの比率 (CR80) */
+    border: 2.5px solid rgba(255,255,255,0.9);
+    border-radius: 14px;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.55);  /* 枠外を半透明で暗く */
+  }
+  .card-guide-frame .corner {
+    position: absolute; width: 24px; height: 24px;
+    border: 4px solid #ffb74d;
+  }
+  .card-guide-frame .corner.tl { top: -2.5px; left: -2.5px; border-right: none; border-bottom: none; border-top-left-radius: 14px; }
+  .card-guide-frame .corner.tr { top: -2.5px; right: -2.5px; border-left: none; border-bottom: none; border-top-right-radius: 14px; }
+  .card-guide-frame .corner.bl { bottom: -2.5px; left: -2.5px; border-right: none; border-top: none; border-bottom-left-radius: 14px; }
+  .card-guide-frame .corner.br { bottom: -2.5px; right: -2.5px; border-left: none; border-top: none; border-bottom-right-radius: 14px; }
+  .card-guide-hint {
+    position: absolute; top: 22%; left: 50%; transform: translateX(-50%);
+    color: #fff; font-size: 0.95em; font-weight: 700;
+    text-align: center; padding: 6px 14px;
+    background: rgba(0,0,0,0.45); border-radius: 20px;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    max-width: 88%;
+    pointer-events: none;
+  }
+  .camera-controls {
+    position: absolute; bottom: 30px; left: 0; right: 0;
+    display: flex; justify-content: space-around; align-items: center;
+    padding: 0 24px;
+    z-index: 10;
+  }
+  .cam-close-btn {
+    background: rgba(0,0,0,0.55); color: #fff;
+    border: 1.5px solid rgba(255,255,255,0.4);
+    width: 48px; height: 48px; border-radius: 50%;
+    font-size: 1.3em; font-weight: 700;
+    cursor: pointer;
+  }
+  .cam-shoot-btn {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.25);
+    border: 4px solid #fff;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.5);
+    padding: 0;
+  }
+  .cam-shoot-inner {
+    width: 60px; height: 60px;
+    border-radius: 50%;
+    background: #fff;
+    display: block;
+    transition: transform 0.1s;
+  }
+  .cam-shoot-btn:active .cam-shoot-inner { transform: scale(0.85); }
   .spinner {
     display: inline-block; width: 20px; height: 20px;
     border: 3px solid #e0e6ed; border-radius: 50%;
@@ -492,7 +564,7 @@
   <div class="card">
     <h2>① <span data-i18n="zairyuFront">在留カード 表面</span></h2>
     <input type="file" accept="image/*" capture="environment" id="zairyu-front-input" onchange="onZairyuFileSelect('front', event)" style="display:none;">
-    <button type="button" class="btn-camera" onclick="document.getElementById('zairyu-front-input').click()">
+    <button type="button" class="btn-camera" onclick="openCustomCamera('front')">
       <span class="cam-icon">📷</span> <span data-i18n="zairyuTakePhoto">撮影する</span>
     </button>
     <div id="zairyu-front-preview" class="zairyu-preview hidden"></div>
@@ -501,7 +573,7 @@
   <div class="card">
     <h2>② <span data-i18n="zairyuBack">在留カード 裏面</span></h2>
     <input type="file" accept="image/*" capture="environment" id="zairyu-back-input" onchange="onZairyuFileSelect('back', event)" style="display:none;">
-    <button type="button" class="btn-camera" onclick="document.getElementById('zairyu-back-input').click()">
+    <button type="button" class="btn-camera" onclick="openCustomCamera('back')">
       <span class="cam-icon">📷</span> <span data-i18n="zairyuTakePhoto">撮影する</span>
     </button>
     <div id="zairyu-back-preview" class="zairyu-preview hidden"></div>
@@ -528,6 +600,28 @@
 </div>
 
 <div class="footer">© 2026 有限会社ステップ・アップ</div>
+
+<!-- ====== カメラビュー (在留カード撮影、ガイド枠付き) ====== -->
+<div id="camera-view" class="camera-fullscreen hidden">
+  <video id="camera-video" playsinline autoplay muted></video>
+  <!-- ガイド枠 (在留カード比率 86mm × 54mm = 1.586:1) -->
+  <div class="card-guide-overlay">
+    <div class="card-guide-frame">
+      <div class="corner tl"></div>
+      <div class="corner tr"></div>
+      <div class="corner bl"></div>
+      <div class="corner br"></div>
+    </div>
+  </div>
+  <div class="card-guide-hint" id="card-guide-hint" data-i18n="cameraGuideText">在留カードを枠に合わせて撮影してください</div>
+  <div class="camera-controls">
+    <button type="button" class="cam-close-btn" onclick="closeCamera()" aria-label="Close">✕</button>
+    <button type="button" class="cam-shoot-btn" onclick="captureFromCamera()" aria-label="Shoot">
+      <span class="cam-shoot-inner"></span>
+    </button>
+    <div style="width:44px;"></div>
+  </div>
+</div>
 
 <!-- ====== Loading & Toast & Alert Modal ====== -->
 <div id="loading" class="loading-overlay hidden"><div class="spinner" style="width:36px; height:36px;"></div></div>
@@ -762,6 +856,13 @@ I18N.pt.zairyuNext = "Próximo (Revisar)";
 I18N.ja.zairyuComingSoon = "OCR（自動読み取り）と確認画面は近日対応予定です。今日は撮影プレビューまで動作します。";
 I18N.en.zairyuComingSoon = "OCR (auto-read) and review screen will be added soon. For today, photo preview works.";
 I18N.pt.zairyuComingSoon = "OCR (leitura automática) e tela de revisão serão adicionados em breve. Hoje, a pré-visualização funciona.";
+// カメラガイド
+I18N.ja.cameraGuideText = "在留カードを枠に合わせてください";
+I18N.en.cameraGuideText = "Align the Zairyu Card with the frame";
+I18N.pt.cameraGuideText = "Alinhe o Cartão Zairyu com o quadro";
+I18N.ja.cameraDenied = "カメラの使用が許可されませんでした。通常のカメラを開きます。";
+I18N.en.cameraDenied = "Camera permission denied. Opening device camera instead.";
+I18N.pt.cameraDenied = "Permissão de câmera negada. Abrindo câmera do dispositivo.";
 // アプリタイトル (ログイン画面の2段表示用)
 I18N.ja.appTitleStacked = "従業員\nポータル";
 I18N.en.appTitleStacked = "Employee\nPortal";
@@ -1018,6 +1119,83 @@ function zairyuProceed() {
   // Phase: 確認画面 + OCR + SP保存 は次セッションで実装
   showAlert(t('zairyuComingSoon'), 'info');
 }
+
+// ====== ガイド枠付きカスタムカメラ ======
+let _cameraStream = null;
+let _cameraSide = null;
+
+async function openCustomCamera(side) {
+  _cameraSide = side;
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('not supported');
+    _cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      },
+      audio: false,
+    });
+    const video = document.getElementById('camera-video');
+    video.srcObject = _cameraStream;
+    await video.play().catch(() => {});
+    // ヒントを言語で更新
+    document.getElementById('card-guide-hint').textContent = t('cameraGuideText');
+    document.getElementById('camera-view').classList.remove('hidden');
+  } catch (e) {
+    console.warn('camera error, fallback to file input:', e);
+    // フォールバック: ネイティブ <input capture> を起動
+    document.getElementById('zairyu-' + side + '-input').click();
+  }
+}
+
+function captureFromCamera() {
+  const video = document.getElementById('camera-video');
+  if (!video.videoWidth) return;
+  // 撮影シャッター効果 (短いフラッシュ)
+  const view = document.getElementById('camera-view');
+  view.style.transition = 'background-color 0.15s';
+  view.style.backgroundColor = '#fff';
+  setTimeout(() => { view.style.backgroundColor = '#000'; }, 80);
+  // 撮影
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+  const sizeKB = Math.round((dataUrl.length * 0.75) / 1024);
+  // ステートにセット + プレビュー
+  if (_cameraSide === 'front') {
+    zairyuState.frontDataUrl = dataUrl;
+    zairyuState.frontName = 'zairyu-front.jpg';
+  } else {
+    zairyuState.backDataUrl = dataUrl;
+    zairyuState.backName = 'zairyu-back.jpg';
+  }
+  renderZairyuPreview(_cameraSide, dataUrl, sizeKB);
+  updateZairyuNextBtn();
+  closeCamera();
+}
+
+function closeCamera() {
+  const video = document.getElementById('camera-video');
+  if (_cameraStream) {
+    try { _cameraStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+  }
+  _cameraStream = null;
+  if (video) video.srcObject = null;
+  document.getElementById('camera-view').classList.add('hidden');
+  _cameraSide = null;
+}
+
+// Escキー / 戻るボタンで閉じる
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') {
+    const cv = document.getElementById('camera-view');
+    if (cv && !cv.classList.contains('hidden')) closeCamera();
+  }
+});
 
 // ====== ルール説明モーダル (前払い申請の前に表示) ======
 function openRequestWithRules() {
