@@ -482,12 +482,12 @@ def is_in_payday_week(friday: _dt.date, payday: _dt.date) -> bool:
     return mon <= payday <= sun
 
 
-def get_paydays_around(haraibi: str, friday: _dt.date) -> List[_dt.date]:
-    """指定金曜日の前後 2 ヶ月分の給料日リスト。
-    申請可能な金曜日 f の同週に「どこかの月分の」給料日が落ちるかを判定するため、
-    前後数ヶ月の給料日を列挙する。"""
-    out = []
-    for offset in (-2, -1, 0, 1, 2):
+def get_next_payday_for_friday(haraibi: str, friday: _dt.date) -> Optional[_dt.date]:
+    """金曜日 f に対する「次回受け取り予定の給料日」(>= f) を返す。
+    例: 翌月末日支払いで f = 2026/05/29 なら、5/31 (4月分支払日) を返す。
+         f = 2026/07/03 なら、7/31 (6月分支払日) を返す (6/30 は既に過ぎた支払い)。
+    給料日週 NG 判定は「次回受け取り給料日が f と同週か」で行う。"""
+    for offset in (-2, -1, 0, 1, 2, 3):
         y, m = friday.year, friday.month + offset
         while m > 12:
             y += 1
@@ -497,9 +497,9 @@ def get_paydays_around(haraibi: str, friday: _dt.date) -> List[_dt.date]:
             m += 12
         ref = _dt.date(y, m, 1)
         pd = parse_payday_rule(haraibi, ref)
-        if pd:
-            out.append(pd)
-    return out
+        if pd and pd >= friday:
+            return pd
+    return None
 
 
 # ====== Functions ======
@@ -621,16 +621,17 @@ def maebarai_dates(req: func.HttpRequest) -> func.HttpResponse:
         fridays = upcoming_fridays(weeks=6)
         out = []
         for f in fridays:
-            paydays = get_paydays_around(haraibi, f)
+            next_payday = get_next_payday_for_friday(haraibi, f)
             reasons = []
             if is_in_kaisha_kyujitsu_week(f, kyujitsu):
                 reasons.append("会社休日")
-            if any(is_in_payday_week(f, pd) for pd in paydays):
+            if next_payday and is_in_payday_week(f, next_payday):
                 reasons.append("給料日週")
             out.append({
                 "date": f.isoformat(),
                 "available": len(reasons) == 0,
                 "reasons": reasons,
+                "nextPayday": next_payday.isoformat() if next_payday else None,
             })
         return _json_response({
             "haraibiRule": haraibi,
@@ -675,8 +676,8 @@ def maebarai_apply(req: func.HttpRequest) -> func.HttpResponse:
         hakensaki = fetch_hakensaki(buka_text)
         haraibi = (hakensaki or {}).get(F_HAKEN_HARAIBI) or "翌月末日"
         kyujitsu = list_kaisha_kyujitsu_dates()
-        paydays = get_paydays_around(haraibi, d)
-        if is_in_kaisha_kyujitsu_week(d, kyujitsu) or any(is_in_payday_week(d, pd) for pd in paydays):
+        next_payday = get_next_payday_for_friday(haraibi, d)
+        if is_in_kaisha_kyujitsu_week(d, kyujitsu) or (next_payday and is_in_payday_week(d, next_payday)):
             return _json_response({"error": "date_not_available"}, 400)
         # INSERT
         buka_no = parse_buka_no(buka_text)
@@ -710,25 +711,38 @@ def maebarai_history(req: func.HttpRequest) -> func.HttpResponse:
         return err
     shain_no = payload["shainNo"]
     try:
+        # SELECT/FILTER は EntityPropertyName (OData_ プレフィックス付き) を使う
+        F_M_SHAIN = "OData__x793e__x54e1__x756a__x53f7_"
+        F_M_KINGAKU = "OData__x91d1__x984d_"
+        F_M_KIBOUBI = "OData__x5e0c__x671b__x65e5_"
+        F_M_RIYUU = "OData__x7533__x8acb__x7406__x7531_"
+        F_M_HAKEN = "OData__x6d3e__x9063__x5148_"
+        F_M_TANTOU = "OData__x62c5__x5f53__x8005_"
+        F_M_APPROVED = "OData__x627f__x8a8d__x65e5__x6642_"
+        F_M_REJECT = "OData__x5374__x4e0b__x7406__x7531_"
+        select_fields = ",".join([
+            "Id", F_M_SHAIN, F_M_KINGAKU, F_M_KIBOUBI, F_M_RIYUU,
+            F_M_HAKEN, F_M_TANTOU, "Status", F_M_APPROVED, F_M_REJECT, "Created",
+        ])
         items = sp_get_items(
             LIST_MAEBARAI_SHINSEI,
-            select=f"Id,{P_SHAIN_NO},{P_KINGAKU},{P_KIBOUBI},{P_RIYUU},{P_HAKENSAKI},{P_TANTOU},{P_STATUS},OData__x627f__x8a8d__x65e5__x6642_,OData__x5374__x4e0b__x7406__x7531_,Created",
-            filter_=f"OData__x793e__x54e1__x756a__x53f7_ eq {shain_no}",
+            select=select_fields,
+            filter_=f"{F_M_SHAIN} eq {shain_no}",
             orderby="Id desc",
         )
         out = []
         for it in items:
-            kiboubi = _utc_to_jst_date(it.get("OData__x5e0c__x671b__x65e5_"))
+            kiboubi = _utc_to_jst_date(it.get(F_M_KIBOUBI))
             created = _utc_to_jst_date(it.get("Created"))
-            approved = _utc_to_jst_date(it.get("OData__x627f__x8a8d__x65e5__x6642_"))
+            approved = _utc_to_jst_date(it.get(F_M_APPROVED))
             out.append({
                 "id": it.get("Id"),
-                "amount": it.get("OData__x91d1__x984d_"),
+                "amount": it.get(F_M_KINGAKU),
                 "date": kiboubi.isoformat() if kiboubi else None,
-                "reason": it.get("OData__x7533__x8acb__x7406__x7531_"),
+                "reason": it.get(F_M_RIYUU),
                 "status": it.get("Status"),
                 "approvedAt": approved.isoformat() if approved else None,
-                "rejectReason": it.get("OData__x5374__x4e0b__x7406__x7531_"),
+                "rejectReason": it.get(F_M_REJECT),
                 "createdAt": created.isoformat() if created else None,
             })
         return _json_response({"items": out})
