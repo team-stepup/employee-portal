@@ -1,0 +1,22 @@
+# Local dev artifacts
+_scripts/
+*.log
+.venv/
+__pycache__/
+*.pyc
+
+# Azure Functions local
+local.settings.json
+bin/
+obj/
+.python_packages/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Build
+node_modules/
+dist/
