@@ -11,6 +11,7 @@
 認証: Managed Identity → SharePoint REST API (Sites.Selected on /sites/PowerApps)
 JWT: HS256 + 24h 有効。秘密鍵は App Setting JWT_SECRET から取得。
 """
+import base64
 import datetime as _dt
 import json
 import logging
@@ -29,6 +30,8 @@ from azure.core.exceptions import ResourceNotFoundError
 # ====== 設定 ======
 SP_HOST = "teamstepupcom774.sharepoint.com"
 SITE_URL = f"https://{SP_HOST}/sites/PowerApps"
+SITE_TEAMSTEPUP = f"https://{SP_HOST}/sites/TeamStepup"  # 社員ファイル所在
+SHAINFILE_ROOT = "/sites/TeamStepup/Shared Documents/社員ファイル"
 SP_RESOURCE = f"https://{SP_HOST}"
 
 LIST_SHAIN = "05a5a986-5958-4664-bb0d-7c1cfaedf845"
@@ -879,6 +882,178 @@ def maebarai_cancel(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"ok": True})
     except Exception as e:
         logging.exception("maebarai_cancel failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+# ====== 在留カード提出 ======
+def _strip_data_url(data: str) -> str:
+    """'data:image/jpeg;base64,XXXX' → 'XXXX'"""
+    if not data:
+        return ""
+    if data.startswith("data:"):
+        i = data.find(",")
+        return data[i + 1:] if i > 0 else data
+    return data
+
+
+def sp_create_folder_if_not_exists(server_relative_url: str, site_url: str = SITE_TEAMSTEPUP) -> None:
+    """SP フォルダを作成 (既存ならスキップ)。"""
+    body = {
+        "__metadata": {"type": "SP.Folder"},
+        "ServerRelativeUrl": server_relative_url,
+    }
+    h = {
+        "Authorization": f"Bearer {_get_sp_token()}",
+        "Accept": "application/json;odata=verbose",
+        "Content-Type": "application/json;odata=verbose",
+    }
+    r = requests.post(f"{site_url}/_api/web/Folders", headers=h, data=json.dumps(body), timeout=60)
+    if r.status_code in (200, 201):
+        return
+    # 既存チェック (GET で確認)
+    check = requests.get(
+        f"{site_url}/_api/web/GetFolderByServerRelativeUrl('{server_relative_url}')?$select=Name",
+        headers={"Authorization": f"Bearer {_get_sp_token()}", "Accept": "application/json;odata=nometadata"},
+        timeout=30,
+    )
+    if check.ok:
+        return  # 既存
+    raise RuntimeError(f"folder create failed: {r.status_code} {r.text[:300]}")
+
+
+def sp_upload_file(server_relative_folder_url: str, file_name: str, file_bytes: bytes,
+                   site_url: str = SITE_TEAMSTEPUP) -> str:
+    """SP の指定フォルダにファイルアップロード (上書き可)。"""
+    # URL エンコード対応 (ファイル名に日本語を含む場合)
+    from urllib.parse import quote
+    fn_encoded = quote(file_name, safe="")
+    api = f"{site_url}/_api/web/GetFolderByServerRelativeUrl('{server_relative_folder_url}')/Files/add(url='{fn_encoded}',overwrite=true)"
+    h = {
+        "Authorization": f"Bearer {_get_sp_token()}",
+        "Accept": "application/json;odata=nometadata",
+        "Content-Type": "application/octet-stream",
+    }
+    r = requests.post(api, headers=h, data=file_bytes, timeout=180)
+    if not r.ok:
+        raise RuntimeError(f"upload failed: {r.status_code} {r.text[:300]}")
+    return file_name
+
+
+def find_shain_folder_url(shain_no: int, buka_text: str) -> Optional[str]:
+    """社員ファイル/{派遣先}/[工程]/{shainNo氏名} の構造から個人フォルダの ServerRelativeUrl を探す。"""
+    bno = parse_buka_no(buka_text)
+    if not bno:
+        return None
+    sn_str = str(int(shain_no))
+    h = {"Authorization": f"Bearer {_get_sp_token()}", "Accept": "application/json;odata=nometadata"}
+    # 社員ファイル直下
+    try:
+        r = requests.get(
+            f"{SITE_TEAMSTEPUP}/_api/web/GetFolderByServerRelativeUrl('{SHAINFILE_ROOT}')/Folders?$select=Name,ServerRelativeUrl&$top=500",
+            headers=h, timeout=30,
+        )
+        r.raise_for_status()
+    except Exception as e:
+        logging.exception("root folder list failed")
+        raise
+    root_folders = r.json().get("value", [])
+    # 派遣先フォルダ (例 077ASTI㈱掛川)
+    haken_folder = None
+    for f in root_folders:
+        nm = f.get("Name", "")
+        if nm.startswith(bno):
+            haken_folder = f
+            break
+    if not haken_folder:
+        return None
+    # 派遣先フォルダ直下
+    try:
+        r2 = requests.get(
+            f"{SITE_TEAMSTEPUP}/_api/web/GetFolderByServerRelativeUrl('{haken_folder['ServerRelativeUrl']}')/Folders?$select=Name,ServerRelativeUrl&$top=500",
+            headers=h, timeout=30,
+        )
+        r2.raise_for_status()
+    except Exception:
+        return None
+    sub_folders = r2.json().get("value", [])
+    # 直接ヒット (社員番号で始まる個人フォルダ)
+    for sf in sub_folders:
+        if sf.get("Name", "").startswith(sn_str):
+            return sf["ServerRelativeUrl"]
+    # 工程フォルダの可能性: 一段深く探す
+    for sf in sub_folders:
+        try:
+            r3 = requests.get(
+                f"{SITE_TEAMSTEPUP}/_api/web/GetFolderByServerRelativeUrl('{sf['ServerRelativeUrl']}')/Folders?$select=Name,ServerRelativeUrl&$top=300",
+                headers=h, timeout=20,
+            )
+            if r3.ok:
+                for ssf in r3.json().get("value", []):
+                    if ssf.get("Name", "").startswith(sn_str):
+                        return ssf["ServerRelativeUrl"]
+        except Exception:
+            continue
+    return None
+
+
+@app.route(route="zairyu/submit", methods=["POST", "OPTIONS"])
+def zairyu_submit(req: func.HttpRequest) -> func.HttpResponse:
+    """在留カード表/裏 画像を SP 社員ファイル下の「在留カード」フォルダに保存。
+    Body: { frontImage: <base64 or dataURL>, backImage: <base64 or dataURL> }
+    """
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    front_data = body.get("frontImage")
+    back_data = body.get("backImage")
+    if not (front_data and back_data):
+        return _json_response({"error": "missing_images"}, 400)
+    # base64 デコード
+    try:
+        front_bytes = base64.b64decode(_strip_data_url(front_data))
+        back_bytes = base64.b64decode(_strip_data_url(back_data))
+    except Exception as e:
+        return _json_response({"error": "invalid_base64", "detail": str(e)}, 400)
+    # サイズ制限 (各 10MB まで)
+    if len(front_bytes) > 10 * 1024 * 1024 or len(back_bytes) > 10 * 1024 * 1024:
+        return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
+    try:
+        emp = find_active_employee_by_shain(shain_no)
+        if not emp:
+            return _json_response({"error": "not_active"}, 403)
+        buka_text = emp.get(F_BUKA) or ""
+        # 社員フォルダ特定
+        shain_folder = find_shain_folder_url(shain_no, buka_text)
+        if not shain_folder:
+            return _json_response({
+                "error": "shain_folder_not_found",
+                "buka": buka_text,
+                "hint": "社員ファイル/<派遣先>/<工程>/<社員番号 氏名> の構造で見つかりませんでした",
+            }, 404)
+        # 在留カード サブフォルダを作成
+        zairyu_folder = f"{shain_folder}/在留カード"
+        sp_create_folder_if_not_exists(zairyu_folder)
+        # タイムスタンプ付きファイル名 (履歴残し)
+        ts = (_dt.datetime.utcnow() + _dt.timedelta(hours=9)).strftime("%Y%m%d_%H%M%S")
+        front_name = f"{shain_no}_在留カード表_{ts}.jpg"
+        back_name = f"{shain_no}_在留カード裏_{ts}.jpg"
+        sp_upload_file(zairyu_folder, front_name, front_bytes)
+        sp_upload_file(zairyu_folder, back_name, back_bytes)
+        return _json_response({
+            "ok": True,
+            "folder": zairyu_folder,
+            "files": [front_name, back_name],
+        })
+    except Exception as e:
+        logging.exception("zairyu_submit failed")
         return _json_response({"error": "internal", "detail": str(e)}, 500)
 
 

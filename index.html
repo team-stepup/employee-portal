@@ -579,7 +579,7 @@
     <div id="zairyu-back-preview" class="zairyu-preview hidden"></div>
   </div>
 
-  <button class="btn btn-primary" id="zairyu-next-btn" disabled onclick="zairyuProceed()" data-i18n="zairyuNext">次へ (確認画面)</button>
+  <button class="btn btn-primary" id="zairyu-next-btn" disabled onclick="zairyuProceed()" data-i18n="zairyuSubmit">この内容で提出する</button>
   <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="cancel">キャンセル</button>
 </div>
 
@@ -856,6 +856,19 @@ I18N.pt.zairyuNext = "Próximo (Revisar)";
 I18N.ja.zairyuComingSoon = "OCR（自動読み取り）と確認画面は近日対応予定です。今日は撮影プレビューまで動作します。";
 I18N.en.zairyuComingSoon = "OCR (auto-read) and review screen will be added soon. For today, photo preview works.";
 I18N.pt.zairyuComingSoon = "OCR (leitura automática) e tela de revisão serão adicionados em breve. Hoje, a pré-visualização funciona.";
+// 提出ボタン関連
+I18N.ja.zairyuSubmit = "この内容で提出する";
+I18N.en.zairyuSubmit = "Submit these photos";
+I18N.pt.zairyuSubmit = "Enviar estas fotos";
+I18N.ja.zairyuConfirm = "在留カードの表面と裏面を提出します。よろしいですか？";
+I18N.en.zairyuConfirm = "Submit FRONT and BACK photos of your Zairyu Card. Continue?";
+I18N.pt.zairyuConfirm = "Enviar fotos da FRENTE e VERSO do seu cartão Zairyu. Continuar?";
+I18N.ja.zairyuSuccess = "✅ 在留カードを提出しました。総務で確認後、社員情報を更新します。";
+I18N.en.zairyuSuccess = "✅ Your Zairyu Card has been submitted. HR will update your records after review.";
+I18N.pt.zairyuSuccess = "✅ Seu cartão Zairyu foi enviado. O RH atualizará seus dados após a revisão.";
+I18N.ja.zairyuFolderNotFound = "あなたの社員フォルダが SharePoint で見つかりませんでした。総務にお問い合わせください。";
+I18N.en.zairyuFolderNotFound = "Your employee folder was not found in SharePoint. Please contact HR.";
+I18N.pt.zairyuFolderNotFound = "Sua pasta de funcionário não foi encontrada no SharePoint. Por favor contate o RH.";
 // カメラガイド
 I18N.ja.cameraGuideText = "在留カードを枠に合わせてください";
 I18N.en.cameraGuideText = "Align the Zairyu Card with the frame";
@@ -1114,10 +1127,33 @@ function updateZairyuNextBtn() {
   document.getElementById('zairyu-next-btn').disabled = !ok;
 }
 
-function zairyuProceed() {
+async function zairyuProceed() {
   if (!(zairyuState.frontDataUrl && zairyuState.backDataUrl)) return;
-  // Phase: 確認画面 + OCR + SP保存 は次セッションで実装
-  showAlert(t('zairyuComingSoon'), 'info');
+  if (!confirm(t('zairyuConfirm'))) return;
+  const btn = document.getElementById('zairyu-next-btn');
+  btn.disabled = true;
+  showLoading(true);
+  try {
+    await callApi('POST', '/zairyu/submit', {
+      frontImage: zairyuState.frontDataUrl,
+      backImage: zairyuState.backDataUrl,
+    });
+    showAlert(t('zairyuSuccess'), 'success');
+    // ホームに戻す
+    setTimeout(() => {
+      showScreen('home');
+    }, 600);
+  } catch (e) {
+    if (e.status === 404 && e.data && e.data.error === 'shain_folder_not_found') {
+      showAlert(t('zairyuFolderNotFound'), 'error');
+    } else {
+      const detail = (e.data && (e.data.detail || e.data.error)) ? '\n(' + (e.data.detail || e.data.error) + ')' : '';
+      showAlert(t('networkError') + detail, 'error');
+    }
+  } finally {
+    btn.disabled = false;
+    showLoading(false);
+  }
 }
 
 // ====== ガイド枠付きカスタムカメラ ======
