@@ -869,6 +869,10 @@ I18N.pt.zairyuSuccess = "✅ Seu cartão Zairyu foi enviado. O RH atualizará se
 I18N.ja.zairyuFolderNotFound = "あなたの社員フォルダが SharePoint で見つかりませんでした。総務にお問い合わせください。";
 I18N.en.zairyuFolderNotFound = "Your employee folder was not found in SharePoint. Please contact HR.";
 I18N.pt.zairyuFolderNotFound = "Sua pasta de funcionário não foi encontrada no SharePoint. Por favor contate o RH.";
+// レート制限
+I18N.ja.rateLimited = "アクセスが集中しています。約 {sec} 秒後に再度お試しください。";
+I18N.en.rateLimited = "Too many requests. Please try again in about {sec} seconds.";
+I18N.pt.rateLimited = "Muitas solicitações. Tente novamente em cerca de {sec} segundos.";
 // カメラガイド
 I18N.ja.cameraGuideText = "在留カードを枠に合わせてください";
 I18N.en.cameraGuideText = "Align the Zairyu Card with the frame";
@@ -1146,6 +1150,9 @@ async function zairyuProceed() {
   } catch (e) {
     if (e.status === 404 && e.data && e.data.error === 'shain_folder_not_found') {
       showAlert(t('zairyuFolderNotFound'), 'error');
+    } else if (e.status === 429) {
+      const sec = (e.data && e.data.retryAfterSeconds) || 60;
+      showAlert(t('rateLimited').replace('{sec}', sec), 'warning');
     } else {
       const detail = (e.data && (e.data.detail || e.data.error)) ? '\n(' + (e.data.detail || e.data.error) + ')' : '';
       showAlert(t('networkError') + detail, 'error');
@@ -1519,6 +1526,9 @@ async function submitApply() {
     if (e.status === 409 && e.data && e.data.error === 'duplicate_application') {
       const stKey = 'status' + (e.data.existingStatus || 'pending').charAt(0).toUpperCase() + (e.data.existingStatus || 'pending').slice(1);
       showAlert(t('duplicateApplication').replace('{status}', t(stKey)), 'warning');
+    } else if (e.status === 429) {
+      const sec = (e.data && e.data.retryAfterSeconds) || 60;
+      showAlert(t('rateLimited').replace('{sec}', sec), 'warning');
     } else {
       const detail = (e.data && (e.data.detail || e.data.error)) ? '\n(' + (e.data.detail || e.data.error) + ')' : '';
       showAlert(t('networkError') + detail, 'error');

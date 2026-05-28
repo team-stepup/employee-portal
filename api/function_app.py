@@ -105,6 +105,14 @@ JWT_EXP_HOURS = 24
 LOCKOUT_MAX_ATTEMPTS = 5
 LOCKOUT_DURATION_MINUTES = 30
 LOCKOUT_TABLE = "loginattempts"
+
+# レート制限 (社員番号 + エンドポイント別)
+RATE_LIMIT_WINDOW_SECONDS = 60
+RATE_LIMITS = {
+    "apply": 10,       # 申請 10/min
+    "cancel": 10,      # 取消 10/min
+    "zairyu": 5,       # 在留カード提出 5/min (画像アップロード重め)
+}
 _storage_conn = os.environ.get("AzureWebJobsStorage", "")
 _table_client_cache = None
 
@@ -185,6 +193,71 @@ def clear_attempts(shain_no: int):
         pass
     except Exception as e:
         logging.warning(f"clear_attempts failed: {e}")
+
+
+def check_rate_limit(shain_no: int, endpoint: str) -> Optional[int]:
+    """社員番号 + エンドポイント別レート制限。超過なら待機秒数を返す。"""
+    limit = RATE_LIMITS.get(endpoint)
+    if not limit:
+        return None
+    table = _get_lockout_table()
+    if not table:
+        return None
+    now = _dt.datetime.now(_dt.timezone.utc)
+    rk = f"{endpoint}:{shain_no}"
+    try:
+        entity = table.get_entity(partition_key="ratelimit", row_key=rk)
+        first_at = entity.get("firstAt")
+        if isinstance(first_at, str):
+            first_at = _dt.datetime.fromisoformat(first_at.replace("Z", "+00:00"))
+        count = int(entity.get("count", 0))
+        elapsed = (now - first_at).total_seconds()
+        if elapsed < RATE_LIMIT_WINDOW_SECONDS:
+            # 同じウィンドウ内
+            if count >= limit:
+                return int(RATE_LIMIT_WINDOW_SECONDS - elapsed)
+            entity["count"] = count + 1
+            table.upsert_entity(entity, mode=UpdateMode.REPLACE)
+            return None
+        # 新しいウィンドウ
+        entity["firstAt"] = now.isoformat()
+        entity["count"] = 1
+        table.upsert_entity(entity, mode=UpdateMode.REPLACE)
+        return None
+    except ResourceNotFoundError:
+        table.upsert_entity({
+            "PartitionKey": "ratelimit",
+            "RowKey": rk,
+            "firstAt": now.isoformat(),
+            "count": 1,
+        }, mode=UpdateMode.REPLACE)
+        return None
+    except Exception as e:
+        logging.warning(f"check_rate_limit failed: {e}")
+        return None  # fail-open: 内部エラー時は許可
+
+
+def _validate_shainfile_path(folder_url: str) -> bool:
+    """SP のフォルダ URL が「社員ファイル」配下にあることを検証 (Path Traversal 防止)。"""
+    if not folder_url:
+        return False
+    expected_prefix = SHAINFILE_ROOT + "/"
+    if not folder_url.startswith(expected_prefix):
+        return False
+    # 不正なパス要素を除外
+    suffix = folder_url[len(expected_prefix):]
+    if ".." in suffix or "//" in suffix:
+        return False
+    # 制御文字・絶対パス・改行などの除外
+    if any(ch in folder_url for ch in ('\x00', '\n', '\r')):
+        return False
+    return True
+
+
+def _safe_filename(name: str) -> str:
+    """ファイル名から危険文字を除去 (パス区切り・制御文字)。"""
+    safe = re.sub(r'[\\/\x00-\x1f<>:"|?*]', '', name or '')
+    return safe[:200]
 
 # 金額: ドロップダウン候補 (10,000〜100,000) + 「その他」手動入力 (〜130,000、10,000円刻み)
 AMOUNT_MIN = 10000
@@ -735,6 +808,11 @@ def maebarai_apply(req: func.HttpRequest) -> func.HttpResponse:
     if d.weekday() != 4:
         return _json_response({"error": "not_friday"}, 400)
 
+    # レート制限 (10/min)
+    wait = check_rate_limit(shain_no, "apply")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait},
+                              429, extra_headers={"Retry-After": str(wait)})
     try:
         emp = find_active_employee_by_shain(shain_no)
         if not emp:
@@ -859,6 +937,11 @@ def maebarai_cancel(req: func.HttpRequest) -> func.HttpResponse:
     except (TypeError, ValueError):
         return _json_response({"error": "invalid_id"}, 400)
 
+    # レート制限 (10/min)
+    wait = check_rate_limit(shain_no, "cancel")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait},
+                              429, extra_headers={"Retry-After": str(wait)})
     try:
         # 申請が本人のもの & status が pending か確認
         items = sp_get_items(
@@ -1025,6 +1108,11 @@ def zairyu_submit(req: func.HttpRequest) -> func.HttpResponse:
     # サイズ制限 (各 10MB まで)
     if len(front_bytes) > 10 * 1024 * 1024 or len(back_bytes) > 10 * 1024 * 1024:
         return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
+    # レート制限チェック (5/min)
+    wait = check_rate_limit(shain_no, "zairyu")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait},
+                              429, extra_headers={"Retry-After": str(wait)})
     try:
         emp = find_active_employee_by_shain(shain_no)
         if not emp:
@@ -1038,13 +1126,19 @@ def zairyu_submit(req: func.HttpRequest) -> func.HttpResponse:
                 "buka": buka_text,
                 "hint": "社員ファイル/<派遣先>/<工程>/<社員番号 氏名> の構造で見つかりませんでした",
             }, 404)
+        # ※ Path Traversal 防止: 社員ファイル配下であることを必ず検証
+        if not _validate_shainfile_path(shain_folder):
+            logging.error(f"Invalid shain folder path detected: {shain_folder!r}")
+            return _json_response({"error": "invalid_folder_path"}, 500)
         # 在留カード サブフォルダを作成
         zairyu_folder = f"{shain_folder}/在留カード"
+        if not _validate_shainfile_path(zairyu_folder):
+            return _json_response({"error": "invalid_folder_path"}, 500)
         sp_create_folder_if_not_exists(zairyu_folder)
-        # タイムスタンプ付きファイル名 (履歴残し)
+        # タイムスタンプ付きファイル名 (固定パターン、ユーザー入力由来の文字列は使わない)
         ts = (_dt.datetime.utcnow() + _dt.timedelta(hours=9)).strftime("%Y%m%d_%H%M%S")
-        front_name = f"{shain_no}_在留カード表_{ts}.jpg"
-        back_name = f"{shain_no}_在留カード裏_{ts}.jpg"
+        front_name = _safe_filename(f"{int(shain_no)}_在留カード表_{ts}.jpg")
+        back_name = _safe_filename(f"{int(shain_no)}_在留カード裏_{ts}.jpg")
         sp_upload_file(zairyu_folder, front_name, front_bytes)
         sp_upload_file(zairyu_folder, back_name, back_bytes)
         return _json_response({
