@@ -54,6 +54,9 @@ F_KOUZA = "OData__x7d66__x4e0e__xff1a__x53e3__x5e"
 F_MEIGI = "OData__x53e3__x5ea7__x6c0f__x540d__x30"
 F_ZAIRYU_NAME = "OData__x7279__x8a18__x4e8b__x9805__xff"  # 特記事項１ = 在留カード氏名 (英字フルネーム)
 F_KOKUSEKI = "OData__x672c__x0028__x56fd__x0029__x7c"  # 本(国)籍
+F_ZAIRYU_SHIKAKU = "OData__x5728__x7559__x8cc7__x683c_"  # 在留資格 (Text)
+F_ZAIRYU_KIGEN = "OData__x5728__x7559__x671f__x9650_"    # 在留期限 (DateTime)
+F_ZAIRYU_BIKO = "OData__x5728__x7559__xff1a__x5099__x80"  # 在留：備考1 (Text) — 在留カード番号格納用
 
 
 def guess_lang_from_kokuseki(kokuseki: Optional[str]) -> str:
@@ -968,6 +971,156 @@ def maebarai_cancel(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"error": "internal", "detail": str(e)}, 500)
 
 
+# ====== 在留カード OCR (Azure Document Intelligence) ======
+_di_client_cache = None
+
+
+def _get_di_client():
+    """Document Intelligence クライアントを Managed Identity で取得 (キャッシュ)。"""
+    global _di_client_cache
+    if _di_client_cache is not None:
+        return _di_client_cache
+    endpoint = os.environ.get("FORM_RECOGNIZER_ENDPOINT", "").strip()
+    if not endpoint:
+        raise RuntimeError("FORM_RECOGNIZER_ENDPOINT not set")
+    from azure.ai.documentintelligence import DocumentIntelligenceClient
+    _di_client_cache = DocumentIntelligenceClient(
+        endpoint=endpoint,
+        credential=DefaultAzureCredential(),
+    )
+    return _di_client_cache
+
+
+def run_zairyu_ocr(image_bytes: bytes) -> Dict[str, Any]:
+    """在留カード OCR。prebuilt-read で汎用OCR → 正規表現で抽出。"""
+    from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
+    client = _get_di_client()
+    poller = client.begin_analyze_document(
+        "prebuilt-read",
+        AnalyzeDocumentRequest(bytes_source=image_bytes),
+    )
+    result = poller.result()
+    full_text = ""
+    for page in (result.pages or []):
+        for line in (page.lines or []):
+            full_text += (line.content or "") + "\n"
+    parsed = parse_zairyu_card_text(full_text)
+    return parsed
+
+
+def parse_zairyu_card_text(text: str) -> Dict[str, Any]:
+    """汎用OCRテキストから在留カードの主要項目を抽出 (best-effort)。"""
+    out: Dict[str, Any] = {"rawText": text}
+    if not text:
+        return out
+
+    # 在留カード番号: AB12345678CD 形式 (12桁、頭2/末尾2 が英字)
+    m = re.search(r'\b([A-Z]{2}\d{8}[A-Z]{2})\b', text)
+    if m:
+        out['cardNumber'] = m.group(1)
+
+    # 氏名 NAME: 行ベース。ラベルの後 (改行含む) の英字行
+    m = re.search(r'NAME[\s:]*\n?([A-Z][A-Z\s,\.\-]{2,})', text)
+    if m:
+        out['name'] = re.sub(r'\s+', ' ', m.group(1)).strip()
+
+    # 生年月日 DATE OF BIRTH
+    for pat in (
+        r'DATE\s+OF\s+BIRTH[\s:]*\n?\s*(\d{4})[\.\-/年\s]+(\d{1,2})[\.\-/月\s]+(\d{1,2})',
+        r'生年月日[\s:：]*\n?\s*(\d{4})[年\.\-/]+(\d{1,2})[月\.\-/]+(\d{1,2})',
+    ):
+        m = re.search(pat, text)
+        if m:
+            out['birthday'] = f"{m.group(1)}-{m.group(2).zfill(2)}-{m.group(3).zfill(2)}"
+            break
+
+    # 性別 SEX: M / F
+    m = re.search(r'SEX[\s:]*\n?\s*([MF])\b', text)
+    if m:
+        out['sex'] = 'M' if m.group(1) == 'M' else 'F'
+
+    # 国籍 NATIONALITY/REGION
+    m = re.search(r'NATIONALITY[/A-Z\s]*[:：\n]\s*([A-Z][A-Z\s\(\)\.]+)', text)
+    if m:
+        out['nationality'] = re.sub(r'\s+', ' ', m.group(1)).strip()
+
+    # 在留資格 STATUS
+    for pat in (
+        r'STATUS[\s:]*\n?\s*([A-Za-z][\w\s\-\(\)/]+)',
+        r'在留資格[\s:：]*\n?\s*([^\n]+)',
+    ):
+        m = re.search(pat, text)
+        if m:
+            val = m.group(1).strip()
+            # 改行や次のラベルが混入する場合は最初の単語/フレーズに限定
+            val = re.split(r'(?:DATE|住所|PERIOD|期間|号)', val)[0].strip()
+            if val:
+                out['zairyuShikaku'] = val
+                break
+
+    # 在留期限 DATE OF EXPIRATION
+    for pat in (
+        r'DATE\s+OF\s+EXPIRATION[\s:]*\n?\s*(\d{4})[\.\-/年\s]+(\d{1,2})[\.\-/月\s]+(\d{1,2})',
+        r'(?:在留期間|有効期限)(?:\s*\(.*?\))?[\s:：]*\n?\s*(\d{4})[年\.\-/]+(\d{1,2})[月\.\-/]+(\d{1,2})',
+        r'満了日[\s:：]*\n?\s*(\d{4})[年\.\-/]+(\d{1,2})[月\.\-/]+(\d{1,2})',
+    ):
+        m = re.search(pat, text)
+        if m:
+            out['zairyuKigen'] = f"{m.group(1)}-{m.group(2).zfill(2)}-{m.group(3).zfill(2)}"
+            break
+
+    return out
+
+
+@app.route(route="zairyu/ocr", methods=["POST", "OPTIONS"])
+def zairyu_ocr(req: func.HttpRequest) -> func.HttpResponse:
+    """在留カード表面画像から主要項目を OCR で抽出。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    # レート制限 (5/min)
+    wait = check_rate_limit(shain_no, "zairyu")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait},
+                              429, extra_headers={"Retry-After": str(wait)})
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    front_data = body.get("frontImage")
+    if not front_data:
+        return _json_response({"error": "missing_image"}, 400)
+    try:
+        front_bytes = base64.b64decode(_strip_data_url(front_data))
+    except Exception as e:
+        return _json_response({"error": "invalid_base64", "detail": str(e)}, 400)
+    if len(front_bytes) > 10 * 1024 * 1024:
+        return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
+
+    try:
+        ocr_result = run_zairyu_ocr(front_bytes)
+    except Exception as e:
+        logging.exception("OCR failed")
+        return _json_response({"error": "ocr_failed", "detail": str(e)}, 500)
+
+    # 本人の社員データと突合 (生年月日が一致するかを返す)
+    emp = find_active_employee_by_shain(shain_no)
+    matches: Dict[str, bool] = {}
+    if emp:
+        emp_birthday = _utc_to_jst_date(emp.get(F_BIRTHDAY))
+        ocr_bd = ocr_result.get('birthday')
+        if emp_birthday and ocr_bd:
+            try:
+                matches['birthday'] = (_dt.date.fromisoformat(ocr_bd) == emp_birthday)
+            except Exception:
+                pass
+    return _json_response({"ocr": ocr_result, "matches": matches})
+
+
 # ====== 在留カード提出 ======
 def _strip_data_url(data: str) -> str:
     """'data:image/jpeg;base64,XXXX' → 'XXXX'"""
@@ -1141,10 +1294,42 @@ def zairyu_submit(req: func.HttpRequest) -> func.HttpResponse:
         back_name = _safe_filename(f"{int(shain_no)}_在留カード裏_{ts}.jpg")
         sp_upload_file(zairyu_folder, front_name, front_bytes)
         sp_upload_file(zairyu_folder, back_name, back_bytes)
+        # 社員 List の在留関連フィールドを更新 (OCR で確認済みの値)
+        confirmed = body.get("confirmedData") or {}
+        updated_fields: List[str] = []
+        if confirmed:
+            patch_fields: Dict[str, Any] = {}
+            shikaku = (confirmed.get("zairyuShikaku") or "").strip()
+            if shikaku and len(shikaku) <= 100:
+                patch_fields[F_ZAIRYU_SHIKAKU] = shikaku
+                updated_fields.append("zairyuShikaku")
+            kigen = (confirmed.get("zairyuKigen") or "").strip()
+            if kigen:
+                try:
+                    _dt.date.fromisoformat(kigen)  # 妥当性
+                    patch_fields[F_ZAIRYU_KIGEN] = kigen + "T00:00:00Z"
+                    updated_fields.append("zairyuKigen")
+                except Exception:
+                    pass
+            card_no = (confirmed.get("cardNumber") or "").strip()
+            if card_no and len(card_no) <= 20:
+                # 在留：備考1 に 「在留カード番号: AB12345678CD (提出 2026/05/29)」 形式で記録
+                ts = (_dt.datetime.utcnow() + _dt.timedelta(hours=9)).strftime("%Y/%m/%d")
+                patch_fields[F_ZAIRYU_BIKO] = f"在留カード番号: {card_no} (提出 {ts})"
+                updated_fields.append("cardNumber")
+            if patch_fields:
+                target_id = emp.get("Id") if emp else None
+                if target_id:
+                    try:
+                        sp_patch_item(LIST_SHAIN, int(target_id), patch_fields)
+                    except Exception as e:
+                        logging.exception("update employee zairyu failed")
+                        # 画像保存は成功しているので警告のみ
         return _json_response({
             "ok": True,
             "folder": zairyu_folder,
             "files": [front_name, back_name],
+            "updatedFields": updated_fields,
         })
     except Exception as e:
         logging.exception("zairyu_submit failed")

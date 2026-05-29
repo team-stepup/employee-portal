@@ -579,8 +579,43 @@
     <div id="zairyu-back-preview" class="zairyu-preview hidden"></div>
   </div>
 
-  <button class="btn btn-primary" id="zairyu-next-btn" disabled onclick="zairyuProceed()" data-i18n="zairyuSubmit">この内容で提出する</button>
+  <button class="btn btn-primary" id="zairyu-next-btn" disabled onclick="zairyuProceedToConfirm()" data-i18n="zairyuNext">次へ (確認画面)</button>
   <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="cancel">キャンセル</button>
+</div>
+
+<!-- ====== Screen: 在留カード提出 確認画面 (OCR結果) ====== -->
+<div id="screen-zairyu-confirm" class="container hidden">
+  <div class="header">
+    <h1>🪪 <span data-i18n="zairyuConfirmTitle">在留カード — 内容確認</span></h1>
+    <span class="logout-btn" onclick="showScreen('zairyu')">←</span>
+  </div>
+
+  <div class="info-banner" data-i18n="zairyuConfirmInfo">
+    📋 OCR で読み取った内容です。<b>あなたの在留カードの内容と一致するか確認してください</b>。間違いがある場合は「撮り直す」を押してください。
+  </div>
+  <div id="zairyu-confirm-error" class="error-banner hidden"></div>
+
+  <div class="card">
+    <h2 data-i18n="zairyuConfirmFields">読み取り結果</h2>
+    <div id="zairyu-ocr-fields"></div>
+  </div>
+
+  <div class="card">
+    <h2 data-i18n="zairyuConfirmPhotos">撮影画像</h2>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+      <div style="flex:1; min-width:140px;">
+        <div style="font-size:0.8em; color:#666; text-align:center; margin-bottom:4px;" data-i18n="zairyuFront">表面</div>
+        <img id="confirm-front-img" style="width:100%; max-height:160px; object-fit:contain; border-radius:8px; background:#000;">
+      </div>
+      <div style="flex:1; min-width:140px;">
+        <div style="font-size:0.8em; color:#666; text-align:center; margin-bottom:4px;" data-i18n="zairyuBack">裏面</div>
+        <img id="confirm-back-img" style="width:100%; max-height:160px; object-fit:contain; border-radius:8px; background:#000;">
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" id="zairyu-confirm-submit-btn" onclick="zairyuFinalSubmit()" data-i18n="zairyuSubmit">この内容で提出する</button>
+  <button class="btn btn-secondary" onclick="showScreen('zairyu')" data-i18n="zairyuRetake2">撮り直す</button>
 </div>
 
 <!-- ====== Screen: 申請履歴 ====== -->
@@ -856,6 +891,53 @@ I18N.pt.zairyuNext = "Próximo (Revisar)";
 I18N.ja.zairyuComingSoon = "OCR（自動読み取り）と確認画面は近日対応予定です。今日は撮影プレビューまで動作します。";
 I18N.en.zairyuComingSoon = "OCR (auto-read) and review screen will be added soon. For today, photo preview works.";
 I18N.pt.zairyuComingSoon = "OCR (leitura automática) e tela de revisão serão adicionados em breve. Hoje, a pré-visualização funciona.";
+// 確認画面
+I18N.ja.zairyuConfirmTitle = "在留カード — 内容確認";
+I18N.en.zairyuConfirmTitle = "Zairyu Card — Review";
+I18N.pt.zairyuConfirmTitle = "Cartão Zairyu — Revisão";
+I18N.ja.zairyuConfirmInfo = "📋 OCRで読み取った内容です。<b>在留カードの記載と一致するか確認してください</b>。間違いがある場合は「撮り直す」を押してください。";
+I18N.en.zairyuConfirmInfo = "📋 Items recognized by OCR. <b>Please verify they match your Zairyu Card</b>. If anything is wrong, tap “Retake”.";
+I18N.pt.zairyuConfirmInfo = "📋 Itens reconhecidos pelo OCR. <b>Verifique se correspondem ao seu Cartão Zairyu</b>. Se algo estiver errado, toque em \"Refazer\".";
+I18N.ja.zairyuConfirmFields = "読み取り結果";
+I18N.en.zairyuConfirmFields = "OCR Results";
+I18N.pt.zairyuConfirmFields = "Resultado do OCR";
+I18N.ja.zairyuConfirmPhotos = "撮影画像";
+I18N.en.zairyuConfirmPhotos = "Captured Photos";
+I18N.pt.zairyuConfirmPhotos = "Fotos Capturadas";
+I18N.ja.zairyuRetake2 = "撮り直す";
+I18N.en.zairyuRetake2 = "Retake";
+I18N.pt.zairyuRetake2 = "Refazer";
+// 各フィールドラベル
+I18N.ja.fieldCardNumber = "在留カード番号";
+I18N.en.fieldCardNumber = "Card Number";
+I18N.pt.fieldCardNumber = "Nº do Cartão";
+I18N.ja.fieldName = "氏名 (英字)";
+I18N.en.fieldName = "Name (Latin)";
+I18N.pt.fieldName = "Nome (Latim)";
+I18N.ja.fieldBirthday = "生年月日";
+I18N.en.fieldBirthday = "Date of Birth";
+I18N.pt.fieldBirthday = "Data de Nascimento";
+I18N.ja.fieldNationality = "国籍";
+I18N.en.fieldNationality = "Nationality";
+I18N.pt.fieldNationality = "Nacionalidade";
+I18N.ja.fieldZairyuShikaku = "在留資格";
+I18N.en.fieldZairyuShikaku = "Status of Residence";
+I18N.pt.fieldZairyuShikaku = "Status de Residência";
+I18N.ja.fieldZairyuKigen = "在留期限";
+I18N.en.fieldZairyuKigen = "Date of Expiration";
+I18N.pt.fieldZairyuKigen = "Data de Vencimento";
+I18N.ja.fieldNotRecognized = "(読み取れませんでした)";
+I18N.en.fieldNotRecognized = "(Not recognized)";
+I18N.pt.fieldNotRecognized = "(Não reconhecido)";
+I18N.ja.birthdayMismatch = "⚠ 登録済みの生年月日と一致しません。撮り直すか、総務にお問い合わせください。";
+I18N.en.birthdayMismatch = "⚠ Birthday doesn't match the registered one. Please retake or contact HR.";
+I18N.pt.birthdayMismatch = "⚠ Data de nascimento não corresponde ao registrado. Refaça ou contate o RH.";
+I18N.ja.ocrInProgress = "在留カードを読み取り中...";
+I18N.en.ocrInProgress = "Reading Zairyu Card...";
+I18N.pt.ocrInProgress = "Lendo Cartão Zairyu...";
+I18N.ja.ocrFailed = "在留カードの読み取りに失敗しました。明るい場所で枠に合わせて撮り直してください。";
+I18N.en.ocrFailed = "Failed to read the Zairyu Card. Please retake in good lighting, aligned with the frame.";
+I18N.pt.ocrFailed = "Falha ao ler o Cartão Zairyu. Tente novamente em local iluminado, alinhado com o quadro.";
 // 提出ボタン関連
 I18N.ja.zairyuSubmit = "この内容で提出する";
 I18N.en.zairyuSubmit = "Submit these photos";
@@ -1131,22 +1213,109 @@ function updateZairyuNextBtn() {
   document.getElementById('zairyu-next-btn').disabled = !ok;
 }
 
-async function zairyuProceed() {
+// 撮影完了 → OCR 実行 → 確認画面に遷移
+async function zairyuProceedToConfirm() {
+  if (!(zairyuState.frontDataUrl && zairyuState.backDataUrl)) return;
+  const btn = document.getElementById('zairyu-next-btn');
+  btn.disabled = true;
+  showLoading(true);
+  // Loading 表示の上に進捗テキスト追加
+  const loadingEl = document.getElementById('loading');
+  const note = document.createElement('div');
+  note.id = 'ocr-loading-note';
+  note.style.cssText = 'position:absolute; bottom:35%; left:0; right:0; text-align:center; color:#1f3864; font-weight:700; font-size:1.05em; padding:0 20px;';
+  note.textContent = t('ocrInProgress');
+  loadingEl.appendChild(note);
+  try {
+    const data = await callApi('POST', '/zairyu/ocr', {
+      frontImage: zairyuState.frontDataUrl,
+    });
+    zairyuState.ocr = data.ocr || {};
+    zairyuState.ocrMatches = data.matches || {};
+    showScreen('zairyu-confirm');
+    renderZairyuConfirm();
+  } catch (e) {
+    if (e.status === 429) {
+      const sec = (e.data && e.data.retryAfterSeconds) || 60;
+      showAlert(t('rateLimited').replace('{sec}', sec), 'warning');
+    } else {
+      const detail = (e.data && (e.data.detail || e.data.error)) ? '\n(' + (e.data.detail || e.data.error) + ')' : '';
+      showAlert(t('ocrFailed') + detail, 'error');
+    }
+  } finally {
+    btn.disabled = false;
+    showLoading(false);
+    const n = document.getElementById('ocr-loading-note');
+    if (n) n.remove();
+  }
+}
+
+function renderZairyuConfirm() {
+  const ocr = zairyuState.ocr || {};
+  const matches = zairyuState.ocrMatches || {};
+  // 画像サムネイル
+  document.getElementById('confirm-front-img').src = zairyuState.frontDataUrl || '';
+  document.getElementById('confirm-back-img').src = zairyuState.backDataUrl || '';
+  // エラー欄リセット
+  const errEl = document.getElementById('zairyu-confirm-error');
+  errEl.classList.add('hidden');
+  errEl.textContent = '';
+  // 生年月日不一致警告
+  if (matches.birthday === false) {
+    errEl.textContent = t('birthdayMismatch');
+    errEl.classList.remove('hidden');
+  }
+  // OCR フィールド表示
+  const fields = [
+    { key: 'cardNumber',    label: 'fieldCardNumber' },
+    { key: 'name',          label: 'fieldName' },
+    { key: 'birthday',      label: 'fieldBirthday' },
+    { key: 'nationality',   label: 'fieldNationality' },
+    { key: 'zairyuShikaku', label: 'fieldZairyuShikaku' },
+    { key: 'zairyuKigen',   label: 'fieldZairyuKigen' },
+  ];
+  const wrap = document.getElementById('zairyu-ocr-fields');
+  wrap.innerHTML = '';
+  fields.forEach(f => {
+    const row = document.createElement('div');
+    row.style.cssText = 'padding:8px 0; border-bottom:1px solid #eef2f7; display:flex; justify-content:space-between; align-items:baseline; gap:10px;';
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'font-size:0.85em; color:#666; font-weight:600; flex-shrink:0;';
+    lbl.textContent = t(f.label);
+    const val = document.createElement('div');
+    val.style.cssText = 'font-size:1em; font-weight:700; color:#1f3864; text-align:right; word-break:break-all;';
+    const v = ocr[f.key];
+    if (v && String(v).trim()) {
+      val.textContent = v;
+    } else {
+      val.style.color = '#bbb';
+      val.style.fontStyle = 'italic';
+      val.textContent = t('fieldNotRecognized');
+    }
+    row.append(lbl, val);
+    wrap.append(row);
+  });
+}
+
+// 確認画面 → 最終提出 (画像 + OCR結果 → SP 保存 + 社員 List PATCH)
+async function zairyuFinalSubmit() {
   if (!(zairyuState.frontDataUrl && zairyuState.backDataUrl)) return;
   if (!confirm(t('zairyuConfirm'))) return;
-  const btn = document.getElementById('zairyu-next-btn');
+  const btn = document.getElementById('zairyu-confirm-submit-btn');
   btn.disabled = true;
   showLoading(true);
   try {
     await callApi('POST', '/zairyu/submit', {
       frontImage: zairyuState.frontDataUrl,
       backImage: zairyuState.backDataUrl,
+      confirmedData: {
+        cardNumber: (zairyuState.ocr || {}).cardNumber || '',
+        zairyuShikaku: (zairyuState.ocr || {}).zairyuShikaku || '',
+        zairyuKigen: (zairyuState.ocr || {}).zairyuKigen || '',
+      },
     });
     showAlert(t('zairyuSuccess'), 'success');
-    // ホームに戻す
-    setTimeout(() => {
-      showScreen('home');
-    }, 600);
+    setTimeout(() => showScreen('home'), 600);
   } catch (e) {
     if (e.status === 404 && e.data && e.data.error === 'shain_folder_not_found') {
       showAlert(t('zairyuFolderNotFound'), 'error');
@@ -1277,10 +1446,12 @@ function acceptRules() {
 
 // ====== 画面遷移 ======
 function showScreen(name) {
-  ['login','home','request','history','zairyu'].forEach(s => {
-    document.getElementById('screen-' + s).classList.add('hidden');
+  ['login','home','request','history','zairyu','zairyu-confirm'].forEach(s => {
+    const el = document.getElementById('screen-' + s);
+    if (el) el.classList.add('hidden');
   });
-  document.getElementById('screen-' + name).classList.remove('hidden');
+  const target = document.getElementById('screen-' + name);
+  if (target) target.classList.remove('hidden');
   window.scrollTo(0, 0);
   if (name === 'request') initRequestScreen();
   if (name === 'history') initHistoryScreen();
