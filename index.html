@@ -598,6 +598,10 @@
   <div class="card">
     <h2 data-i18n="zairyuConfirmFields">読み取り結果</h2>
     <div id="zairyu-ocr-fields"></div>
+    <details id="ocr-debug-wrap" style="margin-top:14px; font-size:0.78em;">
+      <summary style="cursor:pointer; color:#888; padding:6px 0; user-select:none;">🔍 デバッグ: 読み取った生テキスト</summary>
+      <pre id="ocr-raw-text" style="background:#f5f7fa; padding:10px; border-radius:8px; max-height:300px; overflow:auto; font-size:0.78em; line-height:1.4; white-space:pre-wrap; word-break:break-all; color:#444; margin:6px 0 0;"></pre>
+    </details>
   </div>
 
   <div class="card">
@@ -1259,6 +1263,9 @@ function renderZairyuConfirm() {
   // 画像サムネイル
   document.getElementById('confirm-front-img').src = zairyuState.frontDataUrl || '';
   document.getElementById('confirm-back-img').src = zairyuState.backDataUrl || '';
+  // デバッグ: rawText を表示
+  const rawEl = document.getElementById('ocr-raw-text');
+  if (rawEl) rawEl.textContent = ocr.rawText || '(empty)';
   // エラー欄リセット
   const errEl = document.getElementById('zairyu-confirm-error');
   errEl.classList.add('hidden');
