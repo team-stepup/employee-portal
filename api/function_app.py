@@ -13,6 +13,8 @@ JWT: HS256 + 24h 有効。秘密鍵は App Setting JWT_SECRET から取得。
 """
 import base64
 import datetime as _dt
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -65,6 +67,23 @@ F_MENKYO_NUMBER = "OData__x514d__x8a31__x8a3c__x756a__x53"   # 免許証番号 (
 F_MENKYO_TAIKEN = "OData__x514d__x8a31__x53d6__x5f97__x5e"   # 免許取得年月日 (DateTime)
 F_MENKYO_KIGEN = "OData__x514d__x8a31__x8a3c__x6709__x52"    # 免許証有効期限 (DateTime)
 F_MENKYO_TYPE = "OData__x514d__x8a31__x306e__x7a2e__x98"     # 免許の種類 (Choice)
+
+# ポータル PIN (4桁) のハッシュ格納フィールド (Note)
+F_PORTAL_PIN = "OData__x30dd__x30fc__x30bf__x30eb_PIN"
+
+
+def hash_pin(shain_no: int, pin: str) -> str:
+    """PIN を社員番号 + サーバ秘密鍵で HMAC-SHA256 ハッシュ化。
+    社員番号を salt に含めることで、同じ PIN でも社員ごとに異なるハッシュになる。"""
+    secret = (JWT_SECRET or "portal-pin-fallback").encode("utf-8")
+    msg = f"{shain_no}:{pin}".encode("utf-8")
+    return hmac.new(secret, msg, hashlib.sha256).hexdigest()
+
+
+def verify_pin(shain_no: int, pin: str, stored_hash: Optional[str]) -> bool:
+    if not stored_hash:
+        return False
+    return hmac.compare_digest(hash_pin(shain_no, pin), stored_hash.strip())
 
 
 def commutes_by_car(emp: Dict[str, Any]) -> bool:
@@ -528,7 +547,7 @@ def find_active_employee(shain_no: int, birthday: str, tel_last4: str) -> Option
         select=",".join([
             "Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_BIRTHDAY, F_TEL,
             F_TAISHA_DATE, F_ZAIYOKU, F_GINKO, F_SHITEN, F_KOUZA, F_MEIGI, F_ZAIRYU_NAME,
-            F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW,
+            F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW, F_PORTAL_PIN,
         ]),
         filter_=f"{F_SHAIN_NO} eq {shain_no}",
         orderby="Id desc",
@@ -663,8 +682,50 @@ def get_next_payday_for_friday(haraibi: str, friday: _dt.date) -> Optional[_dt.d
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 
+@app.route(route="auth/pin-status", methods=["POST", "OPTIONS"])
+def auth_pin_status(req: func.HttpRequest) -> func.HttpResponse:
+    """社員番号から PIN 設定済みかを返す (ログイン画面の出し分け用)。
+    社員の存在有無は秘匿せず、PIN 設定済みかどうかだけを返す。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    shain_no = body.get("shainNo")
+    try:
+        shain_no = int(shain_no)
+    except (TypeError, ValueError):
+        return _json_response({"error": "invalid_shain_no"}, 400)
+    try:
+        emp = find_active_employee_by_shain(shain_no)
+    except Exception:
+        emp = None
+    has_pin = bool(emp and (emp.get(F_PORTAL_PIN) or "").strip())
+    # 在職社員が存在するかも返す (存在しない番号でも pinSet=false を返し列挙対策)
+    return _json_response({"pinSet": has_pin})
+
+
+def _validate_pin(pin: Any) -> Optional[str]:
+    """4桁数字 PIN のバリデーション。OK なら文字列、NG なら None。"""
+    if pin is None:
+        return None
+    s = str(pin).strip()
+    if re.fullmatch(r"\d{4}", s):
+        # 単純すぎる PIN を弾く (0000/1234/1111 等)
+        if s in ("0000", "1111", "2222", "3333", "4444", "5555",
+                 "6666", "7777", "8888", "9999", "1234", "4321"):
+            return None
+        return s
+    return None
+
+
 @app.route(route="auth/login", methods=["POST", "OPTIONS"])
 def auth_login(req: func.HttpRequest) -> func.HttpResponse:
+    """初回ログイン (3要素照合)。PIN 未設定なら pinSetupRequired を返す。
+    PIN 設定済みの場合はこのエンドポイントは使わず /auth/pin-login を使う想定だが、
+    互換のため 3要素一致時はトークンも発行する。"""
     pf = _handle_preflight(req)
     if pf:
         return pf
@@ -682,7 +743,6 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
     except (TypeError, ValueError):
         return _json_response({"error": "invalid_shain_no"}, 400)
 
-    # ロックアウトチェック
     remaining = check_lockout(shain_no)
     if remaining is not None:
         return _json_response({
@@ -701,9 +761,112 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"error": "auth_failed"}, 401)
 
     clear_attempts(shain_no)
+    has_pin = bool((emp.get(F_PORTAL_PIN) or "").strip())
+    if not has_pin:
+        # PIN 未設定 → 短命の setup トークンを発行し、PIN 設定画面へ誘導
+        setup_token = jwt_issue_setup(shain_no)
+        return _json_response({
+            "pinSetupRequired": True,
+            "setupToken": setup_token,
+            "profile": _employee_to_profile(emp),
+        })
+    # PIN 設定済みでも 3要素が合っていればログインさせる (PIN 忘れの救済も兼ねる)
     token = jwt_issue(shain_no)
     profile = _employee_to_profile(emp)
     return _json_response({"token": token, "profile": profile})
+
+
+def jwt_issue_setup(shain_no: int) -> str:
+    """PIN 設定専用の短命トークン (10分)。"""
+    payload = {
+        "sub": str(shain_no),
+        "shainNo": shain_no,
+        "purpose": "pin_setup",
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 600,
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
+
+
+@app.route(route="auth/set-pin", methods=["POST", "OPTIONS"])
+def auth_set_pin(req: func.HttpRequest) -> func.HttpResponse:
+    """PIN 設定。setupToken (3要素照合済) + 新しい4桁PIN を受け取りハッシュ保存。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    auth = req.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return _json_response({"error": "missing_token"}, 401)
+    try:
+        payload = jwt_verify(auth[7:].strip())
+    except Exception as e:
+        return _json_response({"error": "invalid_token", "detail": str(e)}, 401)
+    if payload.get("purpose") != "pin_setup":
+        return _json_response({"error": "invalid_setup_token"}, 403)
+    shain_no = int(payload["shainNo"])
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    pin = _validate_pin(body.get("pin"))
+    if not pin:
+        return _json_response({"error": "invalid_pin"}, 400)
+    try:
+        emp = find_active_employee_by_shain(shain_no)
+        if not emp:
+            return _json_response({"error": "not_active"}, 403)
+        pin_hash = hash_pin(shain_no, pin)
+        sp_patch_item(LIST_SHAIN, int(emp.get("Id")), {F_PORTAL_PIN: pin_hash})
+        # PIN 設定完了 → 本ログイントークン発行
+        token = jwt_issue(shain_no)
+        return _json_response({"ok": True, "token": token, "profile": _employee_to_profile(emp)})
+    except Exception as e:
+        logging.exception("set_pin failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+@app.route(route="auth/pin-login", methods=["POST", "OPTIONS"])
+def auth_pin_login(req: func.HttpRequest) -> func.HttpResponse:
+    """2回目以降のログイン: 社員番号 + 4桁PIN。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    shain_no = body.get("shainNo")
+    pin = body.get("pin")
+    if not (shain_no and pin):
+        return _json_response({"error": "missing_fields"}, 400)
+    try:
+        shain_no = int(shain_no)
+    except (TypeError, ValueError):
+        return _json_response({"error": "invalid_shain_no"}, 400)
+
+    remaining = check_lockout(shain_no)
+    if remaining is not None:
+        return _json_response({
+            "error": "locked_out",
+            "remainingSeconds": remaining,
+            "lockoutMinutes": LOCKOUT_DURATION_MINUTES,
+        }, 429, extra_headers={"Retry-After": str(remaining)})
+
+    try:
+        emp = find_active_employee_by_shain(shain_no)
+    except Exception as e:
+        logging.exception("pin-login lookup failed")
+        return _json_response({"error": "lookup_failed", "detail": str(e)}, 500)
+    stored = (emp.get(F_PORTAL_PIN) if emp else None)
+    if not emp or not (stored or "").strip():
+        # PIN 未設定 → 初回ログインへ誘導
+        return _json_response({"error": "pin_not_set"}, 409)
+    if not verify_pin(shain_no, str(pin), stored):
+        record_failed_attempt(shain_no)
+        return _json_response({"error": "auth_failed"}, 401)
+    clear_attempts(shain_no)
+    token = jwt_issue(shain_no)
+    return _json_response({"token": token, "profile": _employee_to_profile(emp)})
 
 
 def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
@@ -751,7 +914,7 @@ def find_active_employee_by_shain(shain_no: int) -> Optional[Dict[str, Any]]:
         select=",".join([
             "Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_BIRTHDAY, F_TEL,
             F_TAISHA_DATE, F_ZAIYOKU, F_GINKO, F_SHITEN, F_KOUZA, F_MEIGI, F_ZAIRYU_NAME,
-            F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW,
+            F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW, F_PORTAL_PIN,
         ]),
         filter_=f"{F_SHAIN_NO} eq {shain_no}",
         orderby="Id desc",

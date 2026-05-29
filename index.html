@@ -450,21 +450,50 @@
     <div style="font-size: 0.85em; color: #666; margin-top: 4px;">有限会社ステップ・アップ</div>
   </div>
 
-  <div class="card">
+  <!-- 通常ログイン (社員番号 + PIN) -->
+  <div class="card" id="login-pin-card">
     <h2 data-i18n="login">ログイン</h2>
     <div id="login-error" class="error-banner hidden"></div>
     <label class="label" data-i18n="shainNoLabel">社員番号</label>
     <input id="login-shainno" type="number" placeholder="例: 70342" inputmode="numeric">
-    <label class="label" data-i18n="birthdayLabel">生年月日</label>
-    <input id="login-birthday" type="date">
-    <label class="label" data-i18n="telLabel">電話番号 (下4桁)</label>
-    <input id="login-tel" type="number" placeholder="例: 1234" inputmode="numeric" maxlength="4">
-    <button id="login-btn" class="btn btn-primary" data-i18n="loginButton">ログイン</button>
+    <label class="label" data-i18n="pinLabel">PIN (4桁)</label>
+    <input id="login-pin" type="password" placeholder="••••" inputmode="numeric" maxlength="4" autocomplete="off">
+    <button id="login-pin-btn" class="btn btn-primary" data-i18n="loginButton">ログイン</button>
+    <button type="button" class="btn btn-secondary" onclick="showLoginMode('setup')" data-i18n="firstTimeBtn">はじめての方 / PINを忘れた方</button>
     <div class="lang-picker" style="text-align: center; margin-top: 14px;">
       <button type="button" class="lang-btn" data-lang="ja" onclick="setLang('ja')">🇯🇵 日本語</button>
       <button type="button" class="lang-btn" data-lang="en" onclick="setLang('en')">🇬🇧 English</button>
       <button type="button" class="lang-btn" data-lang="pt" onclick="setLang('pt')">🇧🇷 Português</button>
     </div>
+  </div>
+
+  <!-- 初回登録 (3要素照合 → PIN 設定) -->
+  <div class="card hidden" id="login-setup-card">
+    <h2 data-i18n="firstTimeTitle">はじめての登録</h2>
+    <p style="font-size:0.85em; color:#666; margin:0 0 12px;" data-i18n="firstTimeDesc">本人確認のため以下を入力してください。確認後、4桁のPINを設定します。</p>
+    <div id="setup-error" class="error-banner hidden"></div>
+    <label class="label" data-i18n="shainNoLabel">社員番号</label>
+    <input id="setup-shainno" type="number" placeholder="例: 70342" inputmode="numeric">
+    <label class="label" data-i18n="birthdayLabel">生年月日</label>
+    <input id="setup-birthday" type="date">
+    <label class="label" data-i18n="telLabel">電話番号 (下4桁)</label>
+    <input id="setup-tel" type="number" placeholder="例: 1234" inputmode="numeric" maxlength="4">
+    <button id="setup-verify-btn" class="btn btn-primary" data-i18n="verifyBtn">本人確認する</button>
+    <button type="button" class="btn btn-secondary" onclick="showLoginMode('pin')" data-i18n="backToLogin">← ログインに戻る</button>
+  </div>
+
+  <!-- PIN 設定 (3要素確認後) -->
+  <div class="card hidden" id="login-newpin-card">
+    <h2 data-i18n="setPinTitle">PINを設定</h2>
+    <p style="font-size:0.85em; color:#666; margin:0 0 12px;" id="newpin-greeting"></p>
+    <div id="newpin-error" class="error-banner hidden"></div>
+    <label class="label" data-i18n="newPinLabel">新しいPIN (4桁の数字)</label>
+    <input id="newpin1" type="password" placeholder="••••" inputmode="numeric" maxlength="4" autocomplete="off">
+    <label class="label" data-i18n="newPinConfirmLabel">もう一度入力</label>
+    <input id="newpin2" type="password" placeholder="••••" inputmode="numeric" maxlength="4" autocomplete="off">
+    <p style="font-size:0.78em; color:#999; margin:8px 0 0;" data-i18n="pinHint">※ 0000・1234 などの簡単なPINは使えません。誕生日など推測されにくい番号にしてください。</p>
+    <button id="setpin-btn" class="btn btn-primary" data-i18n="setPinBtn">このPINで登録する</button>
+  </div>
   </div>
 </div>
 
@@ -782,7 +811,22 @@ const I18N = {
     shainNoLabel: "社員番号",
     birthdayLabel: "生年月日",
     telLabel: "電話番号 (下4桁)",
+    pinLabel: "PIN (4桁)",
     loginButton: "ログイン",
+    firstTimeBtn: "はじめての方 / PINを忘れた方",
+    firstTimeTitle: "はじめての登録",
+    firstTimeDesc: "本人確認のため以下を入力してください。確認後、4桁のPINを設定します。",
+    verifyBtn: "本人確認する",
+    backToLogin: "← ログインに戻る",
+    setPinTitle: "PINを設定",
+    newPinLabel: "新しいPIN (4桁の数字)",
+    newPinConfirmLabel: "もう一度入力",
+    pinHint: "※ 0000・1234 などの簡単なPINは使えません。推測されにくい番号にしてください。",
+    setPinBtn: "このPINで登録する",
+    pinMismatch: "PINが一致しません。もう一度入力してください。",
+    pinInvalid: "4桁の数字を入力してください (0000・1234等の簡単な番号は不可)。",
+    pinSetSuccess: "PINを登録しました。次回から社員番号とPINでログインできます。",
+    pinWrong: "社員番号またはPINが違います。",
     logout: "ログアウト",
     menuApply: "前払い申請",
     menuHistory: "申請履歴",
@@ -827,7 +871,22 @@ const I18N = {
     shainNoLabel: "Nº do Funcionário",
     birthdayLabel: "Data de Nascimento",
     telLabel: "Telefone (últimos 4 dígitos)",
+    pinLabel: "PIN (4 dígitos)",
     loginButton: "Entrar",
+    firstTimeBtn: "Primeira vez / Esqueci o PIN",
+    firstTimeTitle: "Primeiro registro",
+    firstTimeDesc: "Para verificação, preencha os dados abaixo. Depois você definirá um PIN de 4 dígitos.",
+    verifyBtn: "Verificar identidade",
+    backToLogin: "← Voltar ao login",
+    setPinTitle: "Definir PIN",
+    newPinLabel: "Novo PIN (4 dígitos)",
+    newPinConfirmLabel: "Digite novamente",
+    pinHint: "* PINs simples como 0000 ou 1234 não são permitidos. Use um número difícil de adivinhar.",
+    setPinBtn: "Registrar este PIN",
+    pinMismatch: "Os PINs não coincidem. Tente novamente.",
+    pinInvalid: "Digite 4 dígitos (PINs simples como 0000/1234 não são permitidos).",
+    pinSetSuccess: "PIN registrado. A partir da próxima vez, entre com nº e PIN.",
+    pinWrong: "Nº de funcionário ou PIN incorreto.",
     logout: "Sair",
     menuApply: "Adiantamento",
     menuHistory: "Histórico",
@@ -877,7 +936,22 @@ const I18N = {
     shainNoLabel: "Employee No.",
     birthdayLabel: "Date of Birth",
     telLabel: "Phone (last 4 digits)",
+    pinLabel: "PIN (4 digits)",
     loginButton: "Sign In",
+    firstTimeBtn: "First time / Forgot PIN",
+    firstTimeTitle: "First-time Registration",
+    firstTimeDesc: "Please enter the following for verification. Then you'll set a 4-digit PIN.",
+    verifyBtn: "Verify Identity",
+    backToLogin: "← Back to login",
+    setPinTitle: "Set PIN",
+    newPinLabel: "New PIN (4 digits)",
+    newPinConfirmLabel: "Enter again",
+    pinHint: "* Simple PINs like 0000 or 1234 are not allowed. Use a hard-to-guess number.",
+    setPinBtn: "Register this PIN",
+    pinMismatch: "PINs don't match. Please try again.",
+    pinInvalid: "Enter 4 digits (simple PINs like 0000/1234 are not allowed).",
+    pinSetSuccess: "PIN registered. Next time, sign in with your number and PIN.",
+    pinWrong: "Employee number or PIN is incorrect.",
     logout: "Sign Out",
     menuApply: "Advance Request",
     menuHistory: "Request History",
@@ -1764,12 +1838,71 @@ function showScreen(name) {
 }
 
 // ====== ログイン ======
-async function tryLogin() {
+let _setupToken = null;   // 3要素照合後の PIN 設定用トークン
+let _setupShainNo = null;
+
+// ログイン画面のモード切替 (pin / setup / newpin)
+function showLoginMode(mode) {
+  document.getElementById('login-pin-card').classList.toggle('hidden', mode !== 'pin');
+  document.getElementById('login-setup-card').classList.toggle('hidden', mode !== 'setup');
+  document.getElementById('login-newpin-card').classList.toggle('hidden', mode !== 'newpin');
+  // エラー表示クリア
+  ['login-error', 'setup-error', 'newpin-error'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+}
+
+function _showInlineError(id, msg) {
+  const el = document.getElementById(id);
+  if (el) { el.textContent = msg; el.classList.remove('hidden'); }
+}
+
+// 通常ログイン: 社員番号 + PIN
+async function tryPinLogin() {
   const shainNo = parseInt(document.getElementById('login-shainno').value, 10);
-  const birthday = document.getElementById('login-birthday').value;
-  const telLast4 = document.getElementById('login-tel').value;
+  const pin = document.getElementById('login-pin').value;
+  document.getElementById('login-error').classList.add('hidden');
+  if (!shainNo || !pin) {
+    _showInlineError('login-error', t('missingLoginFields'));
+    return;
+  }
+  showLoading(true);
+  try {
+    const data = await callApi('POST', '/auth/pin-login', { shainNo: shainNo, pin: String(pin) });
+    state.token = data.token;
+    state.profile = data.profile;
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("lastShainNo", String(shainNo));
+    applyPreferredLangIfNotSet();
+    showScreen('home');
+  } catch (e) {
+    if (e.status === 429) {
+      const remainMin = Math.ceil(((e.data && e.data.remainingSeconds) || 1800) / 60);
+      _showInlineError('login-error', t('lockedOut').replace('{min}', remainMin));
+    } else if (e.status === 409 && e.data && e.data.error === 'pin_not_set') {
+      // PIN 未設定 → 初回登録モードへ誘導
+      showLoginMode('setup');
+      document.getElementById('setup-shainno').value = shainNo;
+      _showInlineError('setup-error', t('firstTimeDesc'));
+    } else if (e.status === 401) {
+      _showInlineError('login-error', t('pinWrong'));
+    } else {
+      _showInlineError('login-error', t('networkError'));
+    }
+  } finally {
+    showLoading(false);
+  }
+}
+
+// 初回: 3要素照合 → PIN 設定モードへ
+async function tryVerifyForSetup() {
+  const shainNo = parseInt(document.getElementById('setup-shainno').value, 10);
+  const birthday = document.getElementById('setup-birthday').value;
+  const telLast4 = document.getElementById('setup-tel').value;
+  document.getElementById('setup-error').classList.add('hidden');
   if (!shainNo || !birthday || !telLast4) {
-    showAlert(t('missingLoginFields'), 'warning');
+    _showInlineError('setup-error', t('missingLoginFields'));
     return;
   }
   showLoading(true);
@@ -1777,20 +1910,86 @@ async function tryLogin() {
     const data = await callApi('POST', '/auth/login', {
       shainNo: shainNo, birthday: birthday, telLast4: String(telLast4).slice(-4),
     });
+    if (data.pinSetupRequired) {
+      // PIN 未設定 → 設定画面へ
+      _setupToken = data.setupToken;
+      _setupShainNo = shainNo;
+      state.profile = data.profile;
+      showLoginMode('newpin');
+      const greet = document.getElementById('newpin-greeting');
+      if (greet) greet.textContent = (data.profile && data.profile.name) ? (data.profile.name + ' さん') : '';
+    } else if (data.token) {
+      // 既に PIN 設定済みだが 3要素一致でログイン (PIN 救済)
+      state.token = data.token;
+      state.profile = data.profile;
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("lastShainNo", String(shainNo));
+      applyPreferredLangIfNotSet();
+      showScreen('home');
+    }
+  } catch (e) {
+    if (e.status === 429) {
+      const remainMin = Math.ceil(((e.data && e.data.remainingSeconds) || 1800) / 60);
+      _showInlineError('setup-error', t('lockedOut').replace('{min}', remainMin));
+    } else if (e.status === 401) {
+      _showInlineError('setup-error', t('authFailed'));
+    } else if (e.status === 403) {
+      _showInlineError('setup-error', t('notActive'));
+    } else {
+      _showInlineError('setup-error', t('networkError'));
+    }
+  } finally {
+    showLoading(false);
+  }
+}
+
+// PIN 設定実行
+async function trySetPin() {
+  const pin1 = document.getElementById('newpin1').value;
+  const pin2 = document.getElementById('newpin2').value;
+  document.getElementById('newpin-error').classList.add('hidden');
+  if (!/^\d{4}$/.test(pin1)) {
+    _showInlineError('newpin-error', t('pinInvalid'));
+    return;
+  }
+  if (pin1 !== pin2) {
+    _showInlineError('newpin-error', t('pinMismatch'));
+    return;
+  }
+  if (!_setupToken) {
+    showLoginMode('setup');
+    return;
+  }
+  showLoading(true);
+  try {
+    // setupToken を一時的に state.token に入れて callApi で送る
+    const savedToken = state.token;
+    state.token = _setupToken;
+    let data;
+    try {
+      data = await callApi('POST', '/auth/set-pin', { pin: pin1 });
+    } finally {
+      state.token = savedToken;
+    }
+    // 設定完了 → 本ログイントークン受領
     state.token = data.token;
     state.profile = data.profile;
     localStorage.setItem("token", data.token);
+    localStorage.setItem("lastShainNo", String(_setupShainNo));
+    _setupToken = null;
     applyPreferredLangIfNotSet();
+    toast(t('pinSetSuccess'), 'success');
     showScreen('home');
   } catch (e) {
-    if (e.status === 429) {
-      const remainSec = (e.data && e.data.remainingSeconds) || (30 * 60);
-      const remainMin = Math.ceil(remainSec / 60);
-      showAlert(t('lockedOut').replace('{min}', remainMin), 'warning');
+    if (e.status === 400 && e.data && e.data.error === 'invalid_pin') {
+      _showInlineError('newpin-error', t('pinInvalid'));
+    } else if (e.status === 401 || e.status === 403) {
+      // setup トークン期限切れ → 最初からやり直し
+      _showInlineError('newpin-error', t('networkError'));
+      showLoginMode('setup');
+    } else {
+      _showInlineError('newpin-error', t('networkError'));
     }
-    else if (e.status === 401) showAlert(t('authFailed'), 'error');
-    else if (e.status === 403) showAlert(t('notActive'), 'error');
-    else showAlert(t('networkError') + '\n(' + (e.data && e.data.detail ? e.data.detail : e.message) + ')', 'error');
   } finally {
     showLoading(false);
   }
@@ -1805,6 +2004,7 @@ function logout() {
   localStorage.removeItem("token");
   // 言語の明示選択フラグもリセット (次の人がログインしたら推奨言語で開く)
   localStorage.removeItem("langExplicit");
+  showLoginMode('pin');
   showScreen('login');
 }
 
@@ -2164,7 +2364,7 @@ async function updateHistoryBadge() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v13';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v14';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 
@@ -2238,12 +2438,25 @@ async function checkUpdate() {
 // ====== Init ======
 async function bootstrap() {
   applyI18n();
-  document.getElementById('login-btn').addEventListener('click', tryLogin);
+  // PIN ログイン関連のイベント登録
+  document.getElementById('login-pin-btn').addEventListener('click', tryPinLogin);
+  document.getElementById('setup-verify-btn').addEventListener('click', tryVerifyForSetup);
+  document.getElementById('setpin-btn').addEventListener('click', trySetPin);
   document.getElementById('apply-submit-btn').addEventListener('click', submitApply);
-  // バージョン表示 (任意)
+  // PIN 入力欄で Enter / 4桁入力時に自動送信を補助
+  const pinInput = document.getElementById('login-pin');
+  if (pinInput) {
+    pinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryPinLogin(); });
+  }
+  // 前回ログインの社員番号を復元 (PIN だけ入れればいい)
+  const lastShain = localStorage.getItem("lastShainNo");
+  if (lastShain) {
+    const el = document.getElementById('login-shainno');
+    if (el) el.value = lastShain;
+  }
+  // バージョン表示
   const verEl = document.getElementById('version-tag');
   if (verEl) verEl.textContent = 'Build: ' + APP_VERSION;
-  // Service Worker 登録 (PWA: スマホホーム画面に追加可能化 + オフラインキャッシュ)
   registerServiceWorker();
   if (state.token) {
     showLoading(true);
@@ -2252,11 +2465,13 @@ async function bootstrap() {
       applyPreferredLangIfNotSet();
       showScreen('home');
     } catch (e) {
+      showLoginMode('pin');
       showScreen('login');
     } finally {
       showLoading(false);
     }
   } else {
+    showLoginMode('pin');
     showScreen('login');
   }
 }
