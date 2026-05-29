@@ -1008,66 +1008,124 @@ def run_zairyu_ocr(image_bytes: bytes) -> Dict[str, Any]:
     return parsed
 
 
+# 在留資格の既知値リスト (長い順 — 「永住者の配偶者等」を「永住者」より先に)
+ZAIRYU_SHIKAKU_KNOWN = [
+    "高度専門職1号イ", "高度専門職1号ロ", "高度専門職1号ハ", "高度専門職2号", "高度専門職",
+    "技術・人文知識・国際業務",
+    "永住者の配偶者等", "日本人の配偶者等",
+    "特定技能1号", "特定技能2号", "特定技能",
+    "技能実習1号イ", "技能実習1号ロ", "技能実習2号イ", "技能実習2号ロ", "技能実習3号イ", "技能実習3号ロ", "技能実習",
+    "法律・会計業務",
+    "経営・管理",
+    "特定活動",
+    "短期滞在",
+    "家族滞在",
+    "永住者", "定住者",
+    "教授", "芸術", "宗教", "報道", "教育", "研究", "医療", "介護", "技能",
+    "留学", "研修",
+    "外交", "公用",
+    "Permanent Resident", "Long-Term Resident", "Spouse",
+]
+
+
+def _is_permanent_status(s: Optional[str]) -> bool:
+    if not s:
+        return False
+    return "永住" in s or "Permanent" in s
+
+
 def parse_zairyu_card_text(text: str) -> Dict[str, Any]:
     """汎用OCRテキストから在留カードの主要項目を抽出 (best-effort)。"""
     out: Dict[str, Any] = {"rawText": text}
     if not text:
         return out
 
+    lines = [ln.strip() for ln in text.split('\n')]
+
     # 在留カード番号: AB12345678CD 形式 (12桁、頭2/末尾2 が英字)
     m = re.search(r'\b([A-Z]{2}\d{8}[A-Z]{2})\b', text)
     if m:
         out['cardNumber'] = m.group(1)
 
-    # 氏名 NAME: 行ベース。ラベルの後 (改行含む) の英字行
-    m = re.search(r'NAME[\s:]*\n?([A-Z][A-Z\s,\.\-]{2,})', text)
-    if m:
-        out['name'] = re.sub(r'\s+', ' ', m.group(1)).strip()
+    # 氏名: 行ベース。「氏名」/「NAME」を含む行の次の英字行を取得
+    for i, line in enumerate(lines):
+        if '氏名' in line or re.search(r'\bNAME\b', line):
+            for j in range(i + 1, min(i + 4, len(lines))):
+                cand = lines[j].strip()
+                # 英字+空白+記号のみの行 (3文字以上)
+                if re.match(r'^[A-Z][A-Z\s,\.\-\']{2,60}$', cand) and 'NAME' not in cand:
+                    out['name'] = re.sub(r'\s+', ' ', cand)
+                    break
+            if 'name' in out:
+                break
 
     # 生年月日 DATE OF BIRTH
     for pat in (
-        r'DATE\s+OF\s+BIRTH[\s:]*\n?\s*(\d{4})[\.\-/年\s]+(\d{1,2})[\.\-/月\s]+(\d{1,2})',
-        r'生年月日[\s:：]*\n?\s*(\d{4})[年\.\-/]+(\d{1,2})[月\.\-/]+(\d{1,2})',
+        r'(?:DATE\s+OF\s+BIRTH|生年月日)[\s:：]*\n?\s*(\d{4})[\.\-/年\s]+(\d{1,2})[\.\-/月\s]+(\d{1,2})',
     ):
         m = re.search(pat, text)
         if m:
             out['birthday'] = f"{m.group(1)}-{m.group(2).zfill(2)}-{m.group(3).zfill(2)}"
             break
 
-    # 性別 SEX: M / F
+    # 性別 SEX
     m = re.search(r'SEX[\s:]*\n?\s*([MF])\b', text)
     if m:
-        out['sex'] = 'M' if m.group(1) == 'M' else 'F'
+        out['sex'] = m.group(1)
 
-    # 国籍 NATIONALITY/REGION
-    m = re.search(r'NATIONALITY[/A-Z\s]*[:：\n]\s*([A-Z][A-Z\s\(\)\.]+)', text)
-    if m:
-        out['nationality'] = re.sub(r'\s+', ' ', m.group(1)).strip()
-
-    # 在留資格 STATUS
+    # 国籍 NATIONALITY/REGION — カタカナ・漢字・英字を許容
     for pat in (
-        r'STATUS[\s:]*\n?\s*([A-Za-z][\w\s\-\(\)/]+)',
-        r'在留資格[\s:：]*\n?\s*([^\n]+)',
+        # ラベル直後 (改行を許容): "NATIONALITY/REGION ブラジル"
+        r'NATIONALITY[\s/A-Za-z]*[:：\n]?\s*([ァ-ヶー一-鿿][゠-ヿ一-鿿・\s]{1,20})',
+        r'国籍[・\s/地域]*[:：\n]?\s*([ァ-ヶー一-鿿][゠-ヿ一-鿿・\s]{1,20})',
     ):
         m = re.search(pat, text)
         if m:
-            val = m.group(1).strip()
-            # 改行や次のラベルが混入する場合は最初の単語/フレーズに限定
-            val = re.split(r'(?:DATE|住所|PERIOD|期間|号)', val)[0].strip()
-            if val:
-                out['zairyuShikaku'] = val
+            val = re.sub(r'\s+', ' ', m.group(1)).strip()
+            # 改行/住居地/ADDRESS等で打ち切り
+            val = re.split(r'(?:住居|ADDRESS|在留|STATUS|\n)', val)[0].strip()
+            if val and len(val) <= 30:
+                out['nationality'] = val
                 break
 
-    # 在留期限 DATE OF EXPIRATION
+    # 在留資格: 既知値リストから優先マッチ
+    for known in ZAIRYU_SHIKAKU_KNOWN:
+        if known in text:
+            out['zairyuShikaku'] = known
+            break
+
+    # 在留期限 — 通常の日付パターン
+    # 注意: "**年**月" や "0000年00月" は無効として扱う
+    found_kigen = None
     for pat in (
-        r'DATE\s+OF\s+EXPIRATION[\s:]*\n?\s*(\d{4})[\.\-/年\s]+(\d{1,2})[\.\-/月\s]+(\d{1,2})',
-        r'(?:在留期間|有効期限)(?:\s*\(.*?\))?[\s:：]*\n?\s*(\d{4})[年\.\-/]+(\d{1,2})[月\.\-/]+(\d{1,2})',
-        r'満了日[\s:：]*\n?\s*(\d{4})[年\.\-/]+(\d{1,2})[月\.\-/]+(\d{1,2})',
+        r'(?:DATE\s+OF\s+EXPIRATION|在留期間.*?満了日|PERIOD\s+OF\s+STAY)[\s\S]{0,80}?(\d{4})[\.\-/年\s]+(\d{1,2})[\.\-/月\s]+(\d{1,2})',
     ):
         m = re.search(pat, text)
         if m:
-            out['zairyuKigen'] = f"{m.group(1)}-{m.group(2).zfill(2)}-{m.group(3).zfill(2)}"
-            break
+            y, mo, d = m.group(1), m.group(2).zfill(2), m.group(3).zfill(2)
+            if y not in ("0000",) and mo != "00" and d != "00":
+                found_kigen = f"{y}-{mo}-{d}"
+                break
+    if found_kigen:
+        out['zairyuKigen'] = found_kigen
+
+    # 永住者 or 在留期限読取失敗 → カード有効期限を代用
+    is_permanent = _is_permanent_status(out.get('zairyuShikaku'))
+    if is_permanent or 'zairyuKigen' not in out:
+        for pat in (
+            # 「このカードは 2029年03月09日まで有効」
+            r'(\d{4})[年\.\-/]+(\d{1,2})[月\.\-/]+(\d{1,2})\s*日?\s*まで有効',
+            # 「PERIOD OF VALIDITY OF THIS CARD ... 2029.03.09」
+            r'PERIOD\s+OF\s+VALIDITY[\s\S]{0,120}?(\d{4})[\.\-/年\s]+(\d{1,2})[\.\-/月\s]+(\d{1,2})',
+        ):
+            m = re.search(pat, text)
+            if m:
+                y, mo, d = m.group(1), m.group(2).zfill(2), m.group(3).zfill(2)
+                if y != "0000":
+                    out['zairyuKigen'] = f"{y}-{mo}-{d}"
+                    if is_permanent:
+                        out['zairyuKigenSource'] = 'cardValidity'  # 永住者 → カード有効期限を代用
+                    break
 
     return out
 

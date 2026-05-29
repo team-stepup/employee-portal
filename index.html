@@ -929,6 +929,9 @@ I18N.pt.fieldZairyuKigen = "Data de Vencimento";
 I18N.ja.fieldNotRecognized = "(読み取れませんでした)";
 I18N.en.fieldNotRecognized = "(Not recognized)";
 I18N.pt.fieldNotRecognized = "(Não reconhecido)";
+I18N.ja.kigenFromCardValidity = "※ 永住者のため、カードの有効期限を表示しています";
+I18N.en.kigenFromCardValidity = "* Showing card validity date (Permanent Resident)";
+I18N.pt.kigenFromCardValidity = "* Exibindo data de validade do cartão (Residente Permanente)";
 I18N.ja.birthdayMismatch = "⚠ 登録済みの生年月日と一致しません。撮り直すか、総務にお問い合わせください。";
 I18N.en.birthdayMismatch = "⚠ Birthday doesn't match the registered one. Please retake or contact HR.";
 I18N.pt.birthdayMismatch = "⚠ Data de nascimento não corresponde ao registrado. Refaça ou contate o RH.";
@@ -1282,8 +1285,10 @@ function renderZairyuConfirm() {
     const lbl = document.createElement('div');
     lbl.style.cssText = 'font-size:0.85em; color:#666; font-weight:600; flex-shrink:0;';
     lbl.textContent = t(f.label);
+    const valWrap = document.createElement('div');
+    valWrap.style.cssText = 'text-align:right;';
     const val = document.createElement('div');
-    val.style.cssText = 'font-size:1em; font-weight:700; color:#1f3864; text-align:right; word-break:break-all;';
+    val.style.cssText = 'font-size:1em; font-weight:700; color:#1f3864; word-break:break-all;';
     const v = ocr[f.key];
     if (v && String(v).trim()) {
       val.textContent = v;
@@ -1292,7 +1297,15 @@ function renderZairyuConfirm() {
       val.style.fontStyle = 'italic';
       val.textContent = t('fieldNotRecognized');
     }
-    row.append(lbl, val);
+    valWrap.append(val);
+    // 在留期限が「カード有効期限を代用」の場合は注釈表示
+    if (f.key === 'zairyuKigen' && ocr.zairyuKigenSource === 'cardValidity' && v) {
+      const note = document.createElement('div');
+      note.style.cssText = 'font-size:0.72em; color:#5e35b1; margin-top:2px; font-weight:500;';
+      note.textContent = t('kigenFromCardValidity');
+      valWrap.append(note);
+    }
+    row.append(lbl, valWrap);
     wrap.append(row);
   });
 }
