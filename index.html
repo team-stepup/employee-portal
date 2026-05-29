@@ -495,6 +495,11 @@
       <span class="icon">🪪</span>
       <span class="label" data-i18n="menuZairyu">在留カード提出</span>
     </div>
+    <div class="menu-card" id="menu-card-license" onclick="showScreen('license')" style="display:none;">
+      <span class="card-num">④</span>
+      <span class="icon">🚗</span>
+      <span class="label" data-i18n="menuLicense">免許証提出</span>
+    </div>
   </div>
 
   <div class="lang-picker" style="text-align: center; margin-top: 16px;">
@@ -581,6 +586,70 @@
 
   <button class="btn btn-primary" id="zairyu-next-btn" disabled onclick="zairyuProceedToConfirm()" data-i18n="zairyuNext">次へ (確認画面)</button>
   <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="cancel">キャンセル</button>
+</div>
+
+<!-- ====== Screen: 免許証提出 ====== -->
+<div id="screen-license" class="container hidden">
+  <div class="header">
+    <h1>🚗 <span data-i18n="screenLicenseTitle">運転免許証提出</span></h1>
+    <span class="logout-btn" onclick="showScreen('home')">✕</span>
+  </div>
+  <div class="info-banner" data-i18n="licenseInfo">
+    📌 運転免許証の<b>表面</b>と<b>裏面</b>を順に撮影してください。
+  </div>
+  <div class="card">
+    <h2>① <span data-i18n="licenseFront">免許証 表面</span></h2>
+    <input type="file" accept="image/*" capture="environment" id="license-front-input" onchange="onLicenseFileSelect('front', event)" style="display:none;">
+    <button type="button" class="btn-camera" onclick="openCustomCamera('licenseFront')">
+      <span class="cam-icon">📷</span> <span data-i18n="zairyuTakePhoto">撮影する</span>
+    </button>
+    <div id="license-front-preview" class="zairyu-preview hidden"></div>
+  </div>
+  <div class="card">
+    <h2>② <span data-i18n="licenseBack">免許証 裏面</span></h2>
+    <input type="file" accept="image/*" capture="environment" id="license-back-input" onchange="onLicenseFileSelect('back', event)" style="display:none;">
+    <button type="button" class="btn-camera" onclick="openCustomCamera('licenseBack')">
+      <span class="cam-icon">📷</span> <span data-i18n="zairyuTakePhoto">撮影する</span>
+    </button>
+    <div id="license-back-preview" class="zairyu-preview hidden"></div>
+  </div>
+  <button class="btn btn-primary" id="license-next-btn" disabled onclick="licenseProceedToConfirm()" data-i18n="zairyuNext">次へ (確認画面)</button>
+  <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="cancel">キャンセル</button>
+</div>
+
+<!-- ====== Screen: 免許証提出 確認画面 ====== -->
+<div id="screen-license-confirm" class="container hidden">
+  <div class="header">
+    <h1>🚗 <span data-i18n="licenseConfirmTitle">運転免許証 — 内容確認</span></h1>
+    <span class="logout-btn" onclick="showScreen('license')">←</span>
+  </div>
+  <div class="info-banner" data-i18n="zairyuConfirmInfo">
+    📋 OCR で読み取った内容です。<b>記載と一致するか確認してください</b>。間違いがある場合は「撮り直す」を押してください。
+  </div>
+  <div id="license-confirm-error" class="error-banner hidden"></div>
+  <div class="card">
+    <h2 data-i18n="zairyuConfirmFields">読み取り結果</h2>
+    <div id="license-ocr-fields"></div>
+    <details style="margin-top:14px; font-size:0.78em;">
+      <summary style="cursor:pointer; color:#888; padding:6px 0;">🔍 デバッグ: 読み取った生テキスト</summary>
+      <pre id="license-raw-text" style="background:#f5f7fa; padding:10px; border-radius:8px; max-height:300px; overflow:auto; font-size:0.78em; line-height:1.4; white-space:pre-wrap; word-break:break-all; color:#444; margin:6px 0 0;"></pre>
+    </details>
+  </div>
+  <div class="card">
+    <h2 data-i18n="zairyuConfirmPhotos">撮影画像</h2>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+      <div style="flex:1; min-width:140px;">
+        <div style="font-size:0.8em; color:#666; text-align:center; margin-bottom:4px;" data-i18n="licenseFront">表面</div>
+        <img id="confirm-license-front-img" style="width:100%; max-height:160px; object-fit:contain; border-radius:8px; background:#000;">
+      </div>
+      <div style="flex:1; min-width:140px;">
+        <div style="font-size:0.8em; color:#666; text-align:center; margin-bottom:4px;" data-i18n="licenseBack">裏面</div>
+        <img id="confirm-license-back-img" style="width:100%; max-height:160px; object-fit:contain; border-radius:8px; background:#000;">
+      </div>
+    </div>
+  </div>
+  <button class="btn btn-primary" id="license-confirm-submit-btn" onclick="licenseFinalSubmit()" data-i18n="zairyuSubmit">この内容で提出する</button>
+  <button class="btn btn-secondary" onclick="showScreen('license')" data-i18n="zairyuRetake2">撮り直す</button>
 </div>
 
 <!-- ====== Screen: 在留カード提出 確認画面 (OCR結果) ====== -->
@@ -895,6 +964,38 @@ I18N.pt.zairyuNext = "Próximo (Revisar)";
 I18N.ja.zairyuComingSoon = "OCR（自動読み取り）と確認画面は近日対応予定です。今日は撮影プレビューまで動作します。";
 I18N.en.zairyuComingSoon = "OCR (auto-read) and review screen will be added soon. For today, photo preview works.";
 I18N.pt.zairyuComingSoon = "OCR (leitura automática) e tela de revisão serão adicionados em breve. Hoje, a pré-visualização funciona.";
+// 免許証
+I18N.ja.menuLicense = "免許証提出";
+I18N.en.menuLicense = "Submit License";
+I18N.pt.menuLicense = "Enviar CNH";
+I18N.ja.screenLicenseTitle = "運転免許証提出";
+I18N.en.screenLicenseTitle = "Submit Driver's License";
+I18N.pt.screenLicenseTitle = "Enviar Carteira de Motorista";
+I18N.ja.licenseInfo = "📌 運転免許証の表面と裏面を順に撮影してください。撮影後、内容を確認して提出します。";
+I18N.en.licenseInfo = "📌 Take photos of the FRONT and BACK of your Driver's License. You'll review the data before submitting.";
+I18N.pt.licenseInfo = "📌 Tire foto da FRENTE e do VERSO da sua CNH. Você poderá revisar antes de enviar.";
+I18N.ja.licenseFront = "免許証 表面";
+I18N.en.licenseFront = "License – Front";
+I18N.pt.licenseFront = "CNH – Frente";
+I18N.ja.licenseBack = "免許証 裏面";
+I18N.en.licenseBack = "License – Back";
+I18N.pt.licenseBack = "CNH – Verso";
+I18N.ja.licenseConfirmTitle = "運転免許証 — 内容確認";
+I18N.en.licenseConfirmTitle = "Driver's License — Review";
+I18N.pt.licenseConfirmTitle = "Carteira de Motorista — Revisão";
+// 免許証フィールドラベル
+I18N.ja.fieldLicenseNumber = "免許証番号";
+I18N.en.fieldLicenseNumber = "License Number";
+I18N.pt.fieldLicenseNumber = "Nº da CNH";
+I18N.ja.fieldLicenseType = "免許の種類";
+I18N.en.fieldLicenseType = "License Type";
+I18N.pt.fieldLicenseType = "Tipo de Licença";
+I18N.ja.fieldLicenseDate = "取得年月日 (最初の免許)";
+I18N.en.fieldLicenseDate = "Issue Date (first license)";
+I18N.pt.fieldLicenseDate = "Data de Emissão (primeira)";
+I18N.ja.fieldLicenseExpiry = "有効期限";
+I18N.en.fieldLicenseExpiry = "Expiration Date";
+I18N.pt.fieldLicenseExpiry = "Data de Vencimento";
 // 確認画面
 I18N.ja.zairyuConfirmTitle = "在留カード — 内容確認";
 I18N.en.zairyuConfirmTitle = "Zairyu Card — Review";
@@ -1352,6 +1453,169 @@ async function zairyuFinalSubmit() {
   }
 }
 
+// ====== 免許証提出 ======
+const licenseState = { frontDataUrl: null, backDataUrl: null, ocr: null, ocrMatches: null };
+
+function initLicenseScreen() {
+  licenseState.frontDataUrl = null;
+  licenseState.backDataUrl = null;
+  licenseState.ocr = null;
+  licenseState.ocrMatches = null;
+  ['front', 'back'].forEach(side => {
+    const p = document.getElementById('license-' + side + '-preview');
+    if (p) { p.classList.add('hidden'); p.innerHTML = ''; }
+    const inp = document.getElementById('license-' + side + '-input');
+    if (inp) inp.value = '';
+  });
+  document.getElementById('license-next-btn').disabled = true;
+}
+
+function onLicenseFileSelect(side, event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file || !file.type.startsWith('image/')) return;
+  const sizeKB = Math.round(file.size / 1024);
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const dataUrl = ev.target.result;
+    if (side === 'front') licenseState.frontDataUrl = dataUrl;
+    else licenseState.backDataUrl = dataUrl;
+    renderLicensePreview(side, dataUrl, sizeKB);
+    document.getElementById('license-next-btn').disabled = !(licenseState.frontDataUrl && licenseState.backDataUrl);
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderLicensePreview(side, dataUrl, sizeKB) {
+  const el = document.getElementById('license-' + side + '-preview');
+  el.innerHTML = '';
+  const img = document.createElement('img');
+  img.src = dataUrl;
+  el.appendChild(img);
+  const meta = document.createElement('div');
+  meta.className = 'photo-meta';
+  meta.textContent = sizeKB.toLocaleString() + ' KB';
+  el.appendChild(meta);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'retake-btn';
+  btn.textContent = t('zairyuRetake');
+  btn.onclick = () => document.getElementById('license-' + side + '-input').click();
+  el.appendChild(btn);
+  el.classList.remove('hidden');
+}
+
+async function licenseProceedToConfirm() {
+  if (!(licenseState.frontDataUrl && licenseState.backDataUrl)) return;
+  const btn = document.getElementById('license-next-btn');
+  btn.disabled = true;
+  showLoading(true);
+  const loadingEl = document.getElementById('loading');
+  const note = document.createElement('div');
+  note.id = 'ocr-loading-note';
+  note.style.cssText = 'position:absolute; bottom:35%; left:0; right:0; text-align:center; color:#1f3864; font-weight:700; font-size:1.05em; padding:0 20px;';
+  note.textContent = t('ocrInProgress');
+  loadingEl.appendChild(note);
+  try {
+    const data = await callApi('POST', '/license/ocr', { frontImage: licenseState.frontDataUrl });
+    licenseState.ocr = data.ocr || {};
+    licenseState.ocrMatches = data.matches || {};
+    showScreen('license-confirm');
+    renderLicenseConfirm();
+  } catch (e) {
+    if (e.status === 429) {
+      const sec = (e.data && e.data.retryAfterSeconds) || 60;
+      showAlert(t('rateLimited').replace('{sec}', sec), 'warning');
+    } else {
+      const detail = (e.data && (e.data.detail || e.data.error)) ? '\n(' + (e.data.detail || e.data.error) + ')' : '';
+      showAlert(t('ocrFailed') + detail, 'error');
+    }
+  } finally {
+    btn.disabled = false;
+    showLoading(false);
+    const n = document.getElementById('ocr-loading-note');
+    if (n) n.remove();
+  }
+}
+
+function renderLicenseConfirm() {
+  const ocr = licenseState.ocr || {};
+  const matches = licenseState.ocrMatches || {};
+  document.getElementById('confirm-license-front-img').src = licenseState.frontDataUrl || '';
+  document.getElementById('confirm-license-back-img').src = licenseState.backDataUrl || '';
+  const rawEl = document.getElementById('license-raw-text');
+  if (rawEl) rawEl.textContent = ocr.rawText || '(empty)';
+  const errEl = document.getElementById('license-confirm-error');
+  errEl.classList.add('hidden');
+  if (matches.birthday === false) {
+    errEl.textContent = t('birthdayMismatch');
+    errEl.classList.remove('hidden');
+  }
+  const fields = [
+    { key: 'licenseNumber', label: 'fieldLicenseNumber' },
+    { key: 'name', label: 'fieldName' },
+    { key: 'birthday', label: 'fieldBirthday' },
+    { key: 'licenseType', label: 'fieldLicenseType' },
+    { key: 'licenseDate', label: 'fieldLicenseDate' },
+    { key: 'licenseExpiry', label: 'fieldLicenseExpiry' },
+  ];
+  const wrap = document.getElementById('license-ocr-fields');
+  wrap.innerHTML = '';
+  fields.forEach(f => {
+    const row = document.createElement('div');
+    row.style.cssText = 'padding:8px 0; border-bottom:1px solid #eef2f7; display:flex; justify-content:space-between; align-items:baseline; gap:10px;';
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'font-size:0.85em; color:#666; font-weight:600; flex-shrink:0;';
+    lbl.textContent = t(f.label);
+    const val = document.createElement('div');
+    val.style.cssText = 'font-size:1em; font-weight:700; color:#1f3864; text-align:right; word-break:break-all;';
+    const v = ocr[f.key];
+    if (v && String(v).trim()) {
+      val.textContent = v;
+    } else {
+      val.style.color = '#bbb';
+      val.style.fontStyle = 'italic';
+      val.textContent = t('fieldNotRecognized');
+    }
+    row.append(lbl, val);
+    wrap.append(row);
+  });
+}
+
+async function licenseFinalSubmit() {
+  if (!(licenseState.frontDataUrl && licenseState.backDataUrl)) return;
+  if (!confirm(t('zairyuConfirm'))) return;
+  const btn = document.getElementById('license-confirm-submit-btn');
+  btn.disabled = true;
+  showLoading(true);
+  try {
+    await callApi('POST', '/license/submit', {
+      frontImage: licenseState.frontDataUrl,
+      backImage: licenseState.backDataUrl,
+      confirmedData: {
+        licenseNumber: (licenseState.ocr || {}).licenseNumber || '',
+        licenseType: (licenseState.ocr || {}).licenseType || '',
+        licenseDate: (licenseState.ocr || {}).licenseDate || '',
+        licenseExpiry: (licenseState.ocr || {}).licenseExpiry || '',
+      },
+    });
+    showAlert(t('zairyuSuccess'), 'success');
+    setTimeout(() => showScreen('home'), 600);
+  } catch (e) {
+    if (e.status === 404 && e.data && e.data.error === 'shain_folder_not_found') {
+      showAlert(t('zairyuFolderNotFound'), 'error');
+    } else if (e.status === 429) {
+      const sec = (e.data && e.data.retryAfterSeconds) || 60;
+      showAlert(t('rateLimited').replace('{sec}', sec), 'warning');
+    } else {
+      const detail = (e.data && (e.data.detail || e.data.error)) ? '\n(' + (e.data.detail || e.data.error) + ')' : '';
+      showAlert(t('networkError') + detail, 'error');
+    }
+  } finally {
+    btn.disabled = false;
+    showLoading(false);
+  }
+}
+
 // ====== ガイド枠付きカスタムカメラ ======
 let _cameraStream = null;
 let _cameraSide = null;
@@ -1377,19 +1641,22 @@ async function openCustomCamera(side) {
   } catch (e) {
     console.warn('camera error, fallback to file input:', e);
     // フォールバック: ネイティブ <input capture> を起動
-    document.getElementById('zairyu-' + side + '-input').click();
+    const fallbackId = side === 'licenseFront' ? 'license-front-input'
+                     : side === 'licenseBack' ? 'license-back-input'
+                     : 'zairyu-' + side + '-input';
+    const inp = document.getElementById(fallbackId);
+    if (inp) inp.click();
   }
 }
 
 function captureFromCamera() {
   const video = document.getElementById('camera-video');
   if (!video.videoWidth) return;
-  // 撮影シャッター効果 (短いフラッシュ)
+  // 撮影シャッター効果
   const view = document.getElementById('camera-view');
   view.style.transition = 'background-color 0.15s';
   view.style.backgroundColor = '#fff';
   setTimeout(() => { view.style.backgroundColor = '#000'; }, 80);
-  // 撮影
   const canvas = document.createElement('canvas');
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
@@ -1397,16 +1664,24 @@ function captureFromCamera() {
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
   const sizeKB = Math.round((dataUrl.length * 0.75) / 1024);
-  // ステートにセット + プレビュー
+  // _cameraSide のフォーマット: 'front', 'back' (在留カード) または 'licenseFront', 'licenseBack' (免許証)
   if (_cameraSide === 'front') {
     zairyuState.frontDataUrl = dataUrl;
-    zairyuState.frontName = 'zairyu-front.jpg';
-  } else {
+    renderZairyuPreview('front', dataUrl, sizeKB);
+    updateZairyuNextBtn();
+  } else if (_cameraSide === 'back') {
     zairyuState.backDataUrl = dataUrl;
-    zairyuState.backName = 'zairyu-back.jpg';
+    renderZairyuPreview('back', dataUrl, sizeKB);
+    updateZairyuNextBtn();
+  } else if (_cameraSide === 'licenseFront') {
+    licenseState.frontDataUrl = dataUrl;
+    renderLicensePreview('front', dataUrl, sizeKB);
+    document.getElementById('license-next-btn').disabled = !(licenseState.frontDataUrl && licenseState.backDataUrl);
+  } else if (_cameraSide === 'licenseBack') {
+    licenseState.backDataUrl = dataUrl;
+    renderLicensePreview('back', dataUrl, sizeKB);
+    document.getElementById('license-next-btn').disabled = !(licenseState.frontDataUrl && licenseState.backDataUrl);
   }
-  renderZairyuPreview(_cameraSide, dataUrl, sizeKB);
-  updateZairyuNextBtn();
   closeCamera();
 }
 
@@ -1466,7 +1741,7 @@ function acceptRules() {
 
 // ====== 画面遷移 ======
 function showScreen(name) {
-  ['login','home','request','history','zairyu','zairyu-confirm'].forEach(s => {
+  ['login','home','request','history','zairyu','zairyu-confirm','license','license-confirm'].forEach(s => {
     const el = document.getElementById('screen-' + s);
     if (el) el.classList.add('hidden');
   });
@@ -1477,6 +1752,7 @@ function showScreen(name) {
   if (name === 'history') initHistoryScreen();
   if (name === 'home') renderHome();
   if (name === 'zairyu') initZairyuScreen();
+  if (name === 'license') initLicenseScreen();
 }
 
 // ====== ログイン ======
@@ -1552,6 +1828,9 @@ function renderHome() {
   const isJapanese = String(state.profile.kokuseki || '').includes('日本');
   const zairyuCard = document.getElementById('menu-card-zairyu');
   if (zairyuCard) zairyuCard.style.display = isJapanese ? 'none' : '';
+  // 免許証提出ボタン: 車通勤者のみ表示
+  const licenseCard = document.getElementById('menu-card-license');
+  if (licenseCard) licenseCard.style.display = state.profile.commutesByCar ? '' : 'none';
   // 未確認の承認/却下件数バッジを更新 (履歴はキャッシュせず鮮度優先)
   state.historyCache = null;
   updateHistoryBadge();
@@ -1877,7 +2156,7 @@ async function updateHistoryBadge() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v10';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v11';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 

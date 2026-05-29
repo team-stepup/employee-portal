@@ -57,6 +57,25 @@ F_KOKUSEKI = "OData__x672c__x0028__x56fd__x0029__x7c"  # 本(国)籍
 F_ZAIRYU_SHIKAKU = "OData__x5728__x7559__x8cc7__x683c_"  # 在留資格 (Text)
 F_ZAIRYU_KIGEN = "OData__x5728__x7559__x671f__x9650_"    # 在留期限 (DateTime)
 F_ZAIRYU_BIKO = "OData__x5728__x7559__xff1a__x5099__x80"  # 在留：備考1 (Text) — 在留カード番号格納用
+F_TSUKIN_OLD = "OData__x901a__x52e4__x65b9__x6cd5_tsuk"  # 通勤方法tsukinhouhou (Choice) — 車kuruma/送迎/バイク/自転車徒歩
+F_TSUKIN_NEW = "OData__x65b0__x901a__x52e4__x65b9__x6c"  # 新通勤方法 (Text) — 送迎/自通
+
+# 免許証関連フィールド
+F_MENKYO_NUMBER = "OData__x514d__x8a31__x8a3c__x756a__x53"   # 免許証番号 (Number)
+F_MENKYO_TAIKEN = "OData__x514d__x8a31__x53d6__x5f97__x5e"   # 免許取得年月日 (DateTime)
+F_MENKYO_KIGEN = "OData__x514d__x8a31__x8a3c__x6709__x52"    # 免許証有効期限 (DateTime)
+F_MENKYO_TYPE = "OData__x514d__x8a31__x306e__x7a2e__x98"     # 免許の種類 (Choice)
+
+
+def commutes_by_car(emp: Dict[str, Any]) -> bool:
+    """通勤方法フィールドから車/バイク/自通かを判定。"""
+    old = str(emp.get(F_TSUKIN_OLD) or "")
+    new = str(emp.get(F_TSUKIN_NEW) or "")
+    combined = old + " " + new
+    for kw in ("車", "kuruma", "バイク", "baiku", "自通"):
+        if kw in combined:
+            return True
+    return False
 
 
 def guess_lang_from_kokuseki(kokuseki: Optional[str]) -> str:
@@ -509,7 +528,7 @@ def find_active_employee(shain_no: int, birthday: str, tel_last4: str) -> Option
         select=",".join([
             "Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_BIRTHDAY, F_TEL,
             F_TAISHA_DATE, F_ZAIYOKU, F_GINKO, F_SHITEN, F_KOUZA, F_MEIGI, F_ZAIRYU_NAME,
-            F_KOKUSEKI,
+            F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW,
         ]),
         filter_=f"{F_SHAIN_NO} eq {shain_no}",
         orderby="Id desc",
@@ -704,6 +723,7 @@ def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
         "kouza": emp.get(F_KOUZA),
         "meigi": emp.get(F_MEIGI),
         "zaiyokuSyubetu": emp.get(F_ZAIYOKU),
+        "commutesByCar": commutes_by_car(emp),
     }
 
 
@@ -731,7 +751,7 @@ def find_active_employee_by_shain(shain_no: int) -> Optional[Dict[str, Any]]:
         select=",".join([
             "Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_BIRTHDAY, F_TEL,
             F_TAISHA_DATE, F_ZAIYOKU, F_GINKO, F_SHITEN, F_KOUZA, F_MEIGI, F_ZAIRYU_NAME,
-            F_KOKUSEKI,
+            F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW,
         ]),
         filter_=f"{F_SHAIN_NO} eq {shain_no}",
         orderby="Id desc",
@@ -1208,6 +1228,287 @@ def zairyu_ocr(req: func.HttpRequest) -> func.HttpResponse:
             except Exception:
                 pass
     return _json_response({"ocr": ocr_result, "matches": matches})
+
+
+# ====== 運転免許証 OCR ======
+def parse_license_card_text(text: str) -> Dict[str, Any]:
+    """汎用OCRテキストから日本の運転免許証の主要項目を抽出。"""
+    out: Dict[str, Any] = {"rawText": text}
+    if not text:
+        return out
+
+    def _strip_ws(s: str) -> str:
+        return re.sub(r'[\s　]+', '', s or '')
+    text_ns = _strip_ws(text)
+
+    # 免許証番号: 12桁の数字
+    m = re.search(r'第?\s*(\d{12})\s*号', text)
+    if m:
+        out['licenseNumber'] = m.group(1)
+    else:
+        # 「番号」ラベル近くの 12桁を探す
+        m = re.search(r'番[\s号]*第?\s*(\d{12})', text)
+        if m:
+            out['licenseNumber'] = m.group(1)
+        else:
+            # 全体から 12桁を探す (1つだけある場合)
+            all_nums = re.findall(r'\b(\d{12})\b', text)
+            if len(all_nums) == 1:
+                out['licenseNumber'] = all_nums[0]
+
+    # 生年月日: 「YYYY年MM月DD日生」
+    m = re.search(r'(?:昭和\s*(\d+)|平成\s*(\d+)|令和\s*(\d+)|(\d{4}))[\s年]+(\d{1,2})[\s月]+(\d{1,2})[\s日生]', text)
+    if m:
+        if m.group(1):  # 昭和
+            y = 1925 + int(m.group(1))
+        elif m.group(2):  # 平成
+            y = 1988 + int(m.group(2))
+        elif m.group(3):  # 令和
+            y = 2018 + int(m.group(3))
+        else:
+            y = int(m.group(4))
+        mo, d = m.group(5).zfill(2), m.group(6).zfill(2)
+        out['birthday'] = f"{y}-{mo}-{d}"
+
+    # 氏名: 「氏名」ラベルの後の行 (漢字またはカナ)
+    lines = [ln.strip() for ln in text.split('\n')]
+    for i, line in enumerate(lines):
+        if '氏名' in line or 'NAME' in line.upper():
+            for j in range(i + 1, min(i + 4, len(lines))):
+                cand = lines[j].strip()
+                # 漢字/カナ/ローマ字を含む 2文字以上の名前らしき行
+                if cand and len(cand) >= 2 and re.search(r'[一-鿿ァ-ヶー一-鿿A-Z]', cand):
+                    # ラベル単語などを除外
+                    if not any(skip in cand for skip in ['氏名', '住所', '生年月日', '番号', '本籍']):
+                        out['name'] = cand
+                        break
+            if 'name' in out:
+                break
+
+    # 有効期限: 「YYYY年MM月DD日まで有効」 / 「有効期限 YYYY年MM月DD日」
+    for pat in (
+        r'(\d{4})[年\.\-/]+(\d{1,2})[月\.\-/]+(\d{1,2})\s*日?[\s\S]{0,15}?まで有効',
+        r'有効期限?[\s:：]*\n?\s*(\d{4})[年\.\-/]+(\d{1,2})[月\.\-/]+(\d{1,2})',
+        r'(?:平成|令和)\s*(\d+)[年\.\-/]+(\d{1,2})[月\.\-/]+(\d{1,2})\s*日?[\s\S]{0,15}?まで有効',
+    ):
+        m = re.search(pat, text)
+        if m:
+            groups = m.groups()
+            if len(groups) == 3:
+                # 西暦パターン
+                if groups[0] and len(groups[0]) == 4:
+                    y, mo, d = groups[0], groups[1].zfill(2), groups[2].zfill(2)
+                    out['licenseExpiry'] = f"{y}-{mo}-{d}"
+                    break
+                # 元号パターン
+                else:
+                    y_jp = int(groups[0])
+                    y = 2018 + y_jp if y_jp <= 30 else 1988 + y_jp  # 令和か平成かを推定
+                    mo, d = groups[1].zfill(2), groups[2].zfill(2)
+                    out['licenseExpiry'] = f"{y}-{mo:>02}-{d:>02}"
+                    break
+
+    # 免許の種類: 「免許の種類」セクションから (普通/中型/大型/二輪/原付/けん引/大特 等)
+    LICENSE_TYPES = ["大型二種", "中型二種", "普通二種", "大特二種", "けん引二種",
+                     "大型", "中型", "準中型", "普通", "大特", "けん引",
+                     "大型自動二輪", "普通自動二輪", "小型特殊", "原付"]
+    found_types = []
+    for lt in LICENSE_TYPES:
+        if _strip_ws(lt) in text_ns:
+            # 重複避け: 「中型」より「準中型」が先にマッチ済みなら追加しない
+            if not any(_strip_ws(lt) in _strip_ws(f) for f in found_types):
+                found_types.append(lt)
+    if found_types:
+        out['licenseType'] = ' '.join(found_types[:5])  # 最大5種類まで
+
+    # 取得年月日 (種別ごとの最初の取得日 = 一番古い日付っぽいもの)
+    # 免許証下部の「取得年月日」表
+    date_matches = re.findall(r'(?:昭和|平成|令和)\s*(\d+)\s*[年\.](\d{1,2})\s*[月\.](\d{1,2})', text)
+    if date_matches:
+        # 元号変換 → 全部西暦に
+        parsed_dates = []
+        for jy, mo, d in date_matches:
+            jy_int = int(jy)
+            # 元号判定: 数字の前のテキスト確認は複雑なので、年数の大きさで推定
+            # 30 以下は令和の可能性、それより大きいなら平成、それより大きいなら昭和
+            # 簡略: 30以下→令和、31-31→平成可能性、32以上→平成
+            # しかし正確には文脈が必要。ここでは保守的に、年が2桁なら西暦推定
+            try:
+                # 取り合えず 平成/令和 2 パターン試す
+                y_reiwa = 2018 + jy_int
+                y_heisei = 1988 + jy_int
+                # 不可能な日付は除外
+                from datetime import date as _date
+                today = _date.today()
+                if jy_int <= 6 and _date(y_reiwa, int(mo), int(d)) <= today:
+                    parsed_dates.append(_date(y_reiwa, int(mo), int(d)))
+                elif _date(y_heisei, int(mo), int(d)) <= today:
+                    parsed_dates.append(_date(y_heisei, int(mo), int(d)))
+            except Exception:
+                continue
+        if parsed_dates:
+            # 一番古い日付 (=最初に取得した免許の日付) を取得年月日として採用
+            oldest = min(parsed_dates)
+            out['licenseDate'] = oldest.isoformat()
+
+    return out
+
+
+@app.route(route="license/ocr", methods=["POST", "OPTIONS"])
+def license_ocr(req: func.HttpRequest) -> func.HttpResponse:
+    """運転免許証 表面画像から主要項目を OCR で抽出。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    wait = check_rate_limit(shain_no, "zairyu")  # 同じレート制限プール使用
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait},
+                              429, extra_headers={"Retry-After": str(wait)})
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    front_data = body.get("frontImage")
+    if not front_data:
+        return _json_response({"error": "missing_image"}, 400)
+    try:
+        front_bytes = base64.b64decode(_strip_data_url(front_data))
+    except Exception as e:
+        return _json_response({"error": "invalid_base64", "detail": str(e)}, 400)
+    if len(front_bytes) > 10 * 1024 * 1024:
+        return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
+
+    try:
+        from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
+        client = _get_di_client()
+        poller = client.begin_analyze_document(
+            "prebuilt-read",
+            AnalyzeDocumentRequest(bytes_source=front_bytes),
+        )
+        result = poller.result()
+        full_text = ""
+        for page in (result.pages or []):
+            for line in (page.lines or []):
+                full_text += (line.content or "") + "\n"
+        ocr_result = parse_license_card_text(full_text)
+    except Exception as e:
+        logging.exception("license OCR failed")
+        return _json_response({"error": "ocr_failed", "detail": str(e)}, 500)
+
+    # 社員データと突合
+    emp = find_active_employee_by_shain(shain_no)
+    matches: Dict[str, bool] = {}
+    if emp:
+        emp_birthday = _utc_to_jst_date(emp.get(F_BIRTHDAY))
+        ocr_bd = ocr_result.get('birthday')
+        if emp_birthday and ocr_bd:
+            try:
+                matches['birthday'] = (_dt.date.fromisoformat(ocr_bd) == emp_birthday)
+            except Exception:
+                pass
+    return _json_response({"ocr": ocr_result, "matches": matches})
+
+
+@app.route(route="license/submit", methods=["POST", "OPTIONS"])
+def license_submit(req: func.HttpRequest) -> func.HttpResponse:
+    """運転免許証 表/裏画像 + 確認済みデータを社員ファイルに保存 + 社員List PATCH。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    front_data = body.get("frontImage")
+    back_data = body.get("backImage")
+    if not (front_data and back_data):
+        return _json_response({"error": "missing_images"}, 400)
+    try:
+        front_bytes = base64.b64decode(_strip_data_url(front_data))
+        back_bytes = base64.b64decode(_strip_data_url(back_data))
+    except Exception as e:
+        return _json_response({"error": "invalid_base64", "detail": str(e)}, 400)
+    if len(front_bytes) > 10 * 1024 * 1024 or len(back_bytes) > 10 * 1024 * 1024:
+        return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
+    wait = check_rate_limit(shain_no, "zairyu")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait},
+                              429, extra_headers={"Retry-After": str(wait)})
+    try:
+        emp = find_active_employee_by_shain(shain_no)
+        if not emp:
+            return _json_response({"error": "not_active"}, 403)
+        # 車通勤判定 (車通勤以外には提出を許可しない)
+        if not commutes_by_car(emp):
+            return _json_response({"error": "not_commute_by_car"}, 403)
+        buka_text = emp.get(F_BUKA) or ""
+        shain_folder = find_shain_folder_url(shain_no, buka_text)
+        if not shain_folder:
+            return _json_response({"error": "shain_folder_not_found", "buka": buka_text}, 404)
+        if not _validate_shainfile_path(shain_folder):
+            return _json_response({"error": "invalid_folder_path"}, 500)
+        license_folder = f"{shain_folder}/免許証"
+        if not _validate_shainfile_path(license_folder):
+            return _json_response({"error": "invalid_folder_path"}, 500)
+        sp_create_folder_if_not_exists(license_folder)
+        ts = (_dt.datetime.utcnow() + _dt.timedelta(hours=9)).strftime("%Y%m%d_%H%M%S")
+        front_name = _safe_filename(f"{int(shain_no)}_免許証表_{ts}.jpg")
+        back_name = _safe_filename(f"{int(shain_no)}_免許証裏_{ts}.jpg")
+        sp_upload_file(license_folder, front_name, front_bytes)
+        sp_upload_file(license_folder, back_name, back_bytes)
+        # 社員 List PATCH (確認済みデータから)
+        confirmed = body.get("confirmedData") or {}
+        updated_fields: List[str] = []
+        if confirmed:
+            patch_fields: Dict[str, Any] = {}
+            num = (confirmed.get("licenseNumber") or "").strip()
+            if num and num.isdigit() and len(num) <= 12:
+                patch_fields[F_MENKYO_NUMBER] = int(num)
+                updated_fields.append("licenseNumber")
+            kigen = (confirmed.get("licenseExpiry") or "").strip()
+            if kigen:
+                try:
+                    _dt.date.fromisoformat(kigen)
+                    patch_fields[F_MENKYO_KIGEN] = kigen + "T00:00:00Z"
+                    updated_fields.append("licenseExpiry")
+                except Exception:
+                    pass
+            taiken = (confirmed.get("licenseDate") or "").strip()
+            if taiken:
+                try:
+                    _dt.date.fromisoformat(taiken)
+                    patch_fields[F_MENKYO_TAIKEN] = taiken + "T00:00:00Z"
+                    updated_fields.append("licenseDate")
+                except Exception:
+                    pass
+            lic_type = (confirmed.get("licenseType") or "").strip()
+            if lic_type and len(lic_type) <= 100:
+                patch_fields[F_MENKYO_TYPE] = lic_type
+                updated_fields.append("licenseType")
+            if patch_fields:
+                target_id = emp.get("Id")
+                if target_id:
+                    try:
+                        sp_patch_item(LIST_SHAIN, int(target_id), patch_fields)
+                    except Exception as e:
+                        logging.exception("update employee license failed")
+        return _json_response({
+            "ok": True,
+            "folder": license_folder,
+            "files": [front_name, back_name],
+            "updatedFields": updated_fields,
+        })
+    except Exception as e:
+        logging.exception("license_submit failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
 
 
 # ====== 在留カード提出 ======
