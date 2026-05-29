@@ -468,7 +468,6 @@
   <div class="header">
     <img src="logo.png" alt="" class="header-logo">
     <h1 style="flex:1;"><span data-i18n="appTitle">従業員ポータル</span></h1>
-    <span class="logout-btn" onclick="logout()" data-i18n="logout">ログアウト</span>
   </div>
 
   <div class="user-card">
@@ -2156,7 +2155,7 @@ async function updateHistoryBadge() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v11';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v12';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 
