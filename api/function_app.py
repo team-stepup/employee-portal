@@ -1089,29 +1089,39 @@ def parse_zairyu_card_text(text: str) -> Dict[str, Any]:
         out['sex'] = m.group(1)
 
     # 国籍 NATIONALITY/REGION — 既知値リストから優先マッチ。
-    # まず「NATIONALITY」「国籍」ラベル近傍 (前後5行) を優先、その後全テキストでフォールバック。
+    # OCR が「ブラジル」を「ブラ ジル」のように文字間スペースで分割するため、
+    # テキスト・リスト両方からスペースを除去してから比較する。
+    def _strip_ws(s: str) -> str:
+        return re.sub(r'[\s　]+', '', s or '')
+    text_ns = _strip_ws(text)
+    # ラベル「国籍」「NATIONALITY」付近を優先
     nat_label_idx = None
     for i, line in enumerate(lines):
         if 'NATIONALITY' in line.upper() or '国籍' in line:
             nat_label_idx = i
             break
+    near_text = ''
     if nat_label_idx is not None:
-        search_lines = lines[nat_label_idx:min(nat_label_idx + 6, len(lines))]
-        near = '\n'.join(search_lines)
+        # ラベル前後3行をくっつけて空白除去
+        start = max(0, nat_label_idx - 1)
+        end = min(nat_label_idx + 6, len(lines))
+        near_text = _strip_ws('\n'.join(lines[start:end]))
+    # 第1優先: ラベル近傍
+    if near_text:
         for country in NATIONALITY_KNOWN:
-            if country in near:
+            if _strip_ws(country) in near_text:
                 out['nationality'] = country
                 break
+    # フォールバック: 全文 (住所と被るリスクあり)
     if 'nationality' not in out:
-        # フォールバック: 全テキストから (住所と被るリスクあり)
         for country in NATIONALITY_KNOWN:
-            if country in text:
+            if _strip_ws(country) in text_ns:
                 out['nationality'] = country
                 break
 
-    # 在留資格: 既知値リストから優先マッチ
+    # 在留資格: 既知値リストから優先マッチ (スペース除去マッチ)
     for known in ZAIRYU_SHIKAKU_KNOWN:
-        if known in text:
+        if _strip_ws(known) in text_ns:
             out['zairyuShikaku'] = known
             break
 
