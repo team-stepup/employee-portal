@@ -1402,9 +1402,9 @@ def zairyu_submit(req: func.HttpRequest) -> func.HttpResponse:
                     pass
             card_no = (confirmed.get("cardNumber") or "").strip()
             if card_no and len(card_no) <= 20:
-                # 在留：備考1 に 「在留カード番号: AB12345678CD (提出 2026/05/29)」 形式で記録
+                # 在留：備考1 に 「AB12345678CD (提出 2026/05/29)」 形式で記録
                 ts = (_dt.datetime.utcnow() + _dt.timedelta(hours=9)).strftime("%Y/%m/%d")
-                patch_fields[F_ZAIRYU_BIKO] = f"在留カード番号: {card_no} (提出 {ts})"
+                patch_fields[F_ZAIRYU_BIKO] = f"{card_no} (提出 {ts})"
                 updated_fields.append("cardNumber")
             if patch_fields:
                 target_id = emp.get("Id") if emp else None
