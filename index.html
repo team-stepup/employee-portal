@@ -54,6 +54,11 @@
   .header .lang-switch, .header .logout-btn {
     background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
     color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 0.85em; cursor: pointer;
+    white-space: nowrap;
+  }
+  #header-update-btn.has-update {
+    background: linear-gradient(135deg, #f9a825, #f57c00);
+    border-color: #ef6c00; animation: pulse-update 1.5s ease-in-out infinite;
   }
   .card {
     background: #fff; border-radius: 14px; padding: 20px;
@@ -468,6 +473,7 @@
   <div class="header">
     <img src="logo.png" alt="" class="header-logo">
     <h1 style="flex:1;"><span data-i18n="appTitle">従業員ポータル</span></h1>
+    <span class="logout-btn" id="header-update-btn" onclick="checkUpdate()" data-i18n="checkUpdateShort">🔄 更新確認</span>
   </div>
 
   <div class="user-card">
@@ -927,14 +933,17 @@ I18N.ja.checkUpdate = "🔄 更新を確認";
 I18N.ja.updateAvailable = "🎉 新しいバージョンがあります";
 I18N.ja.updateNone = "最新です ✓";
 I18N.ja.updating = "更新中...";
+I18N.ja.checkUpdateShort = "🔄 更新確認";
 I18N.en.checkUpdate = "🔄 Check for update";
 I18N.en.updateAvailable = "🎉 New version available";
 I18N.en.updateNone = "Up to date ✓";
 I18N.en.updating = "Updating...";
+I18N.en.checkUpdateShort = "🔄 Update";
 I18N.pt.checkUpdate = "🔄 Buscar atualização";
 I18N.pt.updateAvailable = "🎉 Nova versão disponível";
 I18N.pt.updateNone = "Atualizado ✓";
 I18N.pt.updating = "Atualizando...";
+I18N.pt.checkUpdateShort = "🔄 Atualizar";
 // 在留カード提出
 I18N.ja.menuZairyu = "在留カード提出";
 I18N.en.menuZairyu = "Submit Zairyu Card";
@@ -2155,7 +2164,7 @@ async function updateHistoryBadge() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v12';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v13';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 
@@ -2181,19 +2190,23 @@ async function registerServiceWorker() {
   } catch (e) { console.warn('SW register error:', e); }
 }
 
+function _updateBtns() {
+  // ログイン画面の大ボタン + ホームヘッダーの小ボタン 両方
+  return [document.getElementById('check-update-btn'),
+          document.getElementById('header-update-btn')].filter(Boolean);
+}
+
 function markUpdateAvailable() {
   _swUpdateAvailable = true;
-  const btn = document.getElementById('check-update-btn');
-  if (btn) {
+  _updateBtns().forEach(btn => {
     btn.classList.add('has-update');
     btn.textContent = t('updateAvailable');
-  }
+  });
 }
 
 async function checkUpdate() {
-  const btn = document.getElementById('check-update-btn');
-  const verEl = document.getElementById('version-tag');
-  if (btn) btn.textContent = t('updating');
+  const btns = _updateBtns();
+  btns.forEach(b => b.textContent = t('updating'));
   // SW の登録があれば更新チェック
   if (_swRegistration) {
     try { await _swRegistration.update(); } catch (e) {}
@@ -2214,10 +2227,9 @@ async function checkUpdate() {
   // 数秒待って SW 検知に時間を与える
   setTimeout(() => {
     if (_swUpdateAvailable) return;  // 更新があった場合は markUpdateAvailable() でUI更新済み
-    if (btn) {
-      btn.textContent = t('updateNone');
-      setTimeout(() => { btn.textContent = t('checkUpdate'); btn.classList.remove('has-update'); }, 2000);
-    }
+    btns.forEach(b => {
+      b.textContent = t('updateNone');
+    });
     // 強制リロードしておく (キャッシュが古い場合に最新を取りに行く)
     window.location.reload();
   }, 1500);
