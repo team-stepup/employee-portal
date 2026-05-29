@@ -1008,6 +1008,21 @@ def run_zairyu_ocr(image_bytes: bytes) -> Dict[str, Any]:
     return parsed
 
 
+# 国籍の既知値リスト (長い順 — 「アメリカ合衆国」を「アメリカ」より先に)
+NATIONALITY_KNOWN = [
+    "アメリカ合衆国", "ドミニカ共和国",
+    "ブラジル", "フィリピン", "ペルー", "ベトナム", "中国", "韓国",
+    "インドネシア", "ネパール", "バングラデシュ", "スリランカ", "パキスタン",
+    "ミャンマー", "カンボジア", "ラオス", "モンゴル", "台湾",
+    "ボリビア", "アルゼンチン", "パラグアイ", "ウルグアイ",
+    "コロンビア", "ベネズエラ", "エクアドル", "メキシコ",
+    "ロシア", "ウクライナ", "インド", "マレーシア", "シンガポール",
+    "香港", "カナダ", "ドイツ", "フランス", "イタリア", "スペイン",
+    "オーストラリア", "ニュージーランド",
+    "アメリカ", "イギリス",
+    "タイ", "チリ",  # 短い名前は誤マッチ可能性ありなので最後
+]
+
 # 在留資格の既知値リスト (長い順 — 「永住者の配偶者等」を「永住者」より先に)
 ZAIRYU_SHIKAKU_KNOWN = [
     "高度専門職1号イ", "高度専門職1号ロ", "高度専門職1号ハ", "高度専門職2号", "高度専門職",
@@ -1073,19 +1088,25 @@ def parse_zairyu_card_text(text: str) -> Dict[str, Any]:
     if m:
         out['sex'] = m.group(1)
 
-    # 国籍 NATIONALITY/REGION — カタカナ・漢字・英字を許容
-    for pat in (
-        # ラベル直後 (改行を許容): "NATIONALITY/REGION ブラジル"
-        r'NATIONALITY[\s/A-Za-z]*[:：\n]?\s*([ァ-ヶー一-鿿][゠-ヿ一-鿿・\s]{1,20})',
-        r'国籍[・\s/地域]*[:：\n]?\s*([ァ-ヶー一-鿿][゠-ヿ一-鿿・\s]{1,20})',
-    ):
-        m = re.search(pat, text)
-        if m:
-            val = re.sub(r'\s+', ' ', m.group(1)).strip()
-            # 改行/住居地/ADDRESS等で打ち切り
-            val = re.split(r'(?:住居|ADDRESS|在留|STATUS|\n)', val)[0].strip()
-            if val and len(val) <= 30:
-                out['nationality'] = val
+    # 国籍 NATIONALITY/REGION — 既知値リストから優先マッチ。
+    # まず「NATIONALITY」「国籍」ラベル近傍 (前後5行) を優先、その後全テキストでフォールバック。
+    nat_label_idx = None
+    for i, line in enumerate(lines):
+        if 'NATIONALITY' in line.upper() or '国籍' in line:
+            nat_label_idx = i
+            break
+    if nat_label_idx is not None:
+        search_lines = lines[nat_label_idx:min(nat_label_idx + 6, len(lines))]
+        near = '\n'.join(search_lines)
+        for country in NATIONALITY_KNOWN:
+            if country in near:
+                out['nationality'] = country
+                break
+    if 'nationality' not in out:
+        # フォールバック: 全テキストから (住所と被るリスクあり)
+        for country in NATIONALITY_KNOWN:
+            if country in text:
+                out['nationality'] = country
                 break
 
     # 在留資格: 既知値リストから優先マッチ
