@@ -1651,7 +1651,7 @@ def license_submit(req: func.HttpRequest) -> func.HttpResponse:
             return _json_response({"error": "shain_folder_not_found", "buka": buka_text}, 404)
         if not _validate_shainfile_path(shain_folder):
             return _json_response({"error": "invalid_folder_path"}, 500)
-        license_folder = f"{shain_folder}/免許証"
+        license_folder = f"{shain_folder}/{int(shain_no)}　免許証"
         if not _validate_shainfile_path(license_folder):
             return _json_response({"error": "invalid_folder_path"}, 500)
         sp_create_folder_if_not_exists(license_folder)
@@ -1939,7 +1939,7 @@ def shaken_submit(req: func.HttpRequest) -> func.HttpResponse:
         shain_folder = find_shain_folder_url(shain_no, buka_text)
         if not shain_folder:
             return _json_response({"error": "shain_folder_not_found", "buka": buka_text}, 404)
-        folder = f"{shain_folder}/車検証・自賠責"
+        folder = f"{shain_folder}/{int(shain_no)}　車検証・自賠責"
         if not _validate_shainfile_path(folder):
             return _json_response({"error": "invalid_folder_path"}, 500)
         sp_create_folder_if_not_exists(folder)
@@ -2044,7 +2044,7 @@ def hoken_submit(req: func.HttpRequest) -> func.HttpResponse:
         shain_folder = find_shain_folder_url(shain_no, buka_text)
         if not shain_folder:
             return _json_response({"error": "shain_folder_not_found", "buka": buka_text}, 404)
-        folder = f"{shain_folder}/任意保険"
+        folder = f"{shain_folder}/{int(shain_no)}　任意保険"
         if not _validate_shainfile_path(folder):
             return _json_response({"error": "invalid_folder_path"}, 500)
         sp_create_folder_if_not_exists(folder)
@@ -2254,7 +2254,7 @@ def zairyu_submit(req: func.HttpRequest) -> func.HttpResponse:
             logging.error(f"Invalid shain folder path detected: {shain_folder!r}")
             return _json_response({"error": "invalid_folder_path"}, 500)
         # 在留カード サブフォルダを作成
-        zairyu_folder = f"{shain_folder}/在留カード"
+        zairyu_folder = f"{shain_folder}/{int(shain_no)}　在留カード"
         if not _validate_shainfile_path(zairyu_folder):
             return _json_response({"error": "invalid_folder_path"}, 500)
         sp_create_folder_if_not_exists(zairyu_folder)
