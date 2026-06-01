@@ -68,6 +68,23 @@ F_MENKYO_TAIKEN = "OData__x514d__x8a31__x53d6__x5f97__x5e"   # 免許取得年�
 F_MENKYO_KIGEN = "OData__x514d__x8a31__x8a3c__x6709__x52"    # 免許証有効期限 (DateTime)
 F_MENKYO_TYPE = "OData__x514d__x8a31__x306e__x7a2e__x98"     # 免許の種類 (Choice)
 
+# 車検証関連フィールド
+F_CAR_NAME = "OData__x8eca__x540d_"                          # 車名 (Text)
+F_CAR_MAKER = "OData__x8eca__x4e21__x30e1__x30fc__x30"       # 車両メーカー名 (Choice)
+F_CAR_NUMBER = "OData__x8eca__x4e21__x30ca__x30f3__x30"      # 登録番号 (Text)
+F_HAIKIRYO = "OData__x6392__x6c17__x91cf_"                   # 排気量 (Text)
+F_SHONENDO = "OData__x521d__x5e74__x5ea6__x767b__x93"        # 初年度登録 (Text)
+F_SHAKEN_KIGEN = "OData__x8eca__x691c__x6e80__x4e86__x65"    # 車検満了日 (DateTime)
+# 自賠責保険関連フィールド
+F_JIBAI_KAISHA = "OData__x81ea__x8ce0__x8cac__x4fdd__x96"    # 自賠責保険会社 (Choice)
+F_JIBAI_KIGEN = "OData__x81ea__x8ce0__x8cac__x3000__x6e"     # 自賠責満了日 (DateTime)
+F_JIBAI_SHOKEN = "OData__x81ea__x8ce0__x8cac__x8a3c__x52"    # 自賠責証券番号 (Text)
+# 任意保険関連フィールド
+F_NINI_KAISHA = "OData__x81ea__x52d5__x8eca__x4efb__x61"     # 自動車任意保険会社 (Choice)
+F_NINI_KAISHI = "OData__x4efb__x610f__x4fdd__x967a__x95"     # 任意保険開始日 (DateTime)
+F_NINI_KIGEN = "OData__x4efb__x610f__x4fdd__x967a__x6e"      # 任意保険満了日 (DateTime)
+F_NINI_SHOKEN = "OData__x4efb__x610f__x4fdd__x967a__x8a"     # 任意保険証券番号 (Text)
+
 # ポータル PIN (4桁) のハッシュ格納フィールド (Note)
 F_PORTAL_PIN = "OData__x30dd__x30fc__x30bf__x30eb_PIN"
 
@@ -1174,6 +1191,22 @@ def _get_di_client():
     return _di_client_cache
 
 
+def _run_read_ocr(image_bytes: bytes) -> str:
+    """prebuilt-read で汎用 OCR を実行し、全行テキストを連結して返す共通ヘルパ。"""
+    from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
+    client = _get_di_client()
+    poller = client.begin_analyze_document(
+        "prebuilt-read",
+        AnalyzeDocumentRequest(bytes_source=image_bytes),
+    )
+    result = poller.result()
+    full_text = ""
+    for page in (result.pages or []):
+        for line in (page.lines or []):
+            full_text += (line.content or "") + "\n"
+    return full_text
+
+
 def run_zairyu_ocr(image_bytes: bytes) -> Dict[str, Any]:
     """在留カード OCR。prebuilt-read で汎用OCR → 正規表現で抽出。"""
     from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
@@ -1672,6 +1705,390 @@ def license_submit(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.exception("license_submit failed")
         return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+# ====== 車検証・自賠責・任意保険 OCR (Phase 3b/3c) ======
+
+# 保険会社の既知リスト (自賠責・任意 共通、スペース無し比較)
+HOKEN_KAISHA_KNOWN = [
+    "あいおいニッセイ同和損害保険", "あいおいニッセイ同和", "あいおい",
+    "三井住友海上火災保険", "三井住友海上", "三井ダイレクト損害保険", "三井ダイレクト",
+    "東京海上日動火災保険", "東京海上日動", "東京海上",
+    "損害保険ジャパン", "損保ジャパン", "ソニー損害保険", "ソニー損保",
+    "チューリッヒ保険", "チューリッヒ", "アクサ損害保険", "アクサダイレクト", "アクサ",
+    "イーデザイン損害保険", "イーデザイン損保", "SBI損害保険", "SBI損保",
+    "共栄火災海上保険", "共栄火災", "日新火災海上保険", "日新火災",
+    "楽天損害保険", "楽天損保", "セコム損害保険", "セコム損保",
+    "AIG損害保険", "AIG損保", "大同火災海上保険", "大同火災",
+    "富士火災", "朝日火災", "セゾン自動車火災保険", "おとなの自動車保険",
+]
+
+# 自動車メーカーの既知リスト
+CAR_MAKER_KNOWN = [
+    "トヨタ", "ホンダ", "ニッサン", "日産", "マツダ", "スバル", "スズキ", "ダイハツ",
+    "三菱", "ミツビシ", "レクサス", "いすゞ", "イスズ", "ヒノ", "日野",
+    "メルセデス", "ベンツ", "BMW", "アウディ", "フォルクスワーゲン", "VW",
+    "ボルボ", "プジョー", "ルノー", "フィアット", "ポルシェ", "MINI", "ジープ",
+]
+
+
+def _wareki_to_year(era: str, n: int) -> Optional[int]:
+    """和暦元号 + 年数 → 西暦年。"""
+    if not n:
+        return None
+    if "令和" in era or era == "R":
+        return 2018 + n
+    if "平成" in era or era == "H":
+        return 1988 + n
+    if "昭和" in era or era == "S":
+        return 1925 + n
+    return None
+
+
+def _find_wareki_date(text: str, label_patterns: List[str]) -> Optional[str]:
+    """ラベル近傍から和暦/西暦の日付 (YYYY-MM-DD) を抽出。"""
+    for lbl in label_patterns:
+        # ラベル + その後 40 文字以内の日付
+        m = re.search(lbl + r'[\s\S]{0,40}?(?:(昭和|平成|令和)\s*(\d{1,2})|(\d{4}))\s*[年\.\-/]\s*(\d{1,2})\s*[月\.\-/]\s*(\d{1,2})', text)
+        if m:
+            if m.group(3):  # 西暦
+                y = int(m.group(3))
+            else:
+                y = _wareki_to_year(m.group(1), int(m.group(2)))
+            if y:
+                return f"{y}-{int(m.group(4)):02d}-{int(m.group(5)):02d}"
+    return None
+
+
+def _match_known(text_ns: str, known_list: List[str]) -> Optional[str]:
+    for item in known_list:
+        if re.sub(r'[\s　]+', '', item) in text_ns:
+            return item
+    return None
+
+
+def parse_shaken_jibaiseki_text(shaken_text: str, jibai_text: str) -> Dict[str, Any]:
+    """車検証 + 自賠責証明書 の OCR テキストから項目抽出。"""
+    out: Dict[str, Any] = {"rawShaken": shaken_text, "rawJibaiseki": jibai_text}
+    st = shaken_text or ""
+    st_ns = re.sub(r'[\s　]+', '', st)
+
+    # --- 車検証 ---
+    # 登録番号 (ナンバー): 「静岡 500 あ 12-34」「浜松300 さ 1234」
+    m = re.search(r'([一-龿]{1,4}\s*\d{2,3}\s*[ぁ-んァ-ヶA-Z]\s*[\d\-\s]{2,5}\d)', st)
+    if m:
+        out['carNumber'] = re.sub(r'\s+', ' ', m.group(1)).strip()
+
+    # メーカー
+    maker = _match_known(st_ns, CAR_MAKER_KNOWN)
+    if maker:
+        out['carMaker'] = maker
+
+    # 車名 (「車名」ラベル後)
+    m = re.search(r'車\s*名[\s:：]*([^\n\d]{1,20})', st)
+    if m:
+        v = m.group(1).strip()
+        if v and len(v) <= 20:
+            out['carName'] = v
+
+    # 総排気量 (X.XX L or XXXX cc)
+    m = re.search(r'(?:総排気量|排気量)[^\d]{0,8}(\d[\.\d]*)\s*(?:L|ℓ|リットル)', st)
+    if m:
+        out['haikiryo'] = m.group(1) + 'L'
+    else:
+        m = re.search(r'(\d{3,4})\s*cc', st, re.IGNORECASE)
+        if m:
+            out['haikiryo'] = m.group(1) + 'cc'
+
+    # 初度登録年月
+    init_d = _find_wareki_date(st, [r'初度登録年月', r'初年度登録'])
+    if init_d:
+        out['shonendo'] = init_d[:7]  # YYYY-MM まで
+    else:
+        m = re.search(r'初度登録[\s\S]{0,30}?(?:(令和|平成)\s*(\d{1,2}))\s*年\s*(\d{1,2})\s*月', st)
+        if m:
+            y = _wareki_to_year(m.group(1), int(m.group(2)))
+            if y:
+                out['shonendo'] = f"{y}-{int(m.group(3)):02d}"
+
+    # 車検満了日 (有効期間の満了する日)
+    shaken_kigen = _find_wareki_date(st, [r'有効期間の満了する日', r'有効期間', r'満了'])
+    if shaken_kigen:
+        out['shakenKigen'] = shaken_kigen
+
+    # --- 自賠責証明書 ---
+    jt = jibai_text or ""
+    jt_ns = re.sub(r'[\s　]+', '', jt)
+    j_kaisha = _match_known(jt_ns, HOKEN_KAISHA_KNOWN)
+    if j_kaisha:
+        out['jibaiKaisha'] = j_kaisha
+    # 証明書番号/証券番号
+    m = re.search(r'(?:証明書番号|証券番号|証明書No|No)[\s:：.]*([A-Z0-9\-]{5,20})', jt)
+    if m:
+        out['jibaiShoken'] = m.group(1).strip()
+    # 保険期間 満了 (後の日付 = 満了)
+    j_kigen = _find_wareki_date(jt, [r'満了', r'保険期間', r'まで'])
+    if j_kigen:
+        out['jibaiKigen'] = j_kigen
+
+    return out
+
+
+def parse_nini_hoken_text(text: str) -> Dict[str, Any]:
+    """任意保険証券の OCR テキストから項目抽出。"""
+    out: Dict[str, Any] = {"rawText": text}
+    t = text or ""
+    t_ns = re.sub(r'[\s　]+', '', t)
+
+    kaisha = _match_known(t_ns, HOKEN_KAISHA_KNOWN)
+    if kaisha:
+        out['niniKaisha'] = kaisha
+    # 証券番号
+    m = re.search(r'(?:証券番号|証券No|保険証券番号)[\s:：.]*([A-Z0-9\-]{5,25})', t)
+    if m:
+        out['niniShoken'] = m.group(1).strip()
+    # 保険期間: 開始 ～ 満了 (2つの日付。最初=開始、最後=満了)
+    dates = []
+    for m in re.finditer(r'(?:(令和|平成)\s*(\d{1,2})|(\d{4}))\s*[年\.\-/]\s*(\d{1,2})\s*[月\.\-/]\s*(\d{1,2})', t):
+        if m.group(3):
+            y = int(m.group(3))
+        else:
+            y = _wareki_to_year(m.group(1), int(m.group(2)))
+        if y and 2000 <= y <= 2100:
+            dates.append(f"{y}-{int(m.group(4)):02d}-{int(m.group(5)):02d}")
+    if dates:
+        out['niniKaishi'] = dates[0]
+        if len(dates) >= 2:
+            out['niniKigen'] = dates[-1]
+    return out
+
+
+@app.route(route="shaken/ocr", methods=["POST", "OPTIONS"])
+def shaken_ocr(req: func.HttpRequest) -> func.HttpResponse:
+    """車検証 + 自賠責証明書 画像から項目を OCR 抽出。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    wait = check_rate_limit(shain_no, "zairyu")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait}, 429,
+                              extra_headers={"Retry-After": str(wait)})
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    shaken_data = body.get("shakenImage")
+    jibai_data = body.get("jibaiImage")
+    if not (shaken_data and jibai_data):
+        return _json_response({"error": "missing_images"}, 400)
+    try:
+        shaken_bytes = base64.b64decode(_strip_data_url(shaken_data))
+        jibai_bytes = base64.b64decode(_strip_data_url(jibai_data))
+    except Exception as e:
+        return _json_response({"error": "invalid_base64", "detail": str(e)}, 400)
+    if len(shaken_bytes) > 10 * 1024 * 1024 or len(jibai_bytes) > 10 * 1024 * 1024:
+        return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
+    try:
+        shaken_txt = _run_read_ocr(shaken_bytes)
+        jibai_txt = _run_read_ocr(jibai_bytes)
+        result = parse_shaken_jibaiseki_text(shaken_txt, jibai_txt)
+    except Exception as e:
+        logging.exception("shaken OCR failed")
+        return _json_response({"error": "ocr_failed", "detail": str(e)}, 500)
+    return _json_response({"ocr": result})
+
+
+@app.route(route="shaken/submit", methods=["POST", "OPTIONS"])
+def shaken_submit(req: func.HttpRequest) -> func.HttpResponse:
+    """車検証 + 自賠責 画像を社員ファイルに保存 + 社員List PATCH。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    wait = check_rate_limit(shain_no, "zairyu")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait}, 429,
+                              extra_headers={"Retry-After": str(wait)})
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    shaken_data = body.get("shakenImage")
+    jibai_data = body.get("jibaiImage")
+    if not (shaken_data and jibai_data):
+        return _json_response({"error": "missing_images"}, 400)
+    try:
+        shaken_bytes = base64.b64decode(_strip_data_url(shaken_data))
+        jibai_bytes = base64.b64decode(_strip_data_url(jibai_data))
+    except Exception as e:
+        return _json_response({"error": "invalid_base64", "detail": str(e)}, 400)
+    try:
+        emp = find_active_employee_by_shain(shain_no)
+        if not emp:
+            return _json_response({"error": "not_active"}, 403)
+        if not commutes_by_car(emp):
+            return _json_response({"error": "not_commute_by_car"}, 403)
+        buka_text = emp.get(F_BUKA) or ""
+        shain_folder = find_shain_folder_url(shain_no, buka_text)
+        if not shain_folder:
+            return _json_response({"error": "shain_folder_not_found", "buka": buka_text}, 404)
+        folder = f"{shain_folder}/車検証・自賠責"
+        if not _validate_shainfile_path(folder):
+            return _json_response({"error": "invalid_folder_path"}, 500)
+        sp_create_folder_if_not_exists(folder)
+        ts = (_dt.datetime.utcnow() + _dt.timedelta(hours=9)).strftime("%Y%m%d_%H%M%S")
+        n1 = _safe_filename(f"{int(shain_no)}_車検証_{ts}.jpg")
+        n2 = _safe_filename(f"{int(shain_no)}_自賠責_{ts}.jpg")
+        sp_upload_file(folder, n1, shaken_bytes)
+        sp_upload_file(folder, n2, jibai_bytes)
+        confirmed = body.get("confirmedData") or {}
+        updated: List[str] = []
+        if confirmed:
+            pf2: Dict[str, Any] = {}
+            _set_text(pf2, F_CAR_NAME, confirmed.get("carName"), 60, updated, "carName")
+            _set_text(pf2, F_CAR_NUMBER, confirmed.get("carNumber"), 30, updated, "carNumber")
+            _set_text(pf2, F_HAIKIRYO, confirmed.get("haikiryo"), 20, updated, "haikiryo")
+            _set_text(pf2, F_SHONENDO, confirmed.get("shonendo"), 20, updated, "shonendo")
+            _set_text(pf2, F_JIBAI_SHOKEN, confirmed.get("jibaiShoken"), 30, updated, "jibaiShoken")
+            _set_date(pf2, F_SHAKEN_KIGEN, confirmed.get("shakenKigen"), updated, "shakenKigen")
+            _set_date(pf2, F_JIBAI_KIGEN, confirmed.get("jibaiKigen"), updated, "jibaiKigen")
+            # Choice 系 (メーカー/自賠責会社) は値がリストに無いと失敗するので best-effort
+            _set_text(pf2, F_CAR_MAKER, confirmed.get("carMaker"), 30, updated, "carMaker")
+            _set_text(pf2, F_JIBAI_KAISHA, confirmed.get("jibaiKaisha"), 40, updated, "jibaiKaisha")
+            if pf2:
+                try:
+                    sp_patch_item(LIST_SHAIN, int(emp.get("Id")), pf2)
+                except Exception:
+                    logging.exception("shaken patch failed (image saved)")
+        return _json_response({"ok": True, "folder": folder, "files": [n1, n2], "updatedFields": updated})
+    except Exception as e:
+        logging.exception("shaken_submit failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+@app.route(route="hoken/ocr", methods=["POST", "OPTIONS"])
+def hoken_ocr(req: func.HttpRequest) -> func.HttpResponse:
+    """任意保険証券 画像から項目を OCR 抽出。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    wait = check_rate_limit(shain_no, "zairyu")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait}, 429,
+                              extra_headers={"Retry-After": str(wait)})
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    img_data = body.get("image")
+    if not img_data:
+        return _json_response({"error": "missing_image"}, 400)
+    try:
+        img_bytes = base64.b64decode(_strip_data_url(img_data))
+    except Exception as e:
+        return _json_response({"error": "invalid_base64", "detail": str(e)}, 400)
+    if len(img_bytes) > 10 * 1024 * 1024:
+        return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
+    try:
+        txt = _run_read_ocr(img_bytes)
+        result = parse_nini_hoken_text(txt)
+    except Exception as e:
+        logging.exception("hoken OCR failed")
+        return _json_response({"error": "ocr_failed", "detail": str(e)}, 500)
+    return _json_response({"ocr": result})
+
+
+@app.route(route="hoken/submit", methods=["POST", "OPTIONS"])
+def hoken_submit(req: func.HttpRequest) -> func.HttpResponse:
+    """任意保険証券 画像を社員ファイルに保存 + 社員List PATCH。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    wait = check_rate_limit(shain_no, "zairyu")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait}, 429,
+                              extra_headers={"Retry-After": str(wait)})
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    img_data = body.get("image")
+    if not img_data:
+        return _json_response({"error": "missing_image"}, 400)
+    try:
+        img_bytes = base64.b64decode(_strip_data_url(img_data))
+    except Exception as e:
+        return _json_response({"error": "invalid_base64", "detail": str(e)}, 400)
+    try:
+        emp = find_active_employee_by_shain(shain_no)
+        if not emp:
+            return _json_response({"error": "not_active"}, 403)
+        if not commutes_by_car(emp):
+            return _json_response({"error": "not_commute_by_car"}, 403)
+        buka_text = emp.get(F_BUKA) or ""
+        shain_folder = find_shain_folder_url(shain_no, buka_text)
+        if not shain_folder:
+            return _json_response({"error": "shain_folder_not_found", "buka": buka_text}, 404)
+        folder = f"{shain_folder}/任意保険"
+        if not _validate_shainfile_path(folder):
+            return _json_response({"error": "invalid_folder_path"}, 500)
+        sp_create_folder_if_not_exists(folder)
+        ts = (_dt.datetime.utcnow() + _dt.timedelta(hours=9)).strftime("%Y%m%d_%H%M%S")
+        n1 = _safe_filename(f"{int(shain_no)}_任意保険証券_{ts}.jpg")
+        sp_upload_file(folder, n1, img_bytes)
+        confirmed = body.get("confirmedData") or {}
+        updated: List[str] = []
+        if confirmed:
+            pf2: Dict[str, Any] = {}
+            _set_text(pf2, F_NINI_SHOKEN, confirmed.get("niniShoken"), 30, updated, "niniShoken")
+            _set_text(pf2, F_NINI_KAISHA, confirmed.get("niniKaisha"), 40, updated, "niniKaisha")
+            _set_date(pf2, F_NINI_KAISHI, confirmed.get("niniKaishi"), updated, "niniKaishi")
+            _set_date(pf2, F_NINI_KIGEN, confirmed.get("niniKigen"), updated, "niniKigen")
+            if pf2:
+                try:
+                    sp_patch_item(LIST_SHAIN, int(emp.get("Id")), pf2)
+                except Exception:
+                    logging.exception("hoken patch failed (image saved)")
+        return _json_response({"ok": True, "folder": folder, "files": [n1], "updatedFields": updated})
+    except Exception as e:
+        logging.exception("hoken_submit failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+def _set_text(d: Dict[str, Any], key: str, val: Any, maxlen: int, log: List[str], name: str) -> None:
+    if val is None:
+        return
+    s = str(val).strip()
+    if s and len(s) <= maxlen:
+        d[key] = s
+        log.append(name)
+
+
+def _set_date(d: Dict[str, Any], key: str, val: Any, log: List[str], name: str) -> None:
+    if not val:
+        return
+    s = str(val).strip()
+    try:
+        _dt.date.fromisoformat(s)
+        d[key] = s + "T00:00:00Z"
+        log.append(name)
+    except Exception:
+        pass
 
 
 # ====== 在留カード提出 ======
