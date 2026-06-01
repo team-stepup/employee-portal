@@ -75,6 +75,8 @@ F_CAR_NUMBER = "OData__x8eca__x4e21__x30ca__x30f3__x30"      # 登録番号 (Tex
 F_HAIKIRYO = "OData__x6392__x6c17__x91cf_"                   # 排気量 (Text)
 F_SHONENDO = "OData__x521d__x5e74__x5ea6__x767b__x93"        # 初年度登録 (Text)
 F_SHAKEN_KIGEN = "OData__x8eca__x691c__x6e80__x4e86__x65"    # 車検満了日 (DateTime)
+F_CAR_TYPE = "OData__x5bfe__x8c61__x8eca__x4e21_"            # 対象車両 (Choice)
+F_CAR_COLOR = "OData__x8eca__x306e__x8272_"                  # 車の色 (Choice)
 # 自賠責保険関連フィールド
 F_JIBAI_KAISHA = "OData__x81ea__x8ce0__x8cac__x4fdd__x96"    # 自賠責保険会社 (Choice)
 F_JIBAI_KIGEN = "OData__x81ea__x8ce0__x8cac__x3000__x6e"     # 自賠責満了日 (DateTime)
@@ -84,6 +86,12 @@ F_NINI_KAISHA = "OData__x81ea__x52d5__x8eca__x4efb__x61"     # 自動車任意�
 F_NINI_KAISHI = "OData__x4efb__x610f__x4fdd__x967a__x95"     # 任意保険開始日 (DateTime)
 F_NINI_KIGEN = "OData__x4efb__x610f__x4fdd__x967a__x6e"      # 任意保険満了日 (DateTime)
 F_NINI_SHOKEN = "OData__x4efb__x610f__x4fdd__x967a__x8a"     # 任意保険証券番号 (Text)
+# 補償内容フィールド
+F_HOKEN_TAIJIN = "OData__x4fdd__x967a__xff1a__x5bfe__x4e"    # 保険：対人 (Choice)
+F_HOKEN_TAIBUTSU = "OData__x4fdd__x967a__xff1a__x5bfe__x72"  # 保険：対物 (Choice)
+F_JINSHIN = "OData__x4fdd__x967a__xff1a__x540c__x4e"         # 人身傷害 (Text)
+F_TOJOSHA = "OData__x642d__x4e57__x8005__x50b7__x5b"         # 搭乗者傷害 (Text)
+F_SHARYO_HOKEN = "OData__x8eca__x4e21__x4fdd__x967a_"        # 車両保険 (Text)
 
 # ポータル PIN (4桁) のハッシュ格納フィールド (Note)
 F_PORTAL_PIN = "OData__x30dd__x30fc__x30bf__x30eb_PIN"
@@ -1816,6 +1824,19 @@ def parse_shaken_jibaiseki_text(shaken_text: str, jibai_text: str) -> Dict[str, 
     if shaken_kigen:
         out['shakenKigen'] = shaken_kigen
 
+    # 車体の色
+    m = re.search(r'(?:車体の?色|色)[\s:：]*([白黒赤青銀灰緑黄茶紫桃金][^\n]{0,6})', st)
+    if m:
+        out['carColor'] = m.group(1).strip()
+    else:
+        for col in ("シルバー", "ホワイト", "ブラック", "ホワイトパール", "グレー", "ブルー", "レッド", "ガン"):
+            if col in st:
+                out['carColor'] = col
+                break
+
+    # 対象車両 (車検証は自動車のもの → 既定で「自動車」)
+    out['carType'] = '自動車'
+
     # --- 自賠責証明書 ---
     jt = jibai_text or ""
     jt_ns = re.sub(r'[\s　]+', '', jt)
@@ -1860,6 +1881,30 @@ def parse_nini_hoken_text(text: str) -> Dict[str, Any]:
         out['niniKaishi'] = dates[0]
         if len(dates) >= 2:
             out['niniKigen'] = dates[-1]
+
+    # 補償内容: 対人/対物/搭乗者/人身/車両保険
+    def _find_amount(labels: List[str]) -> Optional[str]:
+        for lbl in labels:
+            m = re.search(lbl + r'[\s\S]{0,15}?(無制限|\d[\d,]*\s*(?:万円|億円|万|円))', t)
+            if m:
+                return m.group(1).replace(' ', '')
+        return None
+    taijin = _find_amount([r'対人賠償', r'対人'])
+    if taijin:
+        out['taijin'] = taijin
+    taibutsu = _find_amount([r'対物賠償', r'対物'])
+    if taibutsu:
+        out['taibutsu'] = taibutsu
+    tojosha = _find_amount([r'搭乗者傷害', r'搭乗者'])
+    if tojosha:
+        out['tojoshaShogai'] = tojosha
+    jinshin = _find_amount([r'人身傷害'])
+    if jinshin:
+        out['jinshinShogai'] = jinshin
+    # 車両保険: 有/無 or 金額
+    m = re.search(r'車両保険[\s\S]{0,15}?(無制限|あり|なし|有|無|\d[\d,]*\s*万円)', t)
+    if m:
+        out['carHoken'] = m.group(1)
     return out
 
 
@@ -1957,9 +2002,11 @@ def shaken_submit(req: func.HttpRequest) -> func.HttpResponse:
             _set_text(pf2, F_HAIKIRYO, confirmed.get("haikiryo"), 20, updated, "haikiryo")
             _set_text(pf2, F_SHONENDO, confirmed.get("shonendo"), 20, updated, "shonendo")
             _set_text(pf2, F_JIBAI_SHOKEN, confirmed.get("jibaiShoken"), 30, updated, "jibaiShoken")
+            _set_text(pf2, F_CAR_COLOR, confirmed.get("carColor"), 20, updated, "carColor")
+            _set_text(pf2, F_CAR_TYPE, confirmed.get("carType"), 20, updated, "carType")
             _set_date(pf2, F_SHAKEN_KIGEN, confirmed.get("shakenKigen"), updated, "shakenKigen")
             _set_date(pf2, F_JIBAI_KIGEN, confirmed.get("jibaiKigen"), updated, "jibaiKigen")
-            # Choice 系 (メーカー/自賠責会社) は値がリストに無いと失敗するので best-effort
+            # Choice 系 (メーカー/自賠責会社/色/対象車両) は値がリストに無いと失敗するので best-effort
             _set_text(pf2, F_CAR_MAKER, confirmed.get("carMaker"), 30, updated, "carMaker")
             _set_text(pf2, F_JIBAI_KAISHA, confirmed.get("jibaiKaisha"), 40, updated, "jibaiKaisha")
             if pf2:
@@ -2059,6 +2106,12 @@ def hoken_submit(req: func.HttpRequest) -> func.HttpResponse:
             _set_text(pf2, F_NINI_KAISHA, confirmed.get("niniKaisha"), 40, updated, "niniKaisha")
             _set_date(pf2, F_NINI_KAISHI, confirmed.get("niniKaishi"), updated, "niniKaishi")
             _set_date(pf2, F_NINI_KIGEN, confirmed.get("niniKigen"), updated, "niniKigen")
+            # 補償内容 (対人/対物は Choice、他は Text)
+            _set_text(pf2, F_HOKEN_TAIJIN, confirmed.get("taijin"), 30, updated, "taijin")
+            _set_text(pf2, F_HOKEN_TAIBUTSU, confirmed.get("taibutsu"), 30, updated, "taibutsu")
+            _set_text(pf2, F_TOJOSHA, confirmed.get("tojoshaShogai"), 30, updated, "tojoshaShogai")
+            _set_text(pf2, F_JINSHIN, confirmed.get("jinshinShogai"), 30, updated, "jinshinShogai")
+            _set_text(pf2, F_SHARYO_HOKEN, confirmed.get("carHoken"), 30, updated, "carHoken")
             if pf2:
                 try:
                     sp_patch_item(LIST_SHAIN, int(emp.get("Id")), pf2)

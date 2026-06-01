@@ -1228,6 +1228,8 @@ I18N.ja.fieldShakenKigen = "車検満了日"; I18N.en.fieldShakenKigen = "Inspec
 I18N.ja.fieldJibaiKaisha = "自賠責 保険会社"; I18N.en.fieldJibaiKaisha = "JCI Insurer"; I18N.pt.fieldJibaiKaisha = "Seguradora JCI";
 I18N.ja.fieldJibaiShoken = "自賠責 証券番号"; I18N.en.fieldJibaiShoken = "JCI Policy No."; I18N.pt.fieldJibaiShoken = "Nº Apólice JCI";
 I18N.ja.fieldJibaiKigen = "自賠責 満了日"; I18N.en.fieldJibaiKigen = "JCI Expiry"; I18N.pt.fieldJibaiKigen = "Venc. JCI";
+I18N.ja.fieldCarType = "対象車両"; I18N.en.fieldCarType = "Vehicle Type"; I18N.pt.fieldCarType = "Tipo de Veículo";
+I18N.ja.fieldCarColor = "色"; I18N.en.fieldCarColor = "Color"; I18N.pt.fieldCarColor = "Cor";
 // 任意保険 (Phase 3c)
 I18N.ja.menuHoken = "任意保険 提出";
 I18N.en.menuHoken = "Voluntary Insurance";
@@ -1249,6 +1251,11 @@ I18N.ja.fieldNiniKaisha = "保険会社"; I18N.en.fieldNiniKaisha = "Insurer"; I
 I18N.ja.fieldNiniShoken = "証券番号"; I18N.en.fieldNiniShoken = "Policy No."; I18N.pt.fieldNiniShoken = "Nº Apólice";
 I18N.ja.fieldNiniKaishi = "保険開始日"; I18N.en.fieldNiniKaishi = "Start Date"; I18N.pt.fieldNiniKaishi = "Início";
 I18N.ja.fieldNiniKigen = "保険満了日"; I18N.en.fieldNiniKigen = "Expiry Date"; I18N.pt.fieldNiniKigen = "Vencimento";
+I18N.ja.fieldTaijin = "対人"; I18N.en.fieldTaijin = "Bodily Injury (others)"; I18N.pt.fieldTaijin = "Danos Pessoais";
+I18N.ja.fieldTaibutsu = "対物"; I18N.en.fieldTaibutsu = "Property Damage"; I18N.pt.fieldTaibutsu = "Danos Materiais";
+I18N.ja.fieldJinshin = "人身傷害"; I18N.en.fieldJinshin = "Personal Injury"; I18N.pt.fieldJinshin = "Acidentes Pessoais";
+I18N.ja.fieldTojosha = "搭乗者傷害"; I18N.en.fieldTojosha = "Passenger Injury"; I18N.pt.fieldTojosha = "Passageiros";
+I18N.ja.fieldCarHoken = "車両保険"; I18N.en.fieldCarHoken = "Vehicle Coverage"; I18N.pt.fieldCarHoken = "Seguro do Veículo";
 // 確認画面
 I18N.ja.zairyuConfirmTitle = "在留カード — 内容確認";
 I18N.en.zairyuConfirmTitle = "Zairyu Card — Review";
@@ -1934,10 +1941,12 @@ function renderShakenConfirm() {
   const rawEl = document.getElementById('shaken-raw-text');
   if (rawEl) rawEl.textContent = '【車検証】\n' + (ocr.rawShaken || '(empty)') + '\n\n【自賠責】\n' + (ocr.rawJibaiseki || '(empty)');
   renderOcrFields('shaken-ocr-fields', ocr, [
-    { key: 'carName', label: 'fieldCarName' },
+    { key: 'carType', label: 'fieldCarType' },
     { key: 'carMaker', label: 'fieldCarMaker' },
+    { key: 'carName', label: 'fieldCarName' },
     { key: 'carNumber', label: 'fieldCarNumber' },
     { key: 'haikiryo', label: 'fieldHaikiryo' },
+    { key: 'carColor', label: 'fieldCarColor' },
     { key: 'shonendo', label: 'fieldShonendo' },
     { key: 'shakenKigen', label: 'fieldShakenKigen' },
     { key: 'jibaiKaisha', label: 'fieldJibaiKaisha' },
@@ -1960,6 +1969,7 @@ async function shakenFinalSubmit() {
       confirmedData: {
         carName: o.carName || '', carMaker: o.carMaker || '', carNumber: o.carNumber || '',
         haikiryo: o.haikiryo || '', shonendo: o.shonendo || '', shakenKigen: o.shakenKigen || '',
+        carColor: o.carColor || '', carType: o.carType || '',
         jibaiKaisha: o.jibaiKaisha || '', jibaiShoken: o.jibaiShoken || '', jibaiKigen: o.jibaiKigen || '',
       },
     });
@@ -2029,6 +2039,11 @@ function renderHokenConfirm() {
     { key: 'niniShoken', label: 'fieldNiniShoken' },
     { key: 'niniKaishi', label: 'fieldNiniKaishi' },
     { key: 'niniKigen', label: 'fieldNiniKigen' },
+    { key: 'taijin', label: 'fieldTaijin' },
+    { key: 'taibutsu', label: 'fieldTaibutsu' },
+    { key: 'jinshinShogai', label: 'fieldJinshin' },
+    { key: 'tojoshaShogai', label: 'fieldTojosha' },
+    { key: 'carHoken', label: 'fieldCarHoken' },
   ]);
 }
 
@@ -2045,6 +2060,9 @@ async function hokenFinalSubmit() {
       confirmedData: {
         niniKaisha: o.niniKaisha || '', niniShoken: o.niniShoken || '',
         niniKaishi: o.niniKaishi || '', niniKigen: o.niniKigen || '',
+        taijin: o.taijin || '', taibutsu: o.taibutsu || '',
+        jinshinShogai: o.jinshinShogai || '', tojoshaShogai: o.tojoshaShogai || '',
+        carHoken: o.carHoken || '',
       },
     });
     showAlert(t('zairyuSuccess'), 'success');
@@ -2821,7 +2839,7 @@ async function updateHistoryBadge() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v15';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v16';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 
