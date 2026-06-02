@@ -41,6 +41,16 @@ LIST_HAKENSAKI = "2a2ab839-9dcd-4385-a72b-f20449ceddc4"
 LIST_KAISHA_KYUJITSU = "37973404-3c0a-4e02-a64a-6d15b633d072"
 LIST_MAEBARAI_SHINSEI = "9e84553c-73ec-405b-862f-6caaae65900f"
 LIST_MAEBARAI_OLD = "d34be315-365a-460f-976e-fb8da6977cec"
+LIST_SHORUI = "772de2a2-79b2-4ead-9361-f57a969b8002"  # 必要書類申請 (Teams List監視通知)
+
+# 必要書類申請 List フィールド (POST は OData_ プレフィックス無し)
+SH_SHAIN_NO = "_x793e__x54e1__x756a__x53f7_"
+SH_SHAIN_NAME = "_x793e__x54e1__x540d_"
+SH_HAKENSAKI = "_x6d3e__x9063__x5148_"
+SH_SHURUI = "_x66f8__x985e__x7a2e__x5225_"
+SH_NENDO = "_x5bfe__x8c61__x5e74__x5ea6_"
+SH_BIKO = "_x5099__x8003_"
+SH_STATUS = "Status"
 
 # 社員 List フィールド (Entity property names で API リクエスト時に使う)
 F_SHAIN_NO = "OData__x793e__x54e1__x756a__x53f7_"
@@ -2356,6 +2366,98 @@ def zairyu_submit(req: func.HttpRequest) -> func.HttpResponse:
         })
     except Exception as e:
         logging.exception("zairyu_submit failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+# ====== 必要書類請求 (在職証明書 / 源泉徴収票) ======
+SHORUI_TYPES = {"在職証明書", "源泉徴収票"}
+
+
+@app.route(route="shorui/apply", methods=["POST", "OPTIONS"])
+def shorui_apply(req: func.HttpRequest) -> func.HttpResponse:
+    """必要書類を請求。SP List「必要書類申請」に INSERT (Teams が List 監視で通知)。
+    Body: { docType: "在職証明書"|"源泉徴収票", years: ["2025","2024"], note: "" }
+    """
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    wait = check_rate_limit(shain_no, "apply")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait}, 429,
+                              extra_headers={"Retry-After": str(wait)})
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    doc_type = (body.get("docType") or "").strip()
+    if doc_type not in SHORUI_TYPES:
+        return _json_response({"error": "invalid_doc_type", "allowed": list(SHORUI_TYPES)}, 400)
+    years = body.get("years") or []
+    if not isinstance(years, list):
+        years = []
+    # 年度は数字4桁のみ許可、最大3件
+    years = [str(y).strip() for y in years if re.fullmatch(r"\d{4}", str(y).strip())][:3]
+    if doc_type == "源泉徴収票" and not years:
+        return _json_response({"error": "year_required"}, 400)
+    note = (body.get("note") or "")[:300]
+    try:
+        emp = find_active_employee_by_shain(shain_no)
+        if not emp:
+            return _json_response({"error": "not_active"}, 403)
+        buka_text = emp.get(F_BUKA) or ""
+        fields = {
+            "Title": f"{shain_no} {doc_type}",
+            SH_SHAIN_NO: str(shain_no),
+            SH_SHAIN_NAME: emp.get(F_SHAIN_NAME) or "",
+            SH_HAKENSAKI: strip_buka_prefix(buka_text),
+            SH_SHURUI: doc_type,
+            SH_NENDO: "、".join(years) if years else "",
+            SH_BIKO: note,
+            SH_STATUS: "pending",
+        }
+        new_id = sp_post_item(LIST_SHORUI, fields)
+        return _json_response({"ok": True, "id": new_id})
+    except Exception as e:
+        logging.exception("shorui_apply failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+@app.route(route="shorui/history", methods=["GET", "OPTIONS"])
+def shorui_history(req: func.HttpRequest) -> func.HttpResponse:
+    """本人の必要書類請求履歴。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = payload["shainNo"]
+    try:
+        ent_shain = "OData_" + SH_SHAIN_NO
+        items = sp_get_items(
+            LIST_SHORUI,
+            select=f"Id,OData_{SH_SHAIN_NO},OData_{SH_SHURUI},OData_{SH_NENDO},Status,OData_{SH_BIKO},Created",
+            filter_=f"{ent_shain} eq {shain_no}",
+            orderby="Id desc",
+        )
+        out = []
+        for it in items:
+            created = _utc_to_jst_date(it.get("Created"))
+            out.append({
+                "id": it.get("Id"),
+                "docType": it.get("OData_" + SH_SHURUI),
+                "years": it.get("OData_" + SH_NENDO),
+                "status": it.get("Status"),
+                "note": it.get("OData_" + SH_BIKO),
+                "createdAt": created.isoformat() if created else None,
+            })
+        return _json_response({"items": out})
+    except Exception as e:
+        logging.exception("shorui_history failed")
         return _json_response({"error": "internal", "detail": str(e)}, 500)
 
 
