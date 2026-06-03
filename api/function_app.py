@@ -66,6 +66,8 @@ F_KOUZA = "OData__x7d66__x4e0e__xff1a__x53e3__x5e"
 F_MEIGI = "OData__x53e3__x5ea7__x6c0f__x540d__x30"
 F_ZAIRYU_NAME = "OData__x7279__x8a18__x4e8b__x9805__xff"  # 特記事項１ = 在留カード氏名 (英字フルネーム)
 F_KOKUSEKI = "OData__x672c__x0028__x56fd__x0029__x7c"  # 本(国)籍
+F_ADDRESS = "OData__x4f4f__x6240_"                        # 住所 (Text)
+F_NYUSHA = "OData__x5165__x793e__x65e5_"                  # 入社日 (DateTime)
 F_ZAIRYU_SHIKAKU = "OData__x5728__x7559__x8cc7__x683c_"  # 在留資格 (Text)
 F_ZAIRYU_KIGEN = "OData__x5728__x7559__x671f__x9650_"    # 在留期限 (DateTime)
 F_ZAIRYU_BIKO = "OData__x5728__x7559__xff1a__x5099__x80"  # 在留：備考1 (Text) — 在留カード番号格納用
@@ -584,7 +586,7 @@ def find_active_employee(shain_no: int, birthday: str, tel_last4: str) -> Option
         select=",".join([
             "Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_BIRTHDAY, F_TEL,
             F_TAISHA_DATE, F_ZAIYOKU, F_GINKO, F_SHITEN, F_KOUZA, F_MEIGI, F_ZAIRYU_NAME,
-            F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW, F_PORTAL_PIN,
+            F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW, F_PORTAL_PIN, F_ADDRESS, F_NYUSHA,
         ]),
         filter_=f"{F_SHAIN_NO} eq {shain_no}",
         orderby="Id desc",
@@ -951,7 +953,7 @@ def find_active_employee_by_shain(shain_no: int) -> Optional[Dict[str, Any]]:
         select=",".join([
             "Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_BIRTHDAY, F_TEL,
             F_TAISHA_DATE, F_ZAIYOKU, F_GINKO, F_SHITEN, F_KOUZA, F_MEIGI, F_ZAIRYU_NAME,
-            F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW, F_PORTAL_PIN,
+            F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW, F_PORTAL_PIN, F_ADDRESS, F_NYUSHA,
         ]),
         filter_=f"{F_SHAIN_NO} eq {shain_no}",
         orderby="Id desc",
@@ -2626,6 +2628,59 @@ def shorui_gensen_download(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.exception("gensen-download failed")
         return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+# 会社情報 (在職証明書) — yukyu-app と同一
+COMPANY_INFO = {
+    "addrJp": "静岡県磐田市上本郷1006-7",
+    "nameJp": "有限会社ステップ・アップ",
+    "repJp": "代表取締役　山下　浩俊",
+    "tel": "0538-36-6968",
+}
+
+
+@app.route(route="zaishoku/data", methods=["GET", "OPTIONS"])
+def zaishoku_data(req: func.HttpRequest) -> func.HttpResponse:
+    """在職証明書をアプリで本人発行するための確定データを返す。
+    本人が編集できない確定値 (社員Listベース) を返し、フロントで PDF を生成する。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    try:
+        emp = find_active_employee_by_shain(payload["shainNo"])
+    except Exception as e:
+        logging.exception("zaishoku_data lookup failed")
+        return _json_response({"error": "lookup_failed", "detail": str(e)}, 500)
+    if not emp:
+        # 退社済みなどで在職中でない → 発行不可
+        return _json_response({"error": "not_active"}, 403)
+
+    def _isodate(v: Any) -> str:
+        d = _utc_to_jst_date(v)
+        return d.isoformat() if d else ""
+
+    address = (emp.get(F_ADDRESS) or "").strip()
+    birthday = _isodate(emp.get(F_BIRTHDAY))
+    nyusha = _isodate(emp.get(F_NYUSHA))
+    name = (emp.get(F_SHAIN_NAME) or "").strip()
+    romaji = (emp.get(F_ZAIRYU_NAME) or "").strip()
+    nationality = (emp.get(F_KOKUSEKI) or "").strip()
+    # JP版で必須なのは 氏名・住所・入社日 (生年月日/国籍は無くても発行可だが揃っている方が望ましい)
+    complete = bool(name and address and nyusha)
+    return _json_response({
+        "shainNo": emp.get(F_SHAIN_NO),
+        "name": name,
+        "romajiName": romaji,
+        "address": address,
+        "birthday": birthday,
+        "nationality": nationality,
+        "nyushaDate": nyusha,
+        "complete": complete,
+        "company": COMPANY_INFO,
+    })
 
 
 @app.route(route="health", methods=["GET"])

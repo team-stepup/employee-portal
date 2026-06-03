@@ -16,6 +16,8 @@
 <meta name="apple-mobile-web-app-title" content="ポータル">
 <meta name="mobile-web-app-capable" content="yes">
 <title>従業員ポータル｜有限会社ステップ・アップ</title>
+<!-- 在職証明書PDF生成用 (self-host・CSP維持) -->
+<script src="pdf-lib.min.js" defer></script>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; }
@@ -244,6 +246,14 @@
   }
   .btn-download-doc:active { background: #d8eed8; }
   .btn-download-doc:disabled { opacity: 0.6; cursor: default; }
+  .zaishoku-preview {
+    border: 1.5px solid #e0e6ed; border-radius: 10px; padding: 10px 12px;
+    background: #fafbfc; font-size: 0.92em; color: #1f3864;
+  }
+  .zaishoku-preview .zp-row { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px dashed #eef1f5; }
+  .zaishoku-preview .zp-row:last-child { border-bottom: none; }
+  .zaishoku-preview .zp-label { flex: 0 0 92px; color: #888; font-size: 0.92em; }
+  .zaishoku-preview .zp-val { flex: 1; font-weight: 600; word-break: break-all; }
   /* 在留カード撮影 UI */
   .btn-camera {
     display: block; width: 100%;
@@ -881,6 +891,34 @@
     <div id="shorui-gensen-list" style="display:flex; flex-direction:column; gap:8px; margin-top:6px;"></div>
   </div>
 
+  <!-- 在職証明書: 本人がアプリで即発行 (JP) -->
+  <div class="card hidden" id="shorui-zaishoku-card">
+    <h2>② <span data-i18n="shoruiZaishokuIssue">在職証明書を発行</span></h2>
+    <div id="shorui-zaishoku-loading" class="hidden" style="text-align:center; color:#888; padding:14px;">
+      ⏳ <span data-i18n="loading">読み込み中…</span>
+    </div>
+    <!-- 発行可能: 確定データのプレビュー + 発行ボタン -->
+    <div id="shorui-zaishoku-ready" class="hidden">
+      <div style="font-size:0.85em; color:#666; margin:2px 0 10px;" data-i18n="shoruiZaishokuHint">
+        以下の確定情報で在職証明書（日本語）を発行します。内容は会社の登録情報です。
+      </div>
+      <div id="shorui-zaishoku-preview" class="zaishoku-preview"></div>
+      <button type="button" class="btn-download-doc" style="margin-top:10px;" onclick="issueZaishokuJP()">
+        📄 <span data-i18n="shoruiZaishokuIssueBtn">在職証明書（日本語）を発行する</span>
+      </button>
+    </div>
+    <!-- 発行不可 (住所/入社日 未登録など): 総務へ請求 -->
+    <div id="shorui-zaishoku-incomplete" class="hidden">
+      <div class="info-banner" style="background:#fff4e5; border-color:#ffd8a8; color:#8a5a00;" data-i18n="shoruiZaishokuIncomplete">
+        ⚠️ 会社の登録情報が不足しているため、その場で発行できません。総務へ請求してください。
+      </div>
+    </div>
+    <!-- 特殊ケース誘導 (PT版・原本) -->
+    <div style="margin-top:12px; font-size:0.82em; color:#888; text-align:center;">
+      <a href="javascript:void(0)" onclick="switchToZaishokuRequest()" style="color:#2e5a99; text-decoration:underline;" data-i18n="shoruiZaishokuRequestLink">ポルトガル語版や原本が必要な場合は総務へ請求</a>
+    </div>
+  </div>
+
   <div class="card" id="shorui-note-card">
     <h2 id="shorui-note-step" data-i18n="shoruiNoteStep">② 備考 (任意)</h2>
     <textarea id="shorui-note" placeholder="例: 役所提出用 / 〇枚必要 など" style="width:100%; min-height:60px; padding:10px; border:2px solid #e0e6ed; border-radius:10px; font-size:1em;"></textarea>
@@ -1354,9 +1392,9 @@ I18N.ja.fieldCarHoken = "車両保険"; I18N.en.fieldCarHoken = "Vehicle Coverag
 // 必要書類請求 (Phase 4)
 I18N.ja.menuShorui = "必要書類 請求"; I18N.en.menuShorui = "Request Documents"; I18N.pt.menuShorui = "Solicitar Documentos";
 I18N.ja.screenShoruiTitle = "必要書類 請求"; I18N.en.screenShoruiTitle = "Request Documents"; I18N.pt.screenShoruiTitle = "Solicitar Documentos";
-I18N.ja.shoruiInfo = "📌 必要な書類を選んでください。源泉徴収票はその場でダウンロードできます。在職証明書は請求すると総務が準備します。";
-I18N.en.shoruiInfo = "📌 Select the document you need. The withholding tax slip can be downloaded right away. For an employment certificate, submit a request and HR will prepare it.";
-I18N.pt.shoruiInfo = "📌 Selecione o documento. O comprovante de retenção pode ser baixado na hora. Para o certificado de emprego, envie uma solicitação e o RH irá preparar.";
+I18N.ja.shoruiInfo = "📌 必要な書類を選んでください。在職証明書（日本語）と源泉徴収票はその場で発行・ダウンロードできます。ポルトガル語版や原本が必要な場合は総務へ請求してください。";
+I18N.en.shoruiInfo = "📌 Select the document you need. The employment certificate (Japanese) and withholding tax slip can be issued/downloaded right away. For the Portuguese version or an original, request it from HR.";
+I18N.pt.shoruiInfo = "📌 Selecione o documento. O certificado de emprego (japonês) e o comprovante de retenção podem ser emitidos/baixados na hora. Para a versão em português ou o original, solicite ao RH.";
 I18N.ja.shoruiSelectType = "書類を選択"; I18N.en.shoruiSelectType = "Select document"; I18N.pt.shoruiSelectType = "Selecione o documento";
 I18N.ja.docZaishoku = "在職証明書"; I18N.en.docZaishoku = "Employment Certificate"; I18N.pt.docZaishoku = "Certificado de Emprego";
 I18N.ja.docGensen = "源泉徴収票"; I18N.en.docGensen = "Withholding Tax Slip"; I18N.pt.docGensen = "Comprovante de Retenção (Gensen)";
@@ -1375,6 +1413,21 @@ I18N.ja.shoruiGensenHint = "ご自身の源泉徴収票をタップして保存�
 I18N.ja.shoruiGensenEmpty = "利用できる源泉徴収票が見つかりませんでした。総務にお問い合わせください。"; I18N.en.shoruiGensenEmpty = "No withholding tax slip found. Please contact HR."; I18N.pt.shoruiGensenEmpty = "Nenhum comprovante encontrado. Entre em contato com o RH.";
 I18N.ja.shoruiDownloading = "ダウンロード中…"; I18N.en.shoruiDownloading = "Downloading…"; I18N.pt.shoruiDownloading = "Baixando…";
 I18N.ja.loading = "読み込み中…"; I18N.en.loading = "Loading…"; I18N.pt.loading = "Carregando…";
+// 在職証明書 本人セルフ発行
+I18N.ja.shoruiZaishokuIssue = "在職証明書を発行"; I18N.en.shoruiZaishokuIssue = "Issue Employment Certificate"; I18N.pt.shoruiZaishokuIssue = "Emitir Certificado de Emprego";
+I18N.ja.shoruiZaishokuHint = "以下の確定情報で在職証明書（日本語）を発行します。内容は会社の登録情報です。"; I18N.en.shoruiZaishokuHint = "Issue your employment certificate (Japanese) with the registered information below."; I18N.pt.shoruiZaishokuHint = "Emita seu certificado de emprego (japonês) com as informações registradas abaixo.";
+I18N.ja.shoruiZaishokuIssueBtn = "在職証明書（日本語）を発行する"; I18N.en.shoruiZaishokuIssueBtn = "Issue certificate (Japanese)"; I18N.pt.shoruiZaishokuIssueBtn = "Emitir certificado (japonês)";
+I18N.ja.shoruiZaishokuIncomplete = "⚠️ 会社の登録情報が不足しているため、その場で発行できません。総務へ請求してください。"; I18N.en.shoruiZaishokuIncomplete = "⚠️ Registered info is incomplete, so it can't be issued instantly. Please request it from HR."; I18N.pt.shoruiZaishokuIncomplete = "⚠️ Informações incompletas; não é possível emitir na hora. Solicite ao RH.";
+I18N.ja.shoruiZaishokuNotActive = "在職中の社員のみ発行できます。"; I18N.en.shoruiZaishokuNotActive = "Only active employees can issue this."; I18N.pt.shoruiZaishokuNotActive = "Apenas funcionários ativos podem emitir.";
+I18N.ja.shoruiZaishokuRequestLink = "ポルトガル語版や原本が必要な場合は総務へ請求"; I18N.en.shoruiZaishokuRequestLink = "Need the Portuguese version or an original? Request from HR"; I18N.pt.shoruiZaishokuRequestLink = "Precisa da versão em português ou do original? Solicite ao RH";
+I18N.ja.shoruiZaishokuGenerating = "PDF生成中…"; I18N.en.shoruiZaishokuGenerating = "Generating PDF…"; I18N.pt.shoruiZaishokuGenerating = "Gerando PDF…";
+I18N.ja.shoruiZaishokuDone = "✅ 在職証明書を発行しました"; I18N.en.shoruiZaishokuDone = "✅ Employment certificate issued"; I18N.pt.shoruiZaishokuDone = "✅ Certificado de emprego emitido";
+I18N.ja.shoruiZaishokuError = "在職証明書の生成に失敗しました"; I18N.en.shoruiZaishokuError = "Failed to generate the certificate"; I18N.pt.shoruiZaishokuError = "Falha ao gerar o certificado";
+I18N.ja.zaishokuName = "氏名"; I18N.en.zaishokuName = "Name"; I18N.pt.zaishokuName = "Nome";
+I18N.ja.zaishokuAddress = "現住所"; I18N.en.zaishokuAddress = "Address"; I18N.pt.zaishokuAddress = "Endereço";
+I18N.ja.zaishokuBirthday = "生年月日"; I18N.en.zaishokuBirthday = "Date of birth"; I18N.pt.zaishokuBirthday = "Nascimento";
+I18N.ja.zaishokuNationality = "国籍"; I18N.en.zaishokuNationality = "Nationality"; I18N.pt.zaishokuNationality = "Nacionalidade";
+I18N.ja.zaishokuNyusha = "採用年月日"; I18N.en.zaishokuNyusha = "Hire date"; I18N.pt.zaishokuNyusha = "Data de admissão";
 // 確認画面
 I18N.ja.zairyuConfirmTitle = "在留カード — 内容確認";
 I18N.en.zairyuConfirmTitle = "Zairyu Card — Review";
@@ -2286,6 +2339,8 @@ function initShoruiScreen() {
     document.getElementById('shorui-gensen-list').innerHTML = '';
     document.getElementById('shorui-gensen-empty').classList.add('hidden');
   }
+  const zaishokuCard = document.getElementById('shorui-zaishoku-card');
+  if (zaishokuCard) zaishokuCard.classList.add('hidden');
   document.getElementById('shorui-note-card').classList.remove('hidden');
   document.getElementById('shorui-submit-btn').classList.remove('hidden');
   document.getElementById('shorui-note').value = '';
@@ -2300,18 +2355,26 @@ function selectDocType(btn, type) {
   document.getElementById('shorui-error').classList.add('hidden');
   const yearCard = document.getElementById('shorui-year-card');
   const gensenCard = document.getElementById('shorui-gensen-card');
+  const zaishokuCard = document.getElementById('shorui-zaishoku-card');
   const noteCard = document.getElementById('shorui-note-card');
   const submitBtn = document.getElementById('shorui-submit-btn');
   yearCard.classList.add('hidden');
+  if (gensenCard) gensenCard.classList.add('hidden');
+  if (zaishokuCard) zaishokuCard.classList.add('hidden');
   if (type === '源泉徴収票') {
     // 源泉徴収票は本人がアプリから直接ダウンロード (総務不要・請求しない)
     if (gensenCard) gensenCard.classList.remove('hidden');
     if (noteCard) noteCard.classList.add('hidden');
     if (submitBtn) submitBtn.classList.add('hidden');
     loadGensenList();
+  } else if (type === '在職証明書') {
+    // 在職証明書は本人がアプリで即発行 (JP)。住所/入社日未登録など特殊ケースは総務へ請求
+    if (zaishokuCard) zaishokuCard.classList.remove('hidden');
+    if (noteCard) noteCard.classList.add('hidden');
+    if (submitBtn) submitBtn.classList.add('hidden');
+    loadZaishokuData();
   } else {
-    // 在職証明書など: 従来どおり総務へ請求 (Teams 通知)
-    if (gensenCard) gensenCard.classList.add('hidden');
+    // その他: 従来どおり総務へ請求 (Teams 通知)
     if (noteCard) noteCard.classList.remove('hidden');
     if (submitBtn) submitBtn.classList.remove('hidden');
   }
@@ -2375,6 +2438,216 @@ async function downloadGensen(serverRelativeUrl, fileName, btn) {
   } finally {
     btn.disabled = false;
     btn.innerHTML = orig;
+  }
+}
+
+// ====== 在職証明書 本人セルフ発行 (A方式・JP) ======
+let zaishokuData = null;
+
+async function loadZaishokuData() {
+  const card = document.getElementById('shorui-zaishoku-card');
+  if (!card) return;
+  const loadingEl = document.getElementById('shorui-zaishoku-loading');
+  const readyEl = document.getElementById('shorui-zaishoku-ready');
+  const incompleteEl = document.getElementById('shorui-zaishoku-incomplete');
+  zaishokuData = null;
+  readyEl.classList.add('hidden');
+  incompleteEl.classList.add('hidden');
+  loadingEl.classList.remove('hidden');
+  try {
+    const data = await callApi('GET', '/zaishoku/data');
+    zaishokuData = data;
+    loadingEl.classList.add('hidden');
+    if (data.complete) {
+      renderZaishokuPreview(data);
+      readyEl.classList.remove('hidden');
+    } else {
+      incompleteEl.classList.remove('hidden');
+    }
+  } catch (e) {
+    loadingEl.classList.add('hidden');
+    incompleteEl.classList.remove('hidden');
+    const msgEl = document.getElementById('shorui-zaishoku-incomplete');
+    if (e.status === 403) {
+      // 在職中でない等
+      msgEl.querySelector('.info-banner').textContent = '⚠️ ' + (t('shoruiZaishokuNotActive') || '在職中の社員のみ発行できます。');
+    }
+  }
+}
+
+function renderZaishokuPreview(d) {
+  const wrap = document.getElementById('shorui-zaishoku-preview');
+  const rows = [
+    [t('zaishokuName') || '氏名', d.name || ''],
+    [t('zaishokuAddress') || '現住所', d.address || ''],
+    [t('zaishokuBirthday') || '生年月日', fmtWareki(d.birthday)],
+    [t('zaishokuNationality') || '国籍', d.nationality || '—'],
+    [t('zaishokuNyusha') || '採用年月日', fmtWareki(d.nyushaDate)],
+  ];
+  wrap.innerHTML = rows.map(r =>
+    '<div class="zp-row"><span class="zp-label">' + r[0] + '</span><span class="zp-val">' + (r[1] || '—') + '</span></div>'
+  ).join('');
+}
+
+// 特殊ケース → 総務へ請求モードに切替
+function switchToZaishokuRequest() {
+  document.getElementById('shorui-zaishoku-card').classList.add('hidden');
+  document.getElementById('shorui-note-card').classList.remove('hidden');
+  document.getElementById('shorui-submit-btn').classList.remove('hidden');
+}
+
+// 和暦変換 (令和7年6月3日)
+function fmtWareki(isoDate) {
+  if (!isoDate) return '';
+  const d = new Date(isoDate);
+  if (isNaN(d.getTime())) return String(isoDate);
+  const y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+  let gengo, gy;
+  if (y > 2019 || (y === 2019 && (m > 5 || (m === 5 && day >= 1)))) { gengo = '令和'; gy = y - 2018; }
+  else if (y > 1989 || (y === 1989 && (m > 1 || (m === 1 && day >= 8)))) { gengo = '平成'; gy = y - 1988; }
+  else if (y > 1926 || (y === 1926 && (m > 12 || (m === 12 && day >= 25)))) { gengo = '昭和'; gy = y - 1925; }
+  else if (y > 1912 || (y === 1912 && (m > 7 || (m === 7 && day >= 30)))) { gengo = '大正'; gy = y - 1911; }
+  else { gengo = '明治'; gy = y - 1867; }
+  return gengo + (gy === 1 ? '元' : gy) + '年' + m + '月' + day + '日';
+}
+
+function todayLocalIso() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// 在職証明書(JP) PDFを生成してダウンロード — yukyu-app と同一レイアウト/社判
+async function issueZaishokuJP() {
+  if (!zaishokuData || !zaishokuData.complete) { showAlert(t('shoruiZaishokuIncomplete') || '発行できません', 'warning'); return; }
+  const d = zaishokuData;
+  const btn = document.querySelector('#shorui-zaishoku-ready .btn-download-doc');
+  const orig = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ <span>' + (t('shoruiZaishokuGenerating') || 'PDF生成中…') + '</span>'; }
+  try {
+    if (!window.PDFLib) throw new Error('pdf-lib not loaded');
+    // テンプレート画像読込
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = 'zaishoku_jp.png?_=' + Date.now();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('template load failed')); });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+    const SCALE = canvas.width / 595;
+    ctx.textBaseline = 'alphabetic';
+
+    const setFont = (sz) => { ctx.font = (sz * SCALE) + 'px "Noto Sans JP","Hiragino Sans","Yu Gothic","Meiryo",sans-serif'; };
+    const drawText = (x, y, text, sz, color) => { if (!text && text !== 0) return; ctx.fillStyle = color || '#000'; setFont(sz || 12); ctx.fillText(String(text), x * SCALE, y * SCALE); };
+    const drawTextFit = (x, y, text, sz, maxW, color) => {
+      if (!text && text !== 0) return; ctx.fillStyle = color || '#000'; let s = sz; setFont(s);
+      while (ctx.measureText(String(text)).width > maxW * SCALE && s > 6) { s -= 0.5; setFont(s); }
+      ctx.fillText(String(text), x * SCALE, y * SCALE);
+    };
+    const drawTextWrap = (x, y, text, sz, maxW, gap) => {
+      if (!text) return; ctx.fillStyle = '#000'; setFont(sz);
+      if (ctx.measureText(String(text)).width <= maxW * SCALE) { ctx.fillText(String(text), x * SCALE, y * SCALE); return; }
+      const str = String(text); let splitIdx = -1; const mid = Math.floor(str.length / 2); const markers = [' ', '　', ',', '、'];
+      for (let off = 0; off < mid; off++) { for (let mm = 0; mm < markers.length; mm++) { if (str.charAt(mid + off) === markers[mm]) { splitIdx = mid + off + 1; break; } if (str.charAt(mid - off) === markers[mm]) { splitIdx = mid - off + 1; break; } } if (splitIdx > 0) break; }
+      if (splitIdx <= 0) splitIdx = mid;
+      drawTextFit(x, y - (gap || 6), str.substring(0, splitIdx).trim(), sz - 1.5, maxW);
+      drawTextFit(x, y + (gap || 6), str.substring(splitIdx).trim(), sz - 1.5, maxW);
+    };
+    const whiteRect = (x, y, w, h) => { ctx.fillStyle = '#fff'; ctx.fillRect(x * SCALE, y * SCALE, w * SCALE, h * SCALE); };
+    const drawLine = (x0, y0, x1, y1, w, color) => { ctx.strokeStyle = color || '#000'; ctx.lineWidth = (w || 1) * SCALE; ctx.beginPath(); ctx.moveTo(x0 * SCALE, y0 * SCALE); ctx.lineTo(x1 * SCALE, y1 * SCALE); ctx.stroke(); };
+
+    // 社判
+    let sealImg = null;
+    try { sealImg = await new Promise((res) => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => res(im); im.onerror = () => res(null); im.src = 'seal_stepup.png?_=' + Date.now(); }); } catch (_) { sealImg = null; }
+    const drawRedSeal = (cx, cy, sz) => { if (!sealImg) return; const s = sz || 56, half = s / 2; ctx.drawImage(sealImg, (cx - half) * SCALE, (cy - half) * SCALE, s * SCALE, s * SCALE); };
+
+    const C = d.company || {};
+    const COMPANY_ADDR_JP = C.addrJp || '静岡県磐田市上本郷1006-7';
+    const COMPANY_NAME_JP = C.nameJp || '有限会社ステップ・アップ';
+    const COMPANY_TEL = C.tel || '0538-36-6968';
+
+    // 氏名: 在留カード ローマ字氏名があれば優先 (在留カード番号パターンは除外)
+    let romajiAlt = (d.romajiName || '').trim();
+    if (romajiAlt && /^[A-Z]{2}\d/.test(romajiAlt)) romajiAlt = '';
+    const displayName = romajiAlt || d.name;
+
+    // === JP レイアウト (yukyu-app と同一) ===
+    whiteRect(45, 185, 510, 660);
+    const LX = 55, DATA_X = 175, MAXW = 490;
+    const VMAXW = MAXW - (DATA_X - LX);
+    const LINE_RIGHT = DATA_X + 320;
+    const jpLabel = (y, text, sz) => { ctx.fillStyle = '#000'; setFont(sz || 12); ctx.fillText(text, LX * SCALE, y * SCALE); };
+
+    const JY0 = 200; jpLabel(JY0, '現住所：');
+    if (d.address && d.address.length > 20) drawTextWrap(DATA_X, JY0, d.address, 12, VMAXW, 7); else drawTextFit(DATA_X, JY0, d.address, 13, VMAXW);
+    drawLine(DATA_X, JY0 + 5, LINE_RIGHT, JY0 + 5, 1);
+
+    const JY1 = JY0 + 55; jpLabel(JY1, '氏　名：');
+    drawTextFit(DATA_X, JY1, displayName, 13, VMAXW);
+    drawLine(DATA_X, JY1 + 5, LINE_RIGHT, JY1 + 5, 1);
+
+    const JY2 = JY1 + 55; jpLabel(JY2, '生年月日：');
+    drawText(DATA_X, JY2, fmtWareki(d.birthday), 13);
+    drawLine(DATA_X, JY2 + 5, LINE_RIGHT, JY2 + 5, 1);
+
+    const JY3 = JY2 + 55; jpLabel(JY3, '国　籍：');
+    drawTextFit(DATA_X, JY3, d.nationality || '', 13, VMAXW);
+    drawLine(DATA_X, JY3 + 5, LINE_RIGHT, JY3 + 5, 1);
+
+    const JY4 = JY3 + 55; jpLabel(JY4, '採用年月日：');
+    drawText(DATA_X, JY4, fmtWareki(d.nyushaDate), 13);
+    drawLine(DATA_X, JY4 + 5, LINE_RIGHT, JY4 + 5, 1);
+
+    const JYC = JY4 + 70;
+    drawText(LX, JYC, '上記の者につき、当事業所にて現在在職中である事を証明致します。', 11);
+
+    const JYD = JYC + 45;
+    drawText(LX, JYD, fmtWareki(todayLocalIso()), 12);
+    drawLine(LX, JYD + 5, LX + 180, JYD + 5, 1);
+
+    const JYB = JYD + 50, VX2 = 190;
+    const drawSpacedLabel = (rightX, y, text, sz) => {
+      ctx.fillStyle = '#000'; setFont(sz); const spacing = sz * 1.6; const w = (text.length - 1) * spacing; const startX = rightX - w;
+      for (let i = 0; i < text.length; i++) { const ch = text.charAt(i); const chW = ctx.measureText(ch).width / SCALE; ctx.fillText(ch, (startX + i * spacing - chW / 2) * SCALE, y * SCALE); }
+      ctx.fillText('：', (rightX + 2) * SCALE, y * SCALE);
+    };
+    drawSpacedLabel(170, JYB, '事業所所在地', 11); drawText(VX2, JYB, COMPANY_ADDR_JP, 12);
+    const JYB2 = JYB + 32; drawSpacedLabel(170, JYB2, '事業所名称', 11); drawText(VX2, JYB2, COMPANY_NAME_JP, 12);
+    const JYB3 = JYB2 + 32; drawSpacedLabel(170, JYB3, '代表者', 11); drawText(VX2, JYB3, '代表取締役 山下浩俊', 12);
+    const JYB4 = JYB3 + 32; drawSpacedLabel(170, JYB4, '電話番号', 11); drawText(VX2, JYB4, COMPANY_TEL, 12);
+    drawRedSeal(400, JYB3, 80);
+
+    // canvas → PNG bytes (fetch を使わず手動デコードで CSP 回避)
+    const dataUrl = canvas.toDataURL('image/png');
+    const b64 = dataUrl.split(',')[1];
+    const binStr = atob(b64);
+    const pngBytes = new Uint8Array(binStr.length);
+    for (let i = 0; i < binStr.length; i++) pngBytes[i] = binStr.charCodeAt(i);
+
+    const PDFLib = window.PDFLib;
+    const pdfDoc = await PDFLib.PDFDocument.create();
+    const png = await pdfDoc.embedPng(pngBytes);
+    const page = pdfDoc.addPage([595, 842]);
+    page.drawImage(png, { x: 0, y: 0, width: 595, height: 842 });
+    const pdfBytes = await pdfDoc.save();
+
+    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const fileName = '在職証明書_' + (d.name || '') + '.pdf';
+    const pw = window.open(url, '_blank');
+    if (!pw) {
+      const a = document.createElement('a');
+      a.href = url; a.download = fileName;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 8000);
+    showAlert(t('shoruiZaishokuDone') || '✅ 在職証明書を発行しました', 'success');
+  } catch (e) {
+    showAlert((t('shoruiZaishokuError') || '在職証明書の生成に失敗しました') + (e && e.message ? ' (' + e.message + ')' : ''), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
   }
 }
 
@@ -3152,7 +3425,7 @@ async function updateHistoryBadge() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v18';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v19';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 
