@@ -254,6 +254,33 @@
   .zaishoku-preview .zp-row:last-child { border-bottom: none; }
   .zaishoku-preview .zp-label { flex: 0 0 92px; color: #888; font-size: 0.92em; }
   .zaishoku-preview .zp-val { flex: 1; font-weight: 600; word-break: break-all; }
+  /* コンビニ印刷 共有ボタン / ガイド */
+  .btn-share-doc {
+    display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+    padding: 14px 14px; background: #eaf2fb; border: 2px solid #aacdf0;
+    border-radius: 10px; font-size: 1em; font-weight: 700; color: #14457a; cursor: pointer;
+  }
+  .btn-share-doc:active { background: #d6e7f8; }
+  .btn-share-doc:disabled { opacity: 0.6; cursor: default; }
+  .conbini-guide-link {
+    display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
+    padding: 12px; margin-bottom: 12px; background: #fff8e7; border: 2px dashed #f0c869;
+    border-radius: 10px; font-size: 0.92em; font-weight: 700; color: #8a5a00; cursor: pointer; text-align: center;
+  }
+  .conbini-guide-link:active { background: #fdeecb; }
+  .conbini-box { max-width: 440px; text-align: left; padding: 18px 18px 14px; border-top: 5px solid #f0a500; max-height: 88vh; display: flex; flex-direction: column; }
+  .conbini-box .modal-icon { text-align: center; font-size: 2.2em; margin-bottom: 4px; flex-shrink: 0; }
+  .conbini-box .modal-title { text-align: center; margin-bottom: 10px; flex-shrink: 0; }
+  .conbini-body { overflow-y: auto; -webkit-overflow-scrolling: touch; margin-bottom: 12px; }
+  .conbini-body .cb-intro { font-size: 0.92em; color: #444; line-height: 1.55; margin-bottom: 12px; }
+  .conbini-body .cb-store { border: 1.5px solid #e0e6ed; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: #fafbfc; }
+  .conbini-body .cb-store-name { font-weight: 700; color: #1f3864; margin-bottom: 4px; font-size: 1em; }
+  .conbini-body .cb-store-desc { font-size: 0.88em; color: #555; line-height: 1.5; }
+  .conbini-body .cb-link { display: inline-block; margin-top: 6px; color: #1565c0; text-decoration: underline; font-weight: 700; font-size: 0.9em; }
+  .conbini-body .cb-steps { margin: 6px 0 4px; padding-left: 0; list-style: none; }
+  .conbini-body .cb-steps li { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; font-size: 0.92em; color: #333; line-height: 1.5; }
+  .conbini-body .cb-steps .cb-num { flex: 0 0 26px; height: 26px; border-radius: 50%; background: #f0a500; color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 0.85em; }
+  .conbini-body .cb-price { background: #eef7ee; border: 1px solid #b6dab6; border-radius: 8px; padding: 8px 10px; font-size: 0.88em; color: #1b5e20; margin-top: 6px; }
   /* 在留カード撮影 UI */
   .btn-camera {
     display: block; width: 100%;
@@ -859,6 +886,10 @@
   </div>
   <div id="shorui-error" class="error-banner hidden"></div>
 
+  <button type="button" class="conbini-guide-link" onclick="showConbiniGuide()">
+    🏪 <span data-i18n="conbiniGuideBtn">コンビニ（セブン・ファミマ・ローソン）で印刷する方法</span>
+  </button>
+
   <div class="card">
     <h2>① <span data-i18n="shoruiSelectType">書類を選択</span></h2>
     <div style="display:flex; flex-direction:column; gap:10px; margin-top:6px;">
@@ -903,8 +934,11 @@
         以下の確定情報で在職証明書（日本語）を発行します。内容は会社の登録情報です。
       </div>
       <div id="shorui-zaishoku-preview" class="zaishoku-preview"></div>
-      <button type="button" class="btn-download-doc" style="margin-top:10px;" onclick="issueZaishokuJP()">
+      <button type="button" class="btn-download-doc" style="margin-top:10px;" onclick="issueZaishokuJP('save')">
         📄 <span data-i18n="shoruiZaishokuIssueBtn">在職証明書（日本語）を発行する</span>
+      </button>
+      <button type="button" class="btn-share-doc hidden" id="shorui-zaishoku-share-btn" style="margin-top:8px;" onclick="issueZaishokuJP('share')">
+        📲 <span data-i18n="sharePrintBtn">印刷・共有（コンビニOK）</span>
       </button>
     </div>
     <!-- 発行不可 (住所/入社日 未登録など): 総務へ請求 -->
@@ -1045,6 +1079,16 @@
       <button type="button" class="modal-btn modal-btn-secondary" onclick="closeRulesModal()" data-i18n="cancel">キャンセル</button>
       <button type="button" class="modal-btn" id="rules-next-btn" onclick="acceptRules()" disabled data-i18n="next">次へ</button>
     </div>
+  </div>
+</div>
+
+<!-- コンビニ印刷ガイド -->
+<div id="modal-conbini" class="modal-backdrop hidden" onclick="onConbiniBackdrop(event)">
+  <div class="modal-box conbini-box">
+    <div class="modal-icon">🏪</div>
+    <div class="modal-title" data-i18n="conbiniTitle">コンビニで印刷する方法</div>
+    <div class="conbini-body" id="conbini-body"></div>
+    <button type="button" class="modal-btn" onclick="closeConbiniGuide()" data-i18n="close">閉じる</button>
   </div>
 </div>
 
@@ -1428,6 +1472,23 @@ I18N.ja.zaishokuAddress = "現住所"; I18N.en.zaishokuAddress = "Address"; I18N
 I18N.ja.zaishokuBirthday = "生年月日"; I18N.en.zaishokuBirthday = "Date of birth"; I18N.pt.zaishokuBirthday = "Nascimento";
 I18N.ja.zaishokuNationality = "国籍"; I18N.en.zaishokuNationality = "Nationality"; I18N.pt.zaishokuNationality = "Nacionalidade";
 I18N.ja.zaishokuNyusha = "採用年月日"; I18N.en.zaishokuNyusha = "Hire date"; I18N.pt.zaishokuNyusha = "Data de admissão";
+// コンビニ印刷 / 共有
+I18N.ja.close = "閉じる"; I18N.en.close = "Close"; I18N.pt.close = "Fechar";
+I18N.ja.sharePrintBtn = "印刷・共有（コンビニOK）"; I18N.en.sharePrintBtn = "Print / Share (works at conbini)"; I18N.pt.sharePrintBtn = "Imprimir / Compartilhar (em conveniência)";
+I18N.ja.conbiniGuideBtn = "コンビニ（セブン・ファミマ・ローソン）で印刷する方法"; I18N.en.conbiniGuideBtn = "How to print at a convenience store (Seven/FamilyMart/Lawson)"; I18N.pt.conbiniGuideBtn = "Como imprimir na loja de conveniência (Seven/FamilyMart/Lawson)";
+I18N.ja.conbiniTitle = "コンビニで印刷する方法"; I18N.en.conbiniTitle = "How to print at a convenience store"; I18N.pt.conbiniTitle = "Como imprimir na loja de conveniência";
+I18N.ja.cbIntro = "家にプリンターがなくても、近くのコンビニ（セブン‐イレブン・ファミリーマート・ローソン）のコピー機で印刷できます。アプリは無料です。"; I18N.en.cbIntro = "Even without a home printer, you can print at the copy machine in a nearby convenience store (Seven-Eleven, FamilyMart, Lawson). The apps are free."; I18N.pt.cbIntro = "Mesmo sem impressora em casa, você pode imprimir na copiadora de uma loja de conveniência próxima (Seven-Eleven, FamilyMart, Lawson). Os aplicativos são gratuitos.";
+I18N.ja.cbSevenName = "セブン‐イレブン"; I18N.en.cbSevenName = "Seven-Eleven"; I18N.pt.cbSevenName = "Seven-Eleven";
+I18N.ja.cbSevenDesc = "アプリ「かんたん netprint（ネットプリント）」を使います。登録（とうろく）はいりません。"; I18N.en.cbSevenDesc = "Use the “Kantan netprint” app. No sign-up needed."; I18N.pt.cbSevenDesc = "Use o app “Kantan netprint”. Não precisa de cadastro.";
+I18N.ja.cbFlName = "ファミリーマート・ローソン"; I18N.en.cbFlName = "FamilyMart / Lawson"; I18N.pt.cbFlName = "FamilyMart / Lawson";
+I18N.ja.cbFlDesc = "アプリ「ネットワークプリント」を使います。無料の登録（とうろく）をします。"; I18N.en.cbFlDesc = "Use the “Network Print” app. Free sign-up required."; I18N.pt.cbFlDesc = "Use o app “Network Print”. É necessário cadastro gratuito.";
+I18N.ja.cbGetApp = "アプリを入手する"; I18N.en.cbGetApp = "Get the app"; I18N.pt.cbGetApp = "Obter o aplicativo";
+I18N.ja.cbStepsTitle = "印刷のながれ"; I18N.en.cbStepsTitle = "Steps to print"; I18N.pt.cbStepsTitle = "Passos para imprimir";
+I18N.ja.cbStep1 = "このアプリで書類を出して「📲 印刷・共有」ボタンを押す"; I18N.en.cbStep1 = "Open the document here and tap the “📲 Print / Share” button"; I18N.pt.cbStep1 = "Abra o documento aqui e toque no botão “📲 Imprimir / Compartilhar”";
+I18N.ja.cbStep2 = "出てきたメニューから、コンビニのアプリ（上の2つ）を選んで書類を送る"; I18N.en.cbStep2 = "From the menu, choose the convenience-store app (above) and send the document"; I18N.pt.cbStep2 = "No menu, escolha o app da loja de conveniência (acima) e envie o documento";
+I18N.ja.cbStep3 = "アプリに「予約番号（よやくばんごう）」が出るので、メモする"; I18N.en.cbStep3 = "The app shows a “reservation number”. Write it down"; I18N.pt.cbStep3 = "O app mostra um “número de reserva”. Anote-o";
+I18N.ja.cbStep4 = "お店のコピー機で「ネットプリント／ネットワークプリント」を選び、番号を入れて印刷する"; I18N.en.cbStep4 = "At the store copy machine, choose “netprint / Network Print”, enter the number, and print"; I18N.pt.cbStep4 = "Na copiadora da loja, escolha “netprint / Network Print”, digite o número e imprima";
+I18N.ja.cbPrice = "白黒1枚 約20円・カラー1枚 約60円（料金はコンビニで支払います）"; I18N.en.cbPrice = "About ¥20 per B&W page, ¥60 per color page (paid at the store)"; I18N.pt.cbPrice = "Cerca de ¥20 por página P&B, ¥60 por página colorida (pago na loja)";
 // 確認画面
 I18N.ja.zairyuConfirmTitle = "在留カード — 内容確認";
 I18N.en.zairyuConfirmTitle = "Zairyu Card — Review";
@@ -2424,15 +2485,13 @@ async function downloadGensen(serverRelativeUrl, fileName, btn) {
     const byteChars = atob(b64);
     const bytes = new Uint8Array(byteChars.length);
     for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-    const blob = new Blob([bytes], { type: data.contentType || 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = data.fileName || fileName || 'gensen.pdf';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    const name = data.fileName || fileName || 'gensen.pdf';
+    const file = new File([bytes], name, { type: data.contentType || 'application/pdf' });
+    // 対応端末では共有(保存/印刷/コンビニアプリ送信)。未対応はダウンロード
+    const r = await sharePdfFile(file);
+    if (r === 'unsupported' || r === 'failed') {
+      savePdfBlob(file, name);
+    }
   } catch (e) {
     showAlert(t('networkError') + ((e.data && e.data.error) ? ' (' + e.data.error + ')' : ''), 'error');
   } finally {
@@ -2461,6 +2520,12 @@ async function loadZaishokuData() {
     if (data.complete) {
       renderZaishokuPreview(data);
       readyEl.classList.remove('hidden');
+      // 共有(コンビニ印刷)ボタンは Web Share 対応端末のみ表示
+      const shareBtn = document.getElementById('shorui-zaishoku-share-btn');
+      if (shareBtn) {
+        const probe = new File([new Uint8Array([37, 80, 68, 70])], 'p.pdf', { type: 'application/pdf' });
+        shareBtn.classList.toggle('hidden', !isFileShareSupported(probe));
+      }
     } else {
       incompleteEl.classList.remove('hidden');
     }
@@ -2516,11 +2581,78 @@ function todayLocalIso() {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
-// 在職証明書(JP) PDFを生成してダウンロード — yukyu-app と同一レイアウト/社判
-async function issueZaishokuJP() {
+// ====== PDF 共有 / 保存 (コンビニ印刷対応) ======
+function isFileShareSupported(file) {
+  try {
+    return !!(navigator.canShare && navigator.share && navigator.canShare({ files: [file] }));
+  } catch (_) { return false; }
+}
+// 戻り値: 'shared' | 'cancelled' | 'unsupported' | 'failed'
+async function sharePdfFile(file) {
+  if (!isFileShareSupported(file)) return 'unsupported';
+  try {
+    await navigator.share({ files: [file], title: file.name });
+    return 'shared';
+  } catch (e) {
+    if (e && e.name === 'AbortError') return 'cancelled';
+    return 'failed';
+  }
+}
+function savePdfBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const pw = window.open(url, '_blank');
+  if (!pw) {
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName || 'document.pdf';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 8000);
+}
+
+// ====== コンビニ印刷ガイド ======
+function showConbiniGuide() {
+  renderConbiniGuide();
+  document.getElementById('modal-conbini').classList.remove('hidden');
+}
+function closeConbiniGuide() {
+  document.getElementById('modal-conbini').classList.add('hidden');
+}
+function onConbiniBackdrop(e) {
+  if (e.target === document.getElementById('modal-conbini')) closeConbiniGuide();
+}
+function renderConbiniGuide() {
+  const body = document.getElementById('conbini-body');
+  if (!body) return;
+  const sevenUrl = 'https://www.printing.ne.jp/support/lp/kantan/index.html';
+  const netwUrl = 'https://networkprint.ne.jp/';
+  const steps = [t('cbStep1'), t('cbStep2'), t('cbStep3'), t('cbStep4')];
+  body.innerHTML =
+    '<div class="cb-intro">' + t('cbIntro') + '</div>' +
+    '<div class="cb-store">' +
+      '<div class="cb-store-name">🟢 ' + t('cbSevenName') + '</div>' +
+      '<div class="cb-store-desc">' + t('cbSevenDesc') + '</div>' +
+      '<a class="cb-link" href="' + sevenUrl + '" target="_blank" rel="noopener noreferrer">▶ ' + t('cbGetApp') + '</a>' +
+    '</div>' +
+    '<div class="cb-store">' +
+      '<div class="cb-store-name">🔵 ' + t('cbFlName') + '</div>' +
+      '<div class="cb-store-desc">' + t('cbFlDesc') + '</div>' +
+      '<a class="cb-link" href="' + netwUrl + '" target="_blank" rel="noopener noreferrer">▶ ' + t('cbGetApp') + '</a>' +
+    '</div>' +
+    '<div style="font-weight:700; color:#1f3864; margin:12px 0 4px;">' + t('cbStepsTitle') + '</div>' +
+    '<ul class="cb-steps">' +
+      steps.map((s, i) => '<li><span class="cb-num">' + (i + 1) + '</span><span>' + s + '</span></li>').join('') +
+    '</ul>' +
+    '<div class="cb-price">💴 ' + t('cbPrice') + '</div>';
+}
+
+// 在職証明書(JP) PDFを生成 — yukyu-app と同一レイアウト/社判。mode='save'(表示/保存) or 'share'(共有→コンビニ印刷)
+async function issueZaishokuJP(mode) {
+  mode = mode || 'save';
   if (!zaishokuData || !zaishokuData.complete) { showAlert(t('shoruiZaishokuIncomplete') || '発行できません', 'warning'); return; }
   const d = zaishokuData;
-  const btn = document.querySelector('#shorui-zaishoku-ready .btn-download-doc');
+  const btn = (mode === 'share')
+    ? document.getElementById('shorui-zaishoku-share-btn')
+    : document.querySelector('#shorui-zaishoku-ready .btn-download-doc');
   const orig = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.innerHTML = '⏳ <span>' + (t('shoruiZaishokuGenerating') || 'PDF生成中…') + '</span>'; }
   try {
@@ -2633,17 +2765,17 @@ async function issueZaishokuJP() {
     page.drawImage(png, { x: 0, y: 0, width: 595, height: 842 });
     const pdfBytes = await pdfDoc.save();
 
-    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
     const fileName = '在職証明書_' + (d.name || '') + '.pdf';
-    const pw = window.open(url, '_blank');
-    if (!pw) {
-      const a = document.createElement('a');
-      a.href = url; a.download = fileName;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    const file = new File([pdfBytes], fileName, { type: 'application/pdf' });
+    let showDone = true;
+    if (mode === 'share') {
+      const r = await sharePdfFile(file);
+      if (r === 'cancelled') { showDone = false; }
+      else if (r !== 'shared') { savePdfBlob(file, fileName); }  // 未対応/失敗 → 保存にフォールバック
+    } else {
+      savePdfBlob(file, fileName);
     }
-    setTimeout(() => URL.revokeObjectURL(url), 8000);
-    showAlert(t('shoruiZaishokuDone') || '✅ 在職証明書を発行しました', 'success');
+    if (showDone) showAlert(t('shoruiZaishokuDone') || '✅ 在職証明書を発行しました', 'success');
   } catch (e) {
     showAlert((t('shoruiZaishokuError') || '在職証明書の生成に失敗しました') + (e && e.message ? ' (' + e.message + ')' : ''), 'error');
   } finally {
@@ -3442,7 +3574,7 @@ async function updateHistoryBadge() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v20';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v21';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 
