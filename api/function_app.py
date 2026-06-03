@@ -2555,6 +2555,43 @@ def _ts_files(server_relative_url: str) -> List[Dict[str, Any]]:
     return r.json().get("value", [])
 
 
+def _gensen_collect_folders(base_url: str, max_depth: int = 3) -> List[str]:
+    """gensen フォルダ配下の全フォルダ (ネスト含む) を列挙。
+    R2 のように年度フォルダの中にさらにサブフォルダがあるケースに対応。"""
+    result = [base_url]
+    frontier = [(base_url, 0)]
+    seen = {base_url}
+    while frontier:
+        url, depth = frontier.pop()
+        if depth >= max_depth:
+            continue
+        try:
+            subs = _ts_folders(url)
+        except Exception:
+            continue
+        for f in subs:
+            nm = f.get("Name", "")
+            if not nm or nm == "Forms" or nm.startswith("_"):
+                continue
+            su = f.get("ServerRelativeUrl")
+            if su and su not in seen:
+                seen.add(su)
+                result.append(su)
+                frontier.append((su, depth + 1))
+    return result
+
+
+def _gensen_year(folder_name: str, file_name: str) -> int:
+    """新しい年度を上に並べるための西暦。ファイル名の 源泉YYYY 優先、無ければフォルダ名 RN(令和)。"""
+    m = re.search(r"(20\d{2})", file_name or "")
+    if m:
+        return int(m.group(1))
+    m = re.search(r"R(\d+)", folder_name or "")
+    if m:
+        return 2018 + int(m.group(1))  # 令和N → 西暦
+    return 0
+
+
 @app.route(route="shorui/gensen-list", methods=["GET", "OPTIONS"])
 def shorui_gensen_list(req: func.HttpRequest) -> func.HttpResponse:
     """本人の源泉徴収票 PDF を gensen フォルダから検索して一覧返す (総務不要)。"""
@@ -2567,16 +2604,8 @@ def shorui_gensen_list(req: func.HttpRequest) -> func.HttpResponse:
     shain_no = int(payload["shainNo"])
     try:
         matches: List[Dict[str, Any]] = []
-        # 年度サブフォルダ
-        try:
-            folders = _ts_folders(GENSEN_BASE_PATH)
-        except Exception:
-            folders = []
-        targets = [GENSEN_BASE_PATH]  # 直下も対象
-        for f in folders:
-            nm = f.get("Name", "")
-            if nm and nm != "Forms" and not nm.startswith("_"):
-                targets.append(f.get("ServerRelativeUrl"))
+        # 年度サブフォルダ (ネスト含め再帰的に列挙。R2 のように二重フォルダのケースに対応)
+        targets = _gensen_collect_folders(GENSEN_BASE_PATH)
         for folder_url in targets:
             try:
                 files = _ts_files(folder_url)
@@ -2591,9 +2620,10 @@ def shorui_gensen_list(req: func.HttpRequest) -> func.HttpResponse:
                         "fileName": fname,
                         "serverRelativeUrl": fl.get("ServerRelativeUrl"),
                         "modified": fl.get("TimeLastModified"),
+                        "year": _gensen_year(folder_name, fname),
                     })
-        # 年度フォルダ名で降順 (新しい年度を上に)
-        matches.sort(key=lambda m: m.get("folder", ""), reverse=True)
+        # 新しい年度を上に (西暦 → ファイル名 で降順)
+        matches.sort(key=lambda m: (m.get("year", 0), m.get("fileName", "")), reverse=True)
         return _json_response({"items": matches})
     except Exception as e:
         logging.exception("gensen-list failed")
