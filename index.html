@@ -280,7 +280,8 @@
   .conbini-body .cb-steps { margin: 6px 0 4px; padding-left: 0; list-style: none; }
   .conbini-body .cb-steps li { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; font-size: 0.92em; color: #333; line-height: 1.5; }
   .conbini-body .cb-steps .cb-num { flex: 0 0 26px; height: 26px; border-radius: 50%; background: #f0a500; color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 0.85em; }
-  .conbini-body .cb-price { background: #eef7ee; border: 1px solid #b6dab6; border-radius: 8px; padding: 8px 10px; font-size: 0.88em; color: #1b5e20; margin-top: 6px; }
+  .conbini-body .cb-tip { background: #eaf2fb; border: 1px solid #aacdf0; border-radius: 8px; padding: 8px 10px; font-size: 0.86em; color: #14457a; line-height: 1.5; margin-top: 10px; }
+  .conbini-body .cb-price { background: #eef7ee; border: 1px solid #b6dab6; border-radius: 8px; padding: 8px 10px; font-size: 0.88em; color: #1b5e20; margin-top: 8px; }
   /* 在留カード撮影 UI */
   .btn-camera {
     display: block; width: 100%;
@@ -1474,20 +1475,22 @@ I18N.ja.zaishokuNationality = "国籍"; I18N.en.zaishokuNationality = "Nationali
 I18N.ja.zaishokuNyusha = "採用年月日"; I18N.en.zaishokuNyusha = "Hire date"; I18N.pt.zaishokuNyusha = "Data de admissão";
 // コンビニ印刷 / 共有
 I18N.ja.close = "閉じる"; I18N.en.close = "Close"; I18N.pt.close = "Fechar";
-I18N.ja.sharePrintBtn = "印刷・共有（コンビニOK）"; I18N.en.sharePrintBtn = "Print / Share (works at conbini)"; I18N.pt.sharePrintBtn = "Imprimir / Compartilhar (em conveniência)";
+I18N.ja.sharePrintBtn = "保存・共有（コンビニ印刷用）"; I18N.en.sharePrintBtn = "Save / Share (for conbini print)"; I18N.pt.sharePrintBtn = "Salvar / Compartilhar (impressão conbini)";
 I18N.ja.conbiniGuideBtn = "コンビニ（セブン・ファミマ・ローソン）で印刷する方法"; I18N.en.conbiniGuideBtn = "How to print at a convenience store (Seven/FamilyMart/Lawson)"; I18N.pt.conbiniGuideBtn = "Como imprimir na loja de conveniência (Seven/FamilyMart/Lawson)";
 I18N.ja.conbiniTitle = "コンビニで印刷する方法"; I18N.en.conbiniTitle = "How to print at a convenience store"; I18N.pt.conbiniTitle = "Como imprimir na loja de conveniência";
-I18N.ja.cbIntro = "家にプリンターがなくても、近くのコンビニ（セブン‐イレブン・ファミリーマート・ローソン）のコピー機で印刷できます。アプリは無料です。"; I18N.en.cbIntro = "Even without a home printer, you can print at the copy machine in a nearby convenience store (Seven-Eleven, FamilyMart, Lawson). The apps are free."; I18N.pt.cbIntro = "Mesmo sem impressora em casa, você pode imprimir na copiadora de uma loja de conveniência próxima (Seven-Eleven, FamilyMart, Lawson). Os aplicativos são gratuitos.";
+I18N.ja.cbIntro = "家にプリンターがなくても、近くのコンビニ（セブン‐イレブン・ファミリーマート・ローソン）のコピー機で印刷できます。下のやり方がいちばん確実です。アプリは無料です。"; I18N.en.cbIntro = "Even without a home printer, you can print at the copy machine in a nearby convenience store (Seven-Eleven, FamilyMart, Lawson). The steps below are the most reliable. The apps are free."; I18N.pt.cbIntro = "Mesmo sem impressora em casa, você pode imprimir na copiadora de uma loja de conveniência (Seven-Eleven, FamilyMart, Lawson). Os passos abaixo são os mais confiáveis. Os apps são gratuitos.";
 I18N.ja.cbSevenName = "セブン‐イレブン"; I18N.en.cbSevenName = "Seven-Eleven"; I18N.pt.cbSevenName = "Seven-Eleven";
-I18N.ja.cbSevenDesc = "アプリ「かんたん netprint（ネットプリント）」を使います。登録（とうろく）はいりません。"; I18N.en.cbSevenDesc = "Use the “Kantan netprint” app. No sign-up needed."; I18N.pt.cbSevenDesc = "Use o app “Kantan netprint”. Não precisa de cadastro.";
+I18N.ja.cbSevenDesc = "アプリ「かんたん netprint（ネットプリント）」がおすすめです。登録（とうろく）はいりません。ファイルの追加がかんたんです。"; I18N.en.cbSevenDesc = "We recommend the “Kantan netprint” app. No sign-up needed and adding files is easy."; I18N.pt.cbSevenDesc = "Recomendamos o app “Kantan netprint”. Não precisa de cadastro e é fácil adicionar arquivos.";
 I18N.ja.cbFlName = "ファミリーマート・ローソン"; I18N.en.cbFlName = "FamilyMart / Lawson"; I18N.pt.cbFlName = "FamilyMart / Lawson";
 I18N.ja.cbFlDesc = "アプリ「ネットワークプリント」を使います。無料の登録（とうろく）をします。"; I18N.en.cbFlDesc = "Use the “Network Print” app. Free sign-up required."; I18N.pt.cbFlDesc = "Use o app “Network Print”. É necessário cadastro gratuito.";
 I18N.ja.cbGetApp = "アプリを入手する"; I18N.en.cbGetApp = "Get the app"; I18N.pt.cbGetApp = "Obter o aplicativo";
-I18N.ja.cbStepsTitle = "印刷のながれ"; I18N.en.cbStepsTitle = "Steps to print"; I18N.pt.cbStepsTitle = "Passos para imprimir";
-I18N.ja.cbStep1 = "このアプリで書類を出して「📲 印刷・共有」ボタンを押す"; I18N.en.cbStep1 = "Open the document here and tap the “📲 Print / Share” button"; I18N.pt.cbStep1 = "Abra o documento aqui e toque no botão “📲 Imprimir / Compartilhar”";
-I18N.ja.cbStep2 = "出てきたメニューから、コンビニのアプリ（上の2つ）を選んで書類を送る"; I18N.en.cbStep2 = "From the menu, choose the convenience-store app (above) and send the document"; I18N.pt.cbStep2 = "No menu, escolha o app da loja de conveniência (acima) e envie o documento";
-I18N.ja.cbStep3 = "アプリに「予約番号（よやくばんごう）」が出るので、メモする"; I18N.en.cbStep3 = "The app shows a “reservation number”. Write it down"; I18N.pt.cbStep3 = "O app mostra um “número de reserva”. Anote-o";
-I18N.ja.cbStep4 = "お店のコピー機で「ネットプリント／ネットワークプリント」を選び、番号を入れて印刷する"; I18N.en.cbStep4 = "At the store copy machine, choose “netprint / Network Print”, enter the number, and print"; I18N.pt.cbStep4 = "Na copiadora da loja, escolha “netprint / Network Print”, digite o número e imprima";
+I18N.ja.cbStepsTitle = "印刷のやり方（かくじつ）"; I18N.en.cbStepsTitle = "How to print (reliable way)"; I18N.pt.cbStepsTitle = "Como imprimir (jeito confiável)";
+I18N.ja.cbStep1 = "この書類を「保存」する（ボタンを押して「ファイルに保存」をえらぶ）"; I18N.en.cbStep1 = "Save this document (tap the button, then choose “Save to Files”)"; I18N.pt.cbStep1 = "Salve este documento (toque no botão e escolha “Salvar em Arquivos”)";
+I18N.ja.cbStep2 = "コンビニのアプリ（上の2つ）を開く"; I18N.en.cbStep2 = "Open the convenience-store app (one of the two above)"; I18N.pt.cbStep2 = "Abra o app da loja de conveniência (um dos dois acima)";
+I18N.ja.cbStep3 = "アプリで「＋」や「ファイルをえらぶ」を押して、保存した書類（PDF）をえらぶ"; I18N.en.cbStep3 = "In the app, tap “+” or “Choose file” and select the saved PDF"; I18N.pt.cbStep3 = "No app, toque em “+” ou “Escolher arquivo” e selecione o PDF salvo";
+I18N.ja.cbStep4 = "アップロードすると「予約番号（よやくばんごう）」が出る → メモする"; I18N.en.cbStep4 = "After uploading, a “reservation number” appears → write it down"; I18N.pt.cbStep4 = "Após enviar, aparece um “número de reserva” → anote-o";
+I18N.ja.cbStep5 = "お店のコピー機で「ネットプリント／ネットワークプリント」を選び、番号を入れて印刷する"; I18N.en.cbStep5 = "At the store copy machine, choose “netprint / Network Print”, enter the number, and print"; I18N.pt.cbStep5 = "Na copiadora da loja, escolha “netprint / Network Print”, digite o número e imprima";
+I18N.ja.cbTip = "💡「📲 共有」を押して出てきたメニューにコンビニのアプリがあれば、それを選んでもOKです。出てこないときは、上の「保存してからアプリで開く」やり方をしてください（セブンは「かんたんnetprint」が共有に対応しています）。"; I18N.en.cbTip = "💡 If the convenience-store app appears when you tap “📲 Share”, you can pick it there. If it doesn’t appear, use the “save then open the app” steps above (for Seven, “Kantan netprint” supports sharing)."; I18N.pt.cbTip = "💡 Se o app da loja aparecer ao tocar em “📲 Compartilhar”, pode escolhê-lo ali. Se não aparecer, use os passos “salvar e abrir o app” acima (na Seven, o “Kantan netprint” aceita compartilhamento).";
 I18N.ja.cbPrice = "白黒1枚 約20円・カラー1枚 約60円（料金はコンビニで支払います）"; I18N.en.cbPrice = "About ¥20 per B&W page, ¥60 per color page (paid at the store)"; I18N.pt.cbPrice = "Cerca de ¥20 por página P&B, ¥60 por página colorida (pago na loja)";
 // 確認画面
 I18N.ja.zairyuConfirmTitle = "在留カード — 内容確認";
@@ -2486,12 +2489,9 @@ async function downloadGensen(serverRelativeUrl, fileName, btn) {
     const bytes = new Uint8Array(byteChars.length);
     for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
     const name = data.fileName || fileName || 'gensen.pdf';
-    const file = new File([bytes], name, { type: data.contentType || 'application/pdf' });
-    // 対応端末では共有(保存/印刷/コンビニアプリ送信)。未対応はダウンロード
-    const r = await sharePdfFile(file);
-    if (r === 'unsupported' || r === 'failed') {
-      savePdfBlob(file, name);
-    }
+    const blob = new Blob([bytes], { type: data.contentType || 'application/pdf' });
+    // 表示/保存 (確実な方法)。コンビニ印刷は「保存→アプリで開く」をガイドで案内
+    savePdfBlob(blob, name);
   } catch (e) {
     showAlert(t('networkError') + ((e.data && e.data.error) ? ' (' + e.data.error + ')' : ''), 'error');
   } finally {
@@ -2625,7 +2625,7 @@ function renderConbiniGuide() {
   if (!body) return;
   const sevenUrl = 'https://www.printing.ne.jp/support/lp/kantan/index.html';
   const netwUrl = 'https://networkprint.ne.jp/';
-  const steps = [t('cbStep1'), t('cbStep2'), t('cbStep3'), t('cbStep4')];
+  const steps = [t('cbStep1'), t('cbStep2'), t('cbStep3'), t('cbStep4'), t('cbStep5')];
   body.innerHTML =
     '<div class="cb-intro">' + t('cbIntro') + '</div>' +
     '<div class="cb-store">' +
@@ -2642,6 +2642,7 @@ function renderConbiniGuide() {
     '<ul class="cb-steps">' +
       steps.map((s, i) => '<li><span class="cb-num">' + (i + 1) + '</span><span>' + s + '</span></li>').join('') +
     '</ul>' +
+    '<div class="cb-tip">' + t('cbTip') + '</div>' +
     '<div class="cb-price">💴 ' + t('cbPrice') + '</div>';
 }
 
@@ -3574,7 +3575,7 @@ async function updateHistoryBadge() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v21';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v22';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 
