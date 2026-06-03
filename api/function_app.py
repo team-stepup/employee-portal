@@ -417,7 +417,7 @@ def _sp_headers(verbose: bool = False, write: bool = False) -> Dict[str, str]:
 
 def sp_get_items(list_guid: str, select: Optional[str] = None,
                  filter_: Optional[str] = None, top: int = 5000,
-                 orderby: Optional[str] = None) -> List[Dict[str, Any]]:
+                 orderby: Optional[str] = None, expand: Optional[str] = None) -> List[Dict[str, Any]]:
     """SP List のアイテムを取得。ページング対応。"""
     base = f"{SITE_URL}/_api/web/lists(guid'{list_guid}')/items"
     params = [f"$top={min(top, 5000)}"]
@@ -427,6 +427,8 @@ def sp_get_items(list_guid: str, select: Optional[str] = None,
         params.append(f"$filter={filter_}")
     if orderby:
         params.append(f"$orderby={orderby}")
+    if expand:
+        params.append(f"$expand={expand}")
     url = base + "?" + "&".join(params)
     items: List[Dict[str, Any]] = []
     while url:
@@ -2373,6 +2375,42 @@ def zairyu_submit(req: func.HttpRequest) -> func.HttpResponse:
 SHORUI_TYPES = {"在職証明書", "源泉徴収票"}
 
 
+def _get_graph_token() -> str:
+    """Managed Identity で Microsoft Graph アクセストークンを取得。"""
+    cred = DefaultAzureCredential()
+    tok = cred.get_token("https://graph.microsoft.com/.default")
+    return tok.token
+
+
+def _send_notification_mail(subject: str, text: str) -> None:
+    """Teams チャネルのメールアドレス宛に Graph sendMail で通知。
+    送信元 = SHORUI_MAIL_SENDER (h.yamashita)、宛先 = SHORUI_NOTIFY_EMAIL (チャネルメール)。
+    環境変数未設定なら何もしない (申請自体は成功扱い)。"""
+    to_addr = os.environ.get("SHORUI_NOTIFY_EMAIL", "").strip()
+    sender = os.environ.get("SHORUI_MAIL_SENDER", "").strip()
+    if not to_addr or not sender:
+        return
+    try:
+        token = _get_graph_token()
+        body = {
+            "message": {
+                "subject": subject,
+                "body": {"contentType": "Text", "content": text},
+                "toRecipients": [{"emailAddress": {"address": to_addr}}],
+            },
+            "saveToSentItems": False,
+        }
+        r = requests.post(
+            f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=body, timeout=30,
+        )
+        if not r.ok:
+            logging.warning(f"sendMail failed: {r.status_code} {r.text[:300]}")
+    except Exception as e:
+        logging.warning(f"notification mail failed: {e}")
+
+
 @app.route(route="shorui/apply", methods=["POST", "OPTIONS"])
 def shorui_apply(req: func.HttpRequest) -> func.HttpResponse:
     """必要書類を請求。SP List「必要書類申請」に INSERT (Teams が List 監視で通知)。
@@ -2420,6 +2458,21 @@ def shorui_apply(req: func.HttpRequest) -> func.HttpResponse:
             SH_STATUS: "pending",
         }
         new_id = sp_post_item(LIST_SHORUI, fields)
+        # Teams チャネル(メールアドレス)へ通知 (本文に社員番号・氏名・内容)
+        shain_name = emp.get(F_SHAIN_NAME) or ''
+        lines = [
+            "必要書類の請求がありました。",
+            f"社員番号: {shain_no}",
+            f"氏名: {shain_name}",
+            f"派遣先: {strip_buka_prefix(buka_text)}",
+            f"書類: {doc_type}",
+        ]
+        if years:
+            lines.append(f"年度: {'、'.join(years)}")
+        if note:
+            lines.append(f"備考: {note}")
+        subject = f"【必要書類請求】{shain_no} {shain_name} - {doc_type}"
+        _send_notification_mail(subject, "\n".join(lines))
         return _json_response({"ok": True, "id": new_id})
     except Exception as e:
         logging.exception("shorui_apply failed")
@@ -2458,6 +2511,120 @@ def shorui_history(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"items": out})
     except Exception as e:
         logging.exception("shorui_history failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+# 源泉徴収票 PDF 保存フォルダ (yukyu-app と同じ。年度別サブフォルダ + ファイル名末尾=社員番号)
+GENSEN_BASE_PATH = "/sites/TeamStepup/Shared Documents/社員ファイル/※※源泉　gensen"
+
+
+def _match_gensen_filename(filename: str, shain_no: int) -> bool:
+    """ファイル名末尾の数字グループが社員番号と一致するか (yukyu-app と同じロジック)。"""
+    if not filename:
+        return False
+    name = re.sub(r"\.[^.]+$", "", filename)  # 拡張子除去
+    emp = str(shain_no)
+    emp0 = emp.zfill(5)  # 3桁→00補完 (例 760→00760)
+    m = re.search(r"(\d+)\D*$", name)
+    if not m:
+        return emp in name or emp0 in name
+    trailing = m.group(1)
+    for e in (emp, emp0):
+        if trailing == e or trailing.endswith(e) or (e.endswith(trailing) and len(trailing) >= 3):
+            return True
+    return False
+
+
+def _ts_folders(server_relative_url: str) -> List[Dict[str, Any]]:
+    h = {"Authorization": f"Bearer {_get_sp_token()}", "Accept": "application/json;odata=nometadata"}
+    from urllib.parse import quote
+    url = f"{SITE_TEAMSTEPUP}/_api/web/GetFolderByServerRelativeUrl('{quote(server_relative_url)}')/Folders?$select=Name,ServerRelativeUrl&$top=200"
+    r = requests.get(url, headers=h, timeout=30)
+    r.raise_for_status()
+    return r.json().get("value", [])
+
+
+def _ts_files(server_relative_url: str) -> List[Dict[str, Any]]:
+    h = {"Authorization": f"Bearer {_get_sp_token()}", "Accept": "application/json;odata=nometadata"}
+    from urllib.parse import quote
+    url = f"{SITE_TEAMSTEPUP}/_api/web/GetFolderByServerRelativeUrl('{quote(server_relative_url)}')/Files?$select=Name,ServerRelativeUrl,TimeLastModified,Length&$top=2000"
+    r = requests.get(url, headers=h, timeout=30)
+    r.raise_for_status()
+    return r.json().get("value", [])
+
+
+@app.route(route="shorui/gensen-list", methods=["GET", "OPTIONS"])
+def shorui_gensen_list(req: func.HttpRequest) -> func.HttpResponse:
+    """本人の源泉徴収票 PDF を gensen フォルダから検索して一覧返す (総務不要)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    try:
+        matches: List[Dict[str, Any]] = []
+        # 年度サブフォルダ
+        try:
+            folders = _ts_folders(GENSEN_BASE_PATH)
+        except Exception:
+            folders = []
+        targets = [GENSEN_BASE_PATH]  # 直下も対象
+        for f in folders:
+            nm = f.get("Name", "")
+            if nm and nm != "Forms" and not nm.startswith("_"):
+                targets.append(f.get("ServerRelativeUrl"))
+        for folder_url in targets:
+            try:
+                files = _ts_files(folder_url)
+            except Exception:
+                continue
+            folder_name = folder_url.rstrip("/").split("/")[-1]
+            for fl in files:
+                fname = fl.get("Name", "")
+                if fname.lower().endswith(".pdf") and _match_gensen_filename(fname, shain_no):
+                    matches.append({
+                        "folder": folder_name,
+                        "fileName": fname,
+                        "serverRelativeUrl": fl.get("ServerRelativeUrl"),
+                        "modified": fl.get("TimeLastModified"),
+                    })
+        # 年度フォルダ名で降順 (新しい年度を上に)
+        matches.sort(key=lambda m: m.get("folder", ""), reverse=True)
+        return _json_response({"items": matches})
+    except Exception as e:
+        logging.exception("gensen-list failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+@app.route(route="shorui/gensen-download", methods=["GET", "OPTIONS"])
+def shorui_gensen_download(req: func.HttpRequest) -> func.HttpResponse:
+    """本人の源泉徴収票 PDF をダウンロード (base64)。
+    Query: ?url=<serverRelativeUrl>。本人の社員番号と一致するファイル名のみ許可。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    sru = req.params.get("url") or ""
+    # 安全確認: gensen フォルダ配下 + ファイル名が本人の社員番号
+    if not sru.startswith(GENSEN_BASE_PATH + "/") or ".." in sru:
+        return _json_response({"error": "invalid_path"}, 400)
+    fname = sru.rstrip("/").split("/")[-1]
+    if not _match_gensen_filename(fname, shain_no):
+        return _json_response({"error": "forbidden"}, 403)
+    try:
+        from urllib.parse import quote
+        api = f"{SITE_TEAMSTEPUP}/_api/web/GetFileByServerRelativeUrl('{quote(sru)}')/$value"
+        rb = requests.get(api, headers={"Authorization": f"Bearer {_get_sp_token()}"}, timeout=60)
+        rb.raise_for_status()
+        b64 = base64.b64encode(rb.content).decode("ascii")
+        return _json_response({"fileName": fname, "contentType": "application/pdf", "base64": b64})
+    except Exception as e:
+        logging.exception("gensen-download failed")
         return _json_response({"error": "internal", "detail": str(e)}, 500)
 
 

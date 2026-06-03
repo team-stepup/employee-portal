@@ -236,6 +236,14 @@
   }
   .year-btn.selected { background: #e3f2fd; border-color: #2e5a99; }
   .year-btn .chk { font-size: 1.2em; }
+  .btn-download-doc {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 14px 14px; background: #eef7ee; border: 2px solid #b6dab6;
+    border-radius: 10px; font-size: 1em; font-weight: 700; color: #1b5e20;
+    cursor: pointer; text-align: left; word-break: break-all;
+  }
+  .btn-download-doc:active { background: #d8eed8; }
+  .btn-download-doc:disabled { opacity: 0.6; cursor: default; }
   /* 在留カード撮影 UI */
   .btn-camera {
     display: block; width: 100%;
@@ -858,8 +866,23 @@
     <div id="shorui-year-grid" style="display:flex; flex-direction:column; gap:8px; margin-top:6px;"></div>
   </div>
 
-  <div class="card">
-    <h2 id="shorui-note-step" data-i18n="shoruiNoteStep">③ 備考 (任意)</h2>
+  <!-- 源泉徴収票: 本人が直接ダウンロード -->
+  <div class="card hidden" id="shorui-gensen-card">
+    <h2>② <span data-i18n="shoruiGensenDownload">源泉徴収票をダウンロード</span></h2>
+    <div style="font-size:0.85em; color:#666; margin:4px 0 10px;" data-i18n="shoruiGensenHint">
+      ご自身の源泉徴収票をタップして保存できます。
+    </div>
+    <div id="shorui-gensen-loading" class="hidden" style="text-align:center; color:#888; padding:14px;">
+      ⏳ <span data-i18n="loading">読み込み中…</span>
+    </div>
+    <div id="shorui-gensen-empty" class="hidden" style="text-align:center; color:#888; padding:14px;" data-i18n="shoruiGensenEmpty">
+      利用できる源泉徴収票が見つかりませんでした。総務にお問い合わせください。
+    </div>
+    <div id="shorui-gensen-list" style="display:flex; flex-direction:column; gap:8px; margin-top:6px;"></div>
+  </div>
+
+  <div class="card" id="shorui-note-card">
+    <h2 id="shorui-note-step" data-i18n="shoruiNoteStep">② 備考 (任意)</h2>
     <textarea id="shorui-note" placeholder="例: 役所提出用 / 〇枚必要 など" style="width:100%; min-height:60px; padding:10px; border:2px solid #e0e6ed; border-radius:10px; font-size:1em;"></textarea>
   </div>
 
@@ -1331,14 +1354,14 @@ I18N.ja.fieldCarHoken = "車両保険"; I18N.en.fieldCarHoken = "Vehicle Coverag
 // 必要書類請求 (Phase 4)
 I18N.ja.menuShorui = "必要書類 請求"; I18N.en.menuShorui = "Request Documents"; I18N.pt.menuShorui = "Solicitar Documentos";
 I18N.ja.screenShoruiTitle = "必要書類 請求"; I18N.en.screenShoruiTitle = "Request Documents"; I18N.pt.screenShoruiTitle = "Solicitar Documentos";
-I18N.ja.shoruiInfo = "📌 必要な書類を選んで請求してください。総務で準備でき次第お渡し/送付します。";
-I18N.en.shoruiInfo = "📌 Select the document you need. HR will hand it over or send it once ready.";
-I18N.pt.shoruiInfo = "📌 Selecione o documento que precisa. O RH entregará ou enviará assim que estiver pronto.";
+I18N.ja.shoruiInfo = "📌 必要な書類を選んでください。源泉徴収票はその場でダウンロードできます。在職証明書は請求すると総務が準備します。";
+I18N.en.shoruiInfo = "📌 Select the document you need. The withholding tax slip can be downloaded right away. For an employment certificate, submit a request and HR will prepare it.";
+I18N.pt.shoruiInfo = "📌 Selecione o documento. O comprovante de retenção pode ser baixado na hora. Para o certificado de emprego, envie uma solicitação e o RH irá preparar.";
 I18N.ja.shoruiSelectType = "書類を選択"; I18N.en.shoruiSelectType = "Select document"; I18N.pt.shoruiSelectType = "Selecione o documento";
 I18N.ja.docZaishoku = "在職証明書"; I18N.en.docZaishoku = "Employment Certificate"; I18N.pt.docZaishoku = "Certificado de Emprego";
 I18N.ja.docGensen = "源泉徴収票"; I18N.en.docGensen = "Withholding Tax Slip"; I18N.pt.docGensen = "Comprovante de Retenção (Gensen)";
 I18N.ja.shoruiSelectYear = "年度を選択 (複数可)"; I18N.en.shoruiSelectYear = "Select year(s)"; I18N.pt.shoruiSelectYear = "Selecione o(s) ano(s)";
-I18N.ja.shoruiNoteStep = "③ 備考 (任意)"; I18N.en.shoruiNoteStep = "③ Note (optional)"; I18N.pt.shoruiNoteStep = "③ Observação (opcional)";
+I18N.ja.shoruiNoteStep = "② 備考 (任意)"; I18N.en.shoruiNoteStep = "② Note (optional)"; I18N.pt.shoruiNoteStep = "② Observação (opcional)";
 I18N.ja.shoruiSubmitBtn = "この内容で請求する"; I18N.en.shoruiSubmitBtn = "Submit request"; I18N.pt.shoruiSubmitBtn = "Enviar solicitação";
 I18N.ja.shoruiHistoryTitle = "必要書類 請求履歴"; I18N.en.shoruiHistoryTitle = "Document Request History"; I18N.pt.shoruiHistoryTitle = "Histórico de Solicitações";
 I18N.ja.shoruiSelectTypeFirst = "書類を選択してください。"; I18N.en.shoruiSelectTypeFirst = "Please select a document."; I18N.pt.shoruiSelectTypeFirst = "Selecione um documento.";
@@ -1346,6 +1369,12 @@ I18N.ja.shoruiSelectYearFirst = "年度を1つ以上選択してください。"
 I18N.ja.shoruiSuccess = "✅ 書類を請求しました。総務で準備します。"; I18N.en.shoruiSuccess = "✅ Request submitted. HR will prepare it."; I18N.pt.shoruiSuccess = "✅ Solicitação enviada. O RH vai preparar.";
 I18N.ja.statusDone = "対応済"; I18N.en.statusDone = "Done"; I18N.pt.statusDone = "Concluído";
 I18N.ja.yearSuffix = "年分"; I18N.en.yearSuffix = ""; I18N.pt.yearSuffix = "";
+// 源泉徴収票 直接ダウンロード
+I18N.ja.shoruiGensenDownload = "源泉徴収票をダウンロード"; I18N.en.shoruiGensenDownload = "Download Withholding Tax Slip"; I18N.pt.shoruiGensenDownload = "Baixar Comprovante de Retenção";
+I18N.ja.shoruiGensenHint = "ご自身の源泉徴収票をタップして保存できます。"; I18N.en.shoruiGensenHint = "Tap your withholding tax slip to save it."; I18N.pt.shoruiGensenHint = "Toque no seu comprovante para salvá-lo.";
+I18N.ja.shoruiGensenEmpty = "利用できる源泉徴収票が見つかりませんでした。総務にお問い合わせください。"; I18N.en.shoruiGensenEmpty = "No withholding tax slip found. Please contact HR."; I18N.pt.shoruiGensenEmpty = "Nenhum comprovante encontrado. Entre em contato com o RH.";
+I18N.ja.shoruiDownloading = "ダウンロード中…"; I18N.en.shoruiDownloading = "Downloading…"; I18N.pt.shoruiDownloading = "Baixando…";
+I18N.ja.loading = "読み込み中…"; I18N.en.loading = "Loading…"; I18N.pt.loading = "Carregando…";
 // 確認画面
 I18N.ja.zairyuConfirmTitle = "在留カード — 内容確認";
 I18N.en.zairyuConfirmTitle = "Zairyu Card — Review";
@@ -2251,6 +2280,14 @@ function initShoruiScreen() {
   document.querySelectorAll('.doc-type-btn').forEach(b => b.classList.remove('selected'));
   document.getElementById('shorui-year-card').classList.add('hidden');
   document.getElementById('shorui-year-grid').innerHTML = '';
+  const gensenCard = document.getElementById('shorui-gensen-card');
+  if (gensenCard) {
+    gensenCard.classList.add('hidden');
+    document.getElementById('shorui-gensen-list').innerHTML = '';
+    document.getElementById('shorui-gensen-empty').classList.add('hidden');
+  }
+  document.getElementById('shorui-note-card').classList.remove('hidden');
+  document.getElementById('shorui-submit-btn').classList.remove('hidden');
   document.getElementById('shorui-note').value = '';
   document.getElementById('shorui-error').classList.add('hidden');
 }
@@ -2262,23 +2299,82 @@ function selectDocType(btn, type) {
   btn.classList.add('selected');
   document.getElementById('shorui-error').classList.add('hidden');
   const yearCard = document.getElementById('shorui-year-card');
+  const gensenCard = document.getElementById('shorui-gensen-card');
+  const noteCard = document.getElementById('shorui-note-card');
+  const submitBtn = document.getElementById('shorui-submit-btn');
+  yearCard.classList.add('hidden');
   if (type === '源泉徴収票') {
-    // 過去3年分の年度ボタンを生成 (西暦)。年末調整基準で「前年・前々年・3年前」
-    const grid = document.getElementById('shorui-year-grid');
-    grid.innerHTML = '';
-    // 当年を含めず直近の発行可能な過去3年 (例 2025/2024/2023)
-    const baseYear = new Date().getFullYear() - 1;
-    for (let i = 0; i < 3; i++) {
-      const y = baseYear - i;
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'year-btn'; b.dataset.year = String(y);
-      b.innerHTML = '<span class="chk">☐</span> <span>' + y + (t('yearSuffix') || '') + '</span>';
-      b.onclick = () => toggleYear(b, String(y));
-      grid.appendChild(b);
-    }
-    yearCard.classList.remove('hidden');
+    // 源泉徴収票は本人がアプリから直接ダウンロード (総務不要・請求しない)
+    if (gensenCard) gensenCard.classList.remove('hidden');
+    if (noteCard) noteCard.classList.add('hidden');
+    if (submitBtn) submitBtn.classList.add('hidden');
+    loadGensenList();
   } else {
-    yearCard.classList.add('hidden');
+    // 在職証明書など: 従来どおり総務へ請求 (Teams 通知)
+    if (gensenCard) gensenCard.classList.add('hidden');
+    if (noteCard) noteCard.classList.remove('hidden');
+    if (submitBtn) submitBtn.classList.remove('hidden');
+  }
+}
+
+// 源泉徴収票: 本人のPDF一覧を取得して表示
+async function loadGensenList() {
+  const card = document.getElementById('shorui-gensen-card');
+  const listEl = document.getElementById('shorui-gensen-list');
+  const loadingEl = document.getElementById('shorui-gensen-loading');
+  const emptyEl = document.getElementById('shorui-gensen-empty');
+  if (!card) return;
+  listEl.innerHTML = '';
+  emptyEl.classList.add('hidden');
+  loadingEl.classList.remove('hidden');
+  try {
+    const data = await callApi('GET', '/shorui/gensen-list');
+    const items = data.items || [];
+    loadingEl.classList.add('hidden');
+    if (items.length === 0) {
+      emptyEl.classList.remove('hidden');
+      return;
+    }
+    items.forEach(it => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'btn-download-doc';
+      const label = (it.folder && it.folder !== '※※源泉　gensen' ? it.folder + '　' : '') + it.fileName;
+      row.innerHTML = '📥 <span>' + label + '</span>';
+      row.onclick = () => downloadGensen(it.serverRelativeUrl, it.fileName, row);
+      listEl.appendChild(row);
+    });
+  } catch (e) {
+    loadingEl.classList.add('hidden');
+    emptyEl.classList.remove('hidden');
+    emptyEl.textContent = t('networkError') + ((e.data && e.data.error) ? ' (' + e.data.error + ')' : '');
+  }
+}
+
+async function downloadGensen(serverRelativeUrl, fileName, btn) {
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '⏳ <span>' + t('shoruiDownloading') + '</span>';
+  try {
+    const data = await callApi('GET', '/shorui/gensen-download?url=' + encodeURIComponent(serverRelativeUrl));
+    const b64 = data.base64;
+    const byteChars = atob(b64);
+    const bytes = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([bytes], { type: data.contentType || 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = data.fileName || fileName || 'gensen.pdf';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) {
+    showAlert(t('networkError') + ((e.data && e.data.error) ? ' (' + e.data.error + ')' : ''), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
   }
 }
 
@@ -3056,7 +3152,7 @@ async function updateHistoryBadge() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v17';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v18';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 
