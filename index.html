@@ -2975,7 +2975,24 @@ async function tryVerifyForSetup() {
       state.profile = data.profile;
       showLoginMode('newpin');
       const greet = document.getElementById('newpin-greeting');
-      if (greet) greet.textContent = (data.profile && data.profile.name) ? (data.profile.name + ' さん') : '';
+      if (greet) {
+        const nm = (data.profile && data.profile.name) ? data.profile.name : '';
+        let romaji = (data.profile && data.profile.zairyuName) ? String(data.profile.zairyuName).trim() : '';
+        // 在留カード番号(例 TJ12345678)が入っているケースは氏名として表示しない
+        if (romaji && /^[A-Z]{2}\d/.test(romaji)) romaji = '';
+        greet.innerHTML = '';
+        if (nm) {
+          const line1 = document.createElement('div');
+          line1.textContent = nm + ' さん';
+          greet.appendChild(line1);
+        }
+        if (romaji) {
+          const line2 = document.createElement('div');
+          line2.textContent = romaji;
+          line2.style.cssText = 'font-size:0.9em; color:#888; margin-top:2px;';
+          greet.appendChild(line2);
+        }
+      }
     } else if (data.token) {
       // 既に PIN 設定済みだが 3要素一致でログイン (PIN 救済)
       state.token = data.token;
@@ -3425,7 +3442,7 @@ async function updateHistoryBadge() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v19';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v20';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 
