@@ -2354,6 +2354,17 @@ def zairyu_submit(req: func.HttpRequest) -> func.HttpResponse:
                 ts = (_dt.datetime.utcnow() + _dt.timedelta(hours=9)).strftime("%Y/%m/%d")
                 patch_fields[F_ZAIRYU_BIKO] = f"{card_no} (提出 {ts})"
                 updated_fields.append("cardNumber")
+            # 国籍 → 本(国)籍フィールド
+            nationality = (confirmed.get("nationality") or "").strip()
+            if nationality and len(nationality) <= 50:
+                patch_fields[F_KOKUSEKI] = nationality
+                updated_fields.append("nationality")
+            # 在留カードの氏名は英字。カナの「名前(Title)」は上書きせず、
+            # 在留カード氏名(特記事項1)フィールドへ反映する。
+            romaji_name = (confirmed.get("name") or "").strip()
+            if romaji_name and len(romaji_name) <= 100:
+                patch_fields[F_ZAIRYU_NAME] = romaji_name
+                updated_fields.append("name")
             if patch_fields:
                 target_id = emp.get("Id") if emp else None
                 if target_id:
