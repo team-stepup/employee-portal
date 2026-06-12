@@ -2,5 +2,6 @@ azure-functions
 azure-identity
 azure-data-tables
 azure-ai-documentintelligence
+openai
 requests
 pyjwt

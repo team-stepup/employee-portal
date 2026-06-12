@@ -1246,6 +1246,13 @@ def run_zairyu_ocr(image_bytes: bytes) -> Dict[str, Any]:
     return parsed
 
 
+def run_zairyu_ocr_gpt(front_bytes: bytes, back_bytes: Optional[bytes] = None) -> Dict[str, Any]:
+    """在留カード OCR (Azure OpenAI GPT-4o-mini マルチモーダル抽出)。
+    画像を直接 LLM に渡し、構造化 JSON を得る。和暦変換・レイアウト差・ラベル対応に強い。"""
+    import gpt_ocr
+    return gpt_ocr.extract_zairyu_fields(front_bytes, back_bytes)
+
+
 # 国籍の既知値リスト (長い順 — 「アメリカ合衆国」を「アメリカ」より先に)
 NATIONALITY_KNOWN = [
     "アメリカ合衆国", "ドミニカ共和国",
@@ -1427,12 +1434,25 @@ def zairyu_ocr(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"error": "invalid_base64", "detail": str(e)}, 400)
     if len(front_bytes) > 10 * 1024 * 1024:
         return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
+    # 裏面 (任意) — GPT エンジンは表裏両方を参照できる
+    back_bytes = None
+    back_data = body.get("backImage")
+    if back_data:
+        try:
+            back_bytes = base64.b64decode(_strip_data_url(back_data))
+        except Exception:
+            back_bytes = None
 
+    # エンジン選択: "gpt" (Azure OpenAI) / それ以外は既定の DI (prebuilt-read + 正規表現)
+    engine = (body.get("engine") or req.params.get("engine") or "di").strip().lower()
     try:
-        ocr_result = run_zairyu_ocr(front_bytes)
+        if engine == "gpt":
+            ocr_result = run_zairyu_ocr_gpt(front_bytes, back_bytes)
+        else:
+            ocr_result = run_zairyu_ocr(front_bytes)
     except Exception as e:
         logging.exception("OCR failed")
-        return _json_response({"error": "ocr_failed", "detail": str(e)}, 500)
+        return _json_response({"error": "ocr_failed", "engine": engine, "detail": str(e)}, 500)
 
     # 本人の社員データと突合 (生年月日が一致するかを返す)
     emp = find_active_employee_by_shain(shain_no)
@@ -2741,3 +2761,114 @@ def health(req: func.HttpRequest) -> func.HttpResponse:
         "jwtConfigured": bool(JWT_SECRET),
         "timestamp": _dt.datetime.utcnow().isoformat(),
     })
+
+
+# ============================================================
+# yukyu-app (総務担当者) 向け 社員ファイル AI-OCR 中継
+#   認証: 呼び出し元の SharePoint MSAL アクセストークンを検証
+#         (SP /_api/web/currentuser に転送し、メールを許可リストと照合)
+#   入力: { docType, images: [base64...] } または { docType, paths: [社員ファイル配下のServerRelativeUrl...] }
+#   出力: { ocr: {フィールド…}, files: [読み取ったパス…] }
+# ============================================================
+YUKYU_STAFF_ALLOWED = {
+    "h.yamashita@team-stepup.com", "a.yamashita@team-stepup.com",
+    "kaori.j@team-stepup.com", "m.mori@team-stepup.com",
+    "m.yoshiura@team-stepup.com", "y.mori@team-stepup.com",
+}
+
+
+def require_staff_auth(req: func.HttpRequest):
+    """yukyu-app 利用者 (役員/担当者) の認証。呼び出し元の SP トークンで本人確認。"""
+    auth = req.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None, _json_response({"error": "unauthorized"}, 401)
+    caller_token = auth[7:].strip()
+    try:
+        r = requests.get(
+            f"{SP_RESOURCE}/_api/web/currentuser",
+            headers={"Authorization": f"Bearer {caller_token}",
+                     "Accept": "application/json;odata=nometadata"},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return None, _json_response({"error": "unauthorized"}, 401)
+        info = r.json()
+        email = str(info.get("Email") or info.get("UserPrincipalName") or "").strip().lower()
+    except Exception:
+        logging.exception("staff auth: SP currentuser failed")
+        return None, _json_response({"error": "unauthorized"}, 401)
+    if email not in YUKYU_STAFF_ALLOWED:
+        logging.warning("staff auth: not allowed: %s", email)
+        return None, _json_response({"error": "forbidden"}, 403)
+    return email, None
+
+
+@app.route(route="yukyu/file-ocr", methods=["POST", "OPTIONS"])
+def yukyu_file_ocr(req: func.HttpRequest) -> func.HttpResponse:
+    """社員ファイル内の書類画像 (またはアップロード前のbase64画像) を GPT-4o-mini で構造化抽出。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    # レート制限 (メールをキー化して既存プールを流用)
+    rl_key = abs(hash(email)) % 1000000
+    wait = check_rate_limit(rl_key, "yukyu_ocr")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait},
+                              429, extra_headers={"Retry-After": str(wait)})
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+
+    doc_type = str(body.get("docType") or "").strip()
+    import gpt_ocr as _g
+    if doc_type != "zairyu" and doc_type not in _g.DOC_PROMPTS:
+        return _json_response({"error": "unknown_doc_type", "docType": doc_type}, 400)
+
+    images_bytes = []
+    used_files = []
+    # a) base64 直接 (登録フォームの撮影直後)
+    for b64s in (body.get("images") or [])[:4]:
+        try:
+            raw = base64.b64decode(_strip_data_url(b64s))
+        except Exception:
+            return _json_response({"error": "invalid_base64"}, 400)
+        if len(raw) > 10 * 1024 * 1024:
+            return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
+        images_bytes.append(raw)
+    # b) 社員ファイル配下のパス (一括読み取り)
+    from urllib.parse import quote as _q
+    for sru in (body.get("paths") or [])[:4]:
+        sru = str(sru or "")
+        if not _validate_shainfile_path(sru):
+            return _json_response({"error": "invalid_path", "path": sru}, 400)
+        try:
+            api = f"{SITE_TEAMSTEPUP}/_api/web/GetFileByServerRelativeUrl('{_q(sru)}')/$value"
+            rb = requests.get(api, headers={"Authorization": f"Bearer {_get_sp_token()}"}, timeout=60)
+            rb.raise_for_status()
+        except Exception as e:
+            logging.exception("file fetch failed: %s", sru)
+            return _json_response({"error": "file_fetch_failed", "path": sru, "detail": str(e)}, 502)
+        if len(rb.content) > 10 * 1024 * 1024:
+            return _json_response({"error": "image_too_large", "path": sru, "maxMB": 10}, 400)
+        images_bytes.append(rb.content)
+        used_files.append(sru)
+
+    if not images_bytes:
+        return _json_response({"error": "no_images"}, 400)
+
+    try:
+        if doc_type == "zairyu":
+            result = _g.extract_zairyu_fields(
+                images_bytes[0], images_bytes[1] if len(images_bytes) > 1 else None)
+        else:
+            result = _g.extract_doc_fields(doc_type, images_bytes)
+    except Exception as e:
+        logging.exception("yukyu file-ocr failed")
+        return _json_response({"error": "ocr_failed", "detail": str(e)}, 500)
+
+    logging.info("yukyu file-ocr by %s docType=%s files=%d", email, doc_type, len(images_bytes))
+    return _json_response({"ocr": result, "files": used_files, "docType": doc_type})
