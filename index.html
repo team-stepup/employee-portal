@@ -287,6 +287,8 @@
   .notice.danger { background: #fdecea; border: 1.5px solid #f5b3ad; color: #a01b10; }
   .notice.danger .n-btn { background: linear-gradient(135deg,#ef5350,#c62828); }
   .notice.reject { background: #fdecea; border: 1.5px solid #f5b3ad; color: #a01b10; }
+  .notice.plan   { background: #e8f3fb; border: 1.5px solid #abd2ef; color: #0f4c7a; }
+  .notice.plan .n-btn { background: linear-gradient(135deg,#42a5f5,#1565c0); }
   /* プッシュ通知トグル */
   .push-toggle {
     display: block; width: 100%; padding: 13px; border-radius: 11px; cursor: pointer;
@@ -720,6 +722,10 @@
     📌 在留カードの<b>表面</b>と<b>裏面</b>を順に撮影してください。
   </div>
 
+  <button type="button" class="conbini-guide-link" style="background:#eaf2fb; border-color:#aacdf0; color:#14457a;" onclick="openRenewPlanModal()">
+    🗓️ <span data-i18n="renewTellLink">まだの方：更新の申請予定を伝える</span>
+  </button>
+
   <div class="card">
     <h2>① <span data-i18n="zairyuFront">在留カード 表面</span></h2>
     <input type="file" accept="image/*" capture="environment" id="zairyu-front-input" onchange="onZairyuFileSelect('front', event)" style="display:none;">
@@ -1134,6 +1140,24 @@
   </div>
 </div>
 
+<!-- 在留更新の申請予定 入力 -->
+<div id="modal-renew" class="modal-backdrop hidden" onclick="onRenewBackdrop(event)">
+  <div class="modal-box" style="text-align:left; max-width:400px;">
+    <div class="modal-icon" style="text-align:center;">🗓️</div>
+    <div class="modal-title" style="text-align:center;" data-i18n="renewTitle">在留更新の申請予定を伝える</div>
+    <div style="font-size:0.88em; color:#555; line-height:1.5; margin:6px 0 14px;" data-i18n="renewDesc">入管へ更新を申請する予定日を選んでください。ステップ・アップ（総務）に共有されます。</div>
+    <div id="renew-error" class="error-banner hidden"></div>
+    <label class="label" data-i18n="renewDateLabel">申請予定日</label>
+    <input type="date" id="renew-date" style="width:100%; padding:11px 12px; border:2px solid #e0e6ed; border-radius:10px; font-size:1em;">
+    <label class="label" style="margin-top:12px; display:block;" data-i18n="renewNoteLabel">メモ（任意）</label>
+    <textarea id="renew-note" placeholder="例: 入管予約済み / 書類準備中" style="width:100%; min-height:56px; padding:10px; border:2px solid #e0e6ed; border-radius:10px; font-size:1em;"></textarea>
+    <div class="rules-buttons" style="display:flex; gap:8px; margin-top:16px;">
+      <button type="button" class="modal-btn modal-btn-secondary" onclick="closeRenewModal()" data-i18n="cancel">キャンセル</button>
+      <button type="button" class="modal-btn" id="renew-submit-btn" onclick="submitRenewPlan()" data-i18n="renewSubmit">この日で伝える</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ====== 設定 ======
 const API_BASE = "https://func-employee-portal-7833.azurewebsites.net/api";
@@ -1536,6 +1560,19 @@ I18N.ja.noticeJibaiExpired = "自賠責保険の期限が切れています"; I1
 I18N.ja.noticeNiniTitle = "任意保険の期限が近づいています"; I18N.en.noticeNiniTitle = "Your car insurance is expiring soon"; I18N.pt.noticeNiniTitle = "Seu seguro do carro está prestes a vencer";
 I18N.ja.noticeNiniExpired = "任意保険の期限が切れています"; I18N.en.noticeNiniExpired = "Your car insurance has expired"; I18N.pt.noticeNiniExpired = "Seu seguro do carro venceu";
 I18N.ja.noticeSubmitNini = "任意保険を提出する"; I18N.en.noticeSubmitNini = "Submit car insurance"; I18N.pt.noticeSubmitNini = "Enviar seguro do carro";
+// 在留更新の申請予定
+I18N.ja.renewTellLink = "まだの方：更新の申請予定を伝える"; I18N.en.renewTellLink = "Not yet? Tell us your renewal date"; I18N.pt.renewTellLink = "Ainda não? Informe a data da renovação";
+I18N.ja.renewTitle = "在留更新の申請予定を伝える"; I18N.en.renewTitle = "Tell us your renewal application date"; I18N.pt.renewTitle = "Informe a data da renovação";
+I18N.ja.renewDesc = "入管へ更新を申請する予定日を選んでください。ステップ・アップ（総務）に共有されます。"; I18N.en.renewDesc = "Pick the date you plan to apply for renewal at immigration. It will be shared with Step Up (HR)."; I18N.pt.renewDesc = "Escolha a data em que pretende solicitar a renovação na imigração. Será compartilhada com a Step Up (RH).";
+I18N.ja.renewDateLabel = "申請予定日"; I18N.en.renewDateLabel = "Planned application date"; I18N.pt.renewDateLabel = "Data prevista";
+I18N.ja.renewNoteLabel = "メモ（任意）"; I18N.en.renewNoteLabel = "Note (optional)"; I18N.pt.renewNoteLabel = "Observação (opcional)";
+I18N.ja.renewSubmit = "この日で伝える"; I18N.en.renewSubmit = "Send this date"; I18N.pt.renewSubmit = "Enviar esta data";
+I18N.ja.renewNoDate = "申請予定日を選んでください。"; I18N.en.renewNoDate = "Please pick a date."; I18N.pt.renewNoDate = "Escolha uma data.";
+I18N.ja.renewDone = "✅ 更新予定を伝えました。総務に共有されます。"; I18N.en.renewDone = "✅ Your renewal date was sent. HR has been notified."; I18N.pt.renewDone = "✅ Sua data foi enviada. O RH foi avisado.";
+I18N.ja.renewError = "送信に失敗しました。日付をご確認ください。"; I18N.en.renewError = "Failed to send. Please check the date."; I18N.pt.renewError = "Falha ao enviar. Verifique a data.";
+I18N.ja.renewChange = "予定を変更する"; I18N.en.renewChange = "Change the date"; I18N.pt.renewChange = "Alterar a data";
+I18N.ja.noticeRenewPlanTitle = "在留カードの更新予定あり"; I18N.en.noticeRenewPlanTitle = "Renewal date registered"; I18N.pt.noticeRenewPlanTitle = "Data de renovação registrada";
+I18N.ja.noticeRenewPlanned = "更新の申請予定: {date}。提出できたらアプリから新しいカードを出してください。"; I18N.en.noticeRenewPlanned = "Planned renewal: {date}. Once renewed, please submit your new card in the app."; I18N.pt.noticeRenewPlanned = "Renovação prevista: {date}. Após renovar, envie o novo cartão no aplicativo.";
 // プッシュ通知
 I18N.ja.pushEnable = "お知らせ通知をオンにする"; I18N.en.pushEnable = "Turn on notifications"; I18N.pt.pushEnable = "Ativar notificações";
 I18N.ja.pushEnabled = "✅ 通知オン（タップでオフ）"; I18N.en.pushEnabled = "✅ Notifications on (tap to turn off)"; I18N.pt.pushEnabled = "✅ Notificações ativadas (toque para desativar)";
@@ -3684,7 +3721,10 @@ function getExpiryNoticeCount() {
   let n = 0;
   EXPIRY_BANNERS.forEach(s => {
     const ok = s.cond === 'foreign' ? !isJp : car;
-    if (ok && p[s.key] && inWin(daysUntil(p[s.key]))) n++;
+    if (!ok || !p[s.key] || !inWin(daysUntil(p[s.key]))) return;
+    // 在留: 更新予定が登録済み(未来)なら催促カウントから除外
+    if (s.key === 'zairyuKigen' && p.zairyuRenewPlan && daysUntil(p.zairyuRenewPlan) >= 0) return;
+    n++;
   });
   return n;
 }
@@ -3748,13 +3788,24 @@ function renderHomeNotices(items) {
     const v = p[s.key];
     if (!v) return;
     const d = daysUntil(v);
-    if (inWindow(d)) {
-      _addExpiryNotice(wrap, d, v, t(s.titleNear), t(s.titleExp), t(s.btn), s.screen);
+    if (!inWindow(d)) return;
+    if (s.key === 'zairyuKigen') {
+      // 更新の申請予定が登録済み(未来)なら、催促ではなく「更新予定」表示に
+      const plan = p.zairyuRenewPlan;
+      if (plan && daysUntil(plan) >= 0) {
+        const body = '<div>' + escNotice(t('noticeRenewPlanned').replace('{date}', fmtWareki(plan))) + '</div>';
+        _addNotice(wrap, 'plan', '🗓️', t('noticeRenewPlanTitle'), body, t('renewChange'), openRenewPlanModal);
+        return;
+      }
+      // 予定なし → 警告 + 「更新予定を伝える」ボタン
+      _addExpiryNotice(wrap, d, v, t(s.titleNear), t(s.titleExp), t(s.btn), s.screen, true);
+      return;
     }
+    _addExpiryNotice(wrap, d, v, t(s.titleNear), t(s.titleExp), t(s.btn), s.screen);
   });
 }
 
-function _addExpiryNotice(wrap, days, iso, titleNear, titleExpired, btnLabel, screen) {
+function _addExpiryNotice(wrap, days, iso, titleNear, titleExpired, btnLabel, screen, renewBtn) {
   const expired = days < 0;
   const dateStr = fmtWareki(iso);
   let line;
@@ -3765,14 +3816,61 @@ function _addExpiryNotice(wrap, days, iso, titleNear, titleExpired, btnLabel, sc
                    '<div style="margin-top:3px;">' + escNotice(t('noticeExpiryHint')) + '</div>';
   _addNotice(wrap, expired ? 'danger' : 'warn', expired ? '⛔' : '⚠️',
              expired ? titleExpired : titleNear, bodyHtml, btnLabel, () => showScreen(screen));
+  // 在留: 「まだ提出できない方は更新の申請予定を伝える」リンクを追加
+  if (renewBtn) {
+    const body = wrap.lastChild.querySelector('.n-body');
+    if (body) {
+      const a = document.createElement('a');
+      a.href = 'javascript:void(0)';
+      a.onclick = openRenewPlanModal;
+      a.style.cssText = 'display:inline-block; margin-top:10px; font-size:0.9em; color:#1565c0; text-decoration:underline; font-weight:700;';
+      a.textContent = '🗓️ ' + t('renewTellLink');
+      body.appendChild(a);
+    }
+  }
 }
 
 function escNotice(s) {
   const d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML;
 }
 
+// ====== 在留更新の申請予定 ======
+function openRenewPlanModal() {
+  const m = document.getElementById('modal-renew');
+  const inp = document.getElementById('renew-date');
+  inp.min = todayLocalIso();
+  inp.max = new Date(Date.now() + 400 * 86400000).toISOString().slice(0, 10);
+  inp.value = (state.profile && state.profile.zairyuRenewPlan) || '';
+  document.getElementById('renew-note').value = '';
+  document.getElementById('renew-error').classList.add('hidden');
+  m.classList.remove('hidden');
+}
+function closeRenewModal() { document.getElementById('modal-renew').classList.add('hidden'); }
+function onRenewBackdrop(e) { if (e.target === document.getElementById('modal-renew')) closeRenewModal(); }
+async function submitRenewPlan() {
+  const date = document.getElementById('renew-date').value;
+  const note = document.getElementById('renew-note').value.trim();
+  const errEl = document.getElementById('renew-error');
+  errEl.classList.add('hidden');
+  if (!date) { errEl.textContent = t('renewNoDate'); errEl.classList.remove('hidden'); return; }
+  const btn = document.getElementById('renew-submit-btn');
+  btn.disabled = true; showLoading(true);
+  try {
+    await callApi('POST', '/zairyu/renew-plan', { date: date, note: note });
+    if (state.profile) state.profile.zairyuRenewPlan = date;
+    closeRenewModal();
+    showAlert(t('renewDone'), 'success');
+    renderHome();
+  } catch (e) {
+    errEl.textContent = (e.data && e.data.error) ? t('renewError') : t('networkError');
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false; showLoading(false);
+  }
+}
+
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v30';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v31';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 

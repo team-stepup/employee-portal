@@ -70,6 +70,8 @@ F_KOKUSEKI = "OData__x672c__x0028__x56fd__x0029__x7c"  # 本(国)籍
 F_ADDRESS = "OData__x4f4f__x6240_"                        # 住所 (Text)
 F_NYUSHA = "OData__x5165__x793e__x65e5_"                  # 入社日 (DateTime)
 F_PORTAL_PUSH = "PortalPushSub"                           # Web Push 購読情報 (Note, JSON) — ASCII名なのでOData_無し
+F_RENEW_PLAN = "ZairyuRenewPlan"                          # 在留更新の申請予定日 (DateTime, DateOnly)
+F_RENEW_NOTE = "ZairyuRenewNote"                          # 在留更新のメモ (Note)
 F_ZAIRYU_SHIKAKU = "OData__x5728__x7559__x8cc7__x683c_"  # 在留資格 (Text)
 F_ZAIRYU_KIGEN = "OData__x5728__x7559__x671f__x9650_"    # 在留期限 (DateTime)
 F_ZAIRYU_BIKO = "OData__x5728__x7559__xff1a__x5099__x80"  # 在留：備考1 (Text) — 在留カード番号格納用
@@ -590,6 +592,7 @@ def find_active_employee(shain_no: int, birthday: str, tel_last4: str) -> Option
             F_TAISHA_DATE, F_ZAIYOKU, F_GINKO, F_SHITEN, F_KOUZA, F_MEIGI, F_ZAIRYU_NAME,
             F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW, F_PORTAL_PIN, F_ADDRESS, F_NYUSHA,
             F_ZAIRYU_KIGEN, F_MENKYO_KIGEN, F_SHAKEN_KIGEN, F_JIBAI_KIGEN, F_NINI_KIGEN,
+            F_RENEW_PLAN, F_RENEW_NOTE,
         ]),
         filter_=f"{F_SHAIN_NO} eq {shain_no}",
         orderby="Id desc",
@@ -941,6 +944,7 @@ def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
         "shakenKigen": _iso_or_none(_utc_to_jst_date(emp.get(F_SHAKEN_KIGEN))),
         "jibaiKigen": _iso_or_none(_utc_to_jst_date(emp.get(F_JIBAI_KIGEN))),
         "niniKigen": _iso_or_none(_utc_to_jst_date(emp.get(F_NINI_KIGEN))),
+        "zairyuRenewPlan": _iso_or_none(_utc_to_jst_date(emp.get(F_RENEW_PLAN))),
     }
 
 
@@ -970,6 +974,7 @@ def find_active_employee_by_shain(shain_no: int) -> Optional[Dict[str, Any]]:
             F_TAISHA_DATE, F_ZAIYOKU, F_GINKO, F_SHITEN, F_KOUZA, F_MEIGI, F_ZAIRYU_NAME,
             F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW, F_PORTAL_PIN, F_ADDRESS, F_NYUSHA,
             F_ZAIRYU_KIGEN, F_MENKYO_KIGEN, F_SHAKEN_KIGEN, F_JIBAI_KIGEN, F_NINI_KIGEN,
+            F_RENEW_PLAN, F_RENEW_NOTE,
         ]),
         filter_=f"{F_SHAIN_NO} eq {shain_no}",
         orderby="Id desc",
@@ -2545,6 +2550,60 @@ def push_subscribe(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"error": "internal", "detail": str(e)}, 500)
 
 
+@app.route(route="zairyu/renew-plan", methods=["POST", "OPTIONS"])
+def zairyu_renew_plan(req: func.HttpRequest) -> func.HttpResponse:
+    """本人が「在留(就労ビザ)更新を いつ 申請するか」を伝える。
+    Body: { date: "YYYY-MM-DD", note?: "" }
+    → 社員Listに予定日/メモを記録 + 総務(期限アラートチャネル)へTeamsメールでN通知。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    date_str = (body.get("date") or "").strip()
+    note = (body.get("note") or "")[:300]
+    try:
+        plan = _dt.date.fromisoformat(date_str)
+    except Exception:
+        return _json_response({"error": "invalid_date"}, 400)
+    today = (_dt.datetime.utcnow() + _dt.timedelta(hours=9)).date()
+    if plan < today or plan > today + _dt.timedelta(days=400):
+        return _json_response({"error": "date_out_of_range"}, 400)
+    try:
+        emp = find_active_employee_by_shain(shain_no)
+        if not emp:
+            return _json_response({"error": "not_active"}, 403)
+        target_id = emp.get("Id")
+        sp_patch_item(LIST_SHAIN, int(target_id), {
+            F_RENEW_PLAN: plan.isoformat() + "T00:00:00Z",
+            F_RENEW_NOTE: note,
+        })
+        # 総務へ通知 (期限アラートチャネル)
+        name = emp.get(F_SHAIN_NAME) or ""
+        haken = strip_buka_prefix(emp.get(F_BUKA) or "")
+        lines = [
+            "在留カード(就労ビザ)更新の予定が登録されました。",
+            f"社員番号: {shain_no}",
+            f"氏名: {name}",
+            f"派遣先: {haken}",
+            f"申請予定日: {plan.isoformat()}",
+        ]
+        if note:
+            lines.append(f"メモ: {note}")
+        subject = f"【在留更新予定】{shain_no} {name} - {plan.isoformat()}"
+        _send_notification_mail(subject, "\n".join(lines), to_addr=os.environ.get("EXPIRY_NOTIFY_EMAIL") or None)
+        return _json_response({"ok": True, "date": plan.isoformat()})
+    except Exception as e:
+        logging.exception("zairyu_renew_plan failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
 @app.route(route="shorui/apply", methods=["POST", "OPTIONS"])
 def shorui_apply(req: func.HttpRequest) -> func.HttpResponse:
     """必要書類を請求。SP List「必要書類申請」に INSERT (Teams が List 監視で通知)。
@@ -2925,13 +2984,14 @@ def daily_expiry_check(timer: func.TimerRequest) -> None:
         items = sp_get_items(
             LIST_SHAIN,
             select=",".join(["Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_KOKUSEKI,
-                             F_TAISHA_DATE, F_TSUKIN_OLD, F_TSUKIN_NEW, F_PORTAL_PUSH,
+                             F_TAISHA_DATE, F_TSUKIN_OLD, F_TSUKIN_NEW, F_PORTAL_PUSH, F_RENEW_PLAN,
                              F_ZAIRYU_KIGEN, F_MENKYO_KIGEN, F_SHAKEN_KIGEN, F_JIBAI_KIGEN, F_NINI_KIGEN]),
             top=6000, orderby="Id desc",
         )
         rows: Dict[str, List[Any]] = {k: [] for k, _, _ in EXPIRY_DOC_SPECS}
         seen: set = set()  # (社員番号, kind)
         push_targets: Dict[Any, Dict[str, Any]] = {}
+        zairyu_plans: Dict[Any, _dt.date] = {}  # 社員番号 → 在留更新の申請予定日 (未来)
         for it in items:
             no = it.get(F_SHAIN_NO)
             taisha = _utc_to_jst_date(it.get(F_TAISHA_DATE))
@@ -2944,6 +3004,8 @@ def daily_expiry_check(timer: func.TimerRequest) -> None:
             emp_id = it.get("Id")
             is_foreign = "日本" not in kokuseki
             is_car = commutes_by_car(it)
+            renew_plan = _utc_to_jst_date(it.get(F_RENEW_PLAN))
+            plan_active = bool(renew_plan and renew_plan >= today)  # 予定日が未来 → 在留の催促を止める
             for kind, field, cond in EXPIRY_DOC_SPECS:
                 if (no, kind) in seen:
                     continue
@@ -2956,7 +3018,9 @@ def daily_expiry_check(timer: func.TimerRequest) -> None:
                 if -EXPIRY_OVERDUE_GRACE <= days <= EXPIRY_WARN_DAYS:
                     rows[kind].append((days, no, name, kig, haken))
                     seen.add((no, kind))
-                    if sub_json:
+                    if kind == "zairyu" and plan_active:
+                        zairyu_plans[no] = renew_plan  # 総務一覧に「更新予定」併記、本人pushは抑制
+                    elif sub_json:
                         t = push_targets.setdefault(no, {"sub": sub_json, "empId": emp_id, "kinds": [], "kokuseki": kokuseki})
                         t["kinds"].append((kind, days))
 
@@ -2965,18 +3029,21 @@ def daily_expiry_check(timer: func.TimerRequest) -> None:
             logging.info("daily_expiry_check: 対象なし")
             return
 
-        def fmt_rows(rs: List[Any]) -> str:
+        def fmt_rows(rs: List[Any], plans: Optional[Dict[Any, _dt.date]] = None) -> str:
             out = []
             for days, no, name, kig, haken in sorted(rs):
                 tag = "【期限切れ】" if days < 0 else (f"あと{days}日")
-                out.append(f"  ・{no} {name}（{haken}） 期限{kig.isoformat()} {tag}")
+                extra = ""
+                if plans and no in plans:
+                    extra = f" → 更新予定: {plans[no].isoformat()}"
+                out.append(f"  ・{no} {name}（{haken}） 期限{kig.isoformat()} {tag}{extra}")
             return "\n".join(out)
 
         lines = [f"📋 期限チェック（{today.isoformat()}）", ""]
         for kind, _, _ in EXPIRY_DOC_SPECS:
             if rows[kind]:
                 lines.append(f"■ {_DOC_NAMES['ja'][kind]} 期限間近/切れ（{len(rows[kind])}名）")
-                lines.append(fmt_rows(rows[kind]))
+                lines.append(fmt_rows(rows[kind], zairyu_plans if kind == "zairyu" else None))
                 lines.append("")
         lines.append("※ 本人がポータルで新しい書類を提出すると期限が更新され、翌日以降このリストから外れます。")
         text = "\n".join(lines)
