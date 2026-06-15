@@ -2414,6 +2414,31 @@ def zairyu_submit(req: func.HttpRequest) -> func.HttpResponse:
                     except Exception as e:
                         logging.exception("update employee zairyu failed")
                         # 画像保存は成功しているので警告のみ
+        # 提出完了を総務へ通知 + 登録済みの更新予定をクリア (提出されたため)
+        try:
+            had_plan = bool(emp.get(F_RENEW_PLAN))
+            if had_plan:
+                try:
+                    sp_patch_item(LIST_SHAIN, int(emp.get("Id")), {F_RENEW_PLAN: None, F_RENEW_NOTE: ""})
+                except Exception:
+                    logging.exception("clear renew plan failed")
+            name = emp.get(F_SHAIN_NAME) or ""
+            haken = strip_buka_prefix(emp.get(F_BUKA) or "")
+            new_kigen = ((body.get("confirmedData") or {}).get("zairyuKigen") or "").strip()
+            lines = [
+                "在留カードが本人からアプリで提出されました。",
+                f"社員番号: {shain_no}",
+                f"氏名: {name}",
+                f"派遣先: {haken}",
+            ]
+            if new_kigen:
+                lines.append(f"新しい在留期限: {new_kigen}")
+            if had_plan:
+                lines.append("（登録されていた更新予定はクリアしました）")
+            subject = f"【在留カード提出】{shain_no} {name}"
+            _send_notification_mail(subject, "\n".join(lines), to_addr=os.environ.get("EXPIRY_NOTIFY_EMAIL") or None)
+        except Exception:
+            logging.exception("zairyu submit notify failed")
         return _json_response({
             "ok": True,
             "folder": zairyu_folder,
