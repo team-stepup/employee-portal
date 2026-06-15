@@ -269,17 +269,19 @@
   }
   .conbini-guide-link:active { background: #fdeecb; }
   /* ホームお知らせバナー */
-  #home-notices { display: flex; flex-direction: column; gap: 10px; margin: 0 0 14px; }
+  #home-notices { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; }
   .notice {
-    border-radius: 12px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start;
-    font-size: 0.92em; line-height: 1.5; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    border-radius: 11px; padding: 9px 11px; display: flex; gap: 8px; align-items: flex-start;
+    font-size: 0.9em; line-height: 1.35; box-shadow: 0 1px 5px rgba(0,0,0,0.07);
   }
-  .notice .n-icon { font-size: 1.4em; line-height: 1; flex-shrink: 0; }
-  .notice .n-body { flex: 1; }
-  .notice .n-title { font-weight: 800; margin-bottom: 2px; }
+  .notice .n-icon { font-size: 1.2em; line-height: 1.15; flex-shrink: 0; }
+  .notice .n-body { flex: 1; min-width: 0; }
+  .notice .n-title { font-weight: 800; font-size: 0.97em; }
+  .notice .n-meta { font-size: 0.86em; font-weight: 700; opacity: 0.92; margin-top: 1px; }
+  .notice .n-hint { font-size: 0.82em; opacity: 0.78; margin-top: 1px; }
   .notice .n-btn {
-    display: inline-block; margin-top: 8px; padding: 8px 14px; border: none; border-radius: 9px;
-    font-weight: 700; font-size: 0.95em; color: #fff; cursor: pointer;
+    display: inline-block; margin-top: 7px; padding: 6px 13px; border: none; border-radius: 8px;
+    font-weight: 700; font-size: 0.88em; color: #fff; cursor: pointer;
   }
   .notice .n-close { background: none; border: none; font-size: 1.1em; color: inherit; opacity: 0.55; cursor: pointer; padding: 0 2px; flex-shrink: 0; }
   .notice.warn   { background: #fff4e5; border: 1.5px solid #ffce93; color: #8a4b00; }
@@ -1546,10 +1548,15 @@ I18N.ja.noticeZairyuTitle = "在留カードの期限が近づいています"; 
 I18N.ja.noticeZairyuExpired = "在留カードの期限が切れています"; I18N.en.noticeZairyuExpired = "Your Zairyu Card has expired"; I18N.pt.noticeZairyuExpired = "Seu Cartão Zairyu venceu";
 I18N.ja.noticeLicenseTitle = "免許証の期限が近づいています"; I18N.en.noticeLicenseTitle = "Your driver's license is expiring soon"; I18N.pt.noticeLicenseTitle = "Sua carteira de motorista está prestes a vencer";
 I18N.ja.noticeLicenseExpired = "免許証の期限が切れています"; I18N.en.noticeLicenseExpired = "Your driver's license has expired"; I18N.pt.noticeLicenseExpired = "Sua carteira de motorista venceu";
-I18N.ja.noticeDaysLeft = "あと {n} 日（{date} まで）"; I18N.en.noticeDaysLeft = "{n} days left (until {date})"; I18N.pt.noticeDaysLeft = "Faltam {n} dias (até {date})";
-I18N.ja.noticeExpiresToday = "本日が期限です（{date}）"; I18N.en.noticeExpiresToday = "Expires today ({date})"; I18N.pt.noticeExpiresToday = "Vence hoje ({date})";
-I18N.ja.noticeExpired = "期限切れです（{date}）"; I18N.en.noticeExpired = "Expired ({date})"; I18N.pt.noticeExpired = "Vencido ({date})";
-I18N.ja.noticeExpiryHint = "新しいカードを撮影して提出してください。"; I18N.en.noticeExpiryHint = "Please take a photo of your new card and submit it."; I18N.pt.noticeExpiryHint = "Tire uma foto do seu novo cartão e envie.";
+I18N.ja.noticeDaysLeft = "あと{n}日（{date}まで）"; I18N.en.noticeDaysLeft = "{n} days left ({date})"; I18N.pt.noticeDaysLeft = "Faltam {n} dias ({date})";
+I18N.ja.noticeExpiresToday = "本日が期限（{date}）"; I18N.en.noticeExpiresToday = "Expires today ({date})"; I18N.pt.noticeExpiresToday = "Vence hoje ({date})";
+I18N.ja.noticeExpired = "期限切れ（{date}）"; I18N.en.noticeExpired = "Expired ({date})"; I18N.pt.noticeExpired = "Vencido ({date})";
+I18N.ja.noticeExpiryHintTpl = "新しい{doc}を撮影して提出してください。"; I18N.en.noticeExpiryHintTpl = "Please photograph and submit your new {doc}."; I18N.pt.noticeExpiryHintTpl = "Fotografe e envie seu novo {doc}.";
+I18N.ja.docNounZairyu = "在留カード"; I18N.en.docNounZairyu = "Residence Card"; I18N.pt.docNounZairyu = "Cartão de Permanência";
+I18N.ja.docNounMenkyo = "免許証"; I18N.en.docNounMenkyo = "driver's license"; I18N.pt.docNounMenkyo = "carteira de motorista";
+I18N.ja.docNounShaken = "車検証"; I18N.en.docNounShaken = "inspection certificate"; I18N.pt.docNounShaken = "certificado de inspeção";
+I18N.ja.docNounJibai = "保険証"; I18N.en.docNounJibai = "insurance certificate"; I18N.pt.docNounJibai = "certificado de seguro";
+I18N.ja.docNounNini = "任意保険証券"; I18N.en.docNounNini = "insurance policy"; I18N.pt.docNounNini = "apólice de seguro";
 I18N.ja.noticeSubmitZairyu = "在留カードを提出する"; I18N.en.noticeSubmitZairyu = "Submit Zairyu Card"; I18N.pt.noticeSubmitZairyu = "Enviar Cartão Zairyu";
 I18N.ja.noticeSubmitLicense = "免許証を提出する"; I18N.en.noticeSubmitLicense = "Submit driver's license"; I18N.pt.noticeSubmitLicense = "Enviar carteira de motorista";
 I18N.ja.noticeShakenTitle = "車検の期限が近づいています"; I18N.en.noticeShakenTitle = "Your vehicle inspection is expiring soon"; I18N.pt.noticeShakenTitle = "Sua inspeção (Shaken) está prestes a vencer";
@@ -3706,11 +3713,11 @@ function updateAppBadge(count) {
 // 期限お知らせの件数 (在留+免許のうち通知窓内)
 // 期限お知らせ対象書類 (key=profile日付, cond=対象者, screen=提出画面)
 const EXPIRY_BANNERS = [
-  { key: 'zairyuKigen', cond: 'foreign', titleNear: 'noticeZairyuTitle', titleExp: 'noticeZairyuExpired', btn: 'noticeSubmitZairyu', screen: 'zairyu' },
-  { key: 'menkyoKigen', cond: 'car', titleNear: 'noticeLicenseTitle', titleExp: 'noticeLicenseExpired', btn: 'noticeSubmitLicense', screen: 'license' },
-  { key: 'shakenKigen', cond: 'car', titleNear: 'noticeShakenTitle', titleExp: 'noticeShakenExpired', btn: 'noticeSubmitShaken', screen: 'shaken' },
-  { key: 'jibaiKigen', cond: 'car', titleNear: 'noticeJibaiTitle', titleExp: 'noticeJibaiExpired', btn: 'noticeSubmitShaken', screen: 'shaken' },
-  { key: 'niniKigen', cond: 'car', titleNear: 'noticeNiniTitle', titleExp: 'noticeNiniExpired', btn: 'noticeSubmitNini', screen: 'hoken' },
+  { key: 'zairyuKigen', cond: 'foreign', titleNear: 'noticeZairyuTitle', titleExp: 'noticeZairyuExpired', btn: 'noticeSubmitZairyu', screen: 'zairyu', noun: 'docNounZairyu' },
+  { key: 'menkyoKigen', cond: 'car', titleNear: 'noticeLicenseTitle', titleExp: 'noticeLicenseExpired', btn: 'noticeSubmitLicense', screen: 'license', noun: 'docNounMenkyo' },
+  { key: 'shakenKigen', cond: 'car', titleNear: 'noticeShakenTitle', titleExp: 'noticeShakenExpired', btn: 'noticeSubmitShaken', screen: 'shaken', noun: 'docNounShaken' },
+  { key: 'jibaiKigen', cond: 'car', titleNear: 'noticeJibaiTitle', titleExp: 'noticeJibaiExpired', btn: 'noticeSubmitShaken', screen: 'shaken', noun: 'docNounJibai' },
+  { key: 'niniKigen', cond: 'car', titleNear: 'noticeNiniTitle', titleExp: 'noticeNiniExpired', btn: 'noticeSubmitNini', screen: 'hoken', noun: 'docNounNini' },
 ];
 
 function getExpiryNoticeCount() {
@@ -3798,22 +3805,23 @@ function renderHomeNotices(items) {
         return;
       }
       // 予定なし → 警告 + 「更新予定を伝える」ボタン
-      _addExpiryNotice(wrap, d, v, t(s.titleNear), t(s.titleExp), t(s.btn), s.screen, true);
+      _addExpiryNotice(wrap, d, v, t(s.titleNear), t(s.titleExp), t(s.btn), s.screen, t(s.noun), true);
       return;
     }
-    _addExpiryNotice(wrap, d, v, t(s.titleNear), t(s.titleExp), t(s.btn), s.screen);
+    _addExpiryNotice(wrap, d, v, t(s.titleNear), t(s.titleExp), t(s.btn), s.screen, t(s.noun));
   });
 }
 
-function _addExpiryNotice(wrap, days, iso, titleNear, titleExpired, btnLabel, screen, renewBtn) {
+function _addExpiryNotice(wrap, days, iso, titleNear, titleExpired, btnLabel, screen, docNoun, renewBtn) {
   const expired = days < 0;
   const dateStr = fmtWareki(iso);
   let line;
   if (expired) line = t('noticeExpired').replace('{date}', dateStr);
   else if (days === 0) line = t('noticeExpiresToday').replace('{date}', dateStr);
   else line = t('noticeDaysLeft').replace('{n}', days).replace('{date}', dateStr);
-  const bodyHtml = '<div>' + escNotice(line) + '</div>' +
-                   '<div style="margin-top:3px;">' + escNotice(t('noticeExpiryHint')) + '</div>';
+  const hint = t('noticeExpiryHintTpl').replace('{doc}', docNoun || t('docNounZairyu'));
+  const bodyHtml = '<div class="n-meta">' + escNotice(line) + '</div>' +
+                   '<div class="n-hint">' + escNotice(hint) + '</div>';
   _addNotice(wrap, expired ? 'danger' : 'warn', expired ? '⛔' : '⚠️',
              expired ? titleExpired : titleNear, bodyHtml, btnLabel, () => showScreen(screen));
   // 在留: 「まだ提出できない方は更新の申請予定を伝える」リンクを追加
@@ -3823,7 +3831,7 @@ function _addExpiryNotice(wrap, days, iso, titleNear, titleExpired, btnLabel, sc
       const a = document.createElement('a');
       a.href = 'javascript:void(0)';
       a.onclick = openRenewPlanModal;
-      a.style.cssText = 'display:inline-block; margin-top:10px; font-size:0.9em; color:#1565c0; text-decoration:underline; font-weight:700;';
+      a.style.cssText = 'display:inline-block; margin-top:7px; margin-left:10px; font-size:0.84em; color:#1565c0; text-decoration:underline; font-weight:700;';
       a.textContent = '🗓️ ' + t('renewTellLink');
       body.appendChild(a);
     }
@@ -3870,7 +3878,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v31';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v32';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 
