@@ -2854,8 +2854,10 @@ def _notify_lang(kokuseki: str) -> str:
 
 
 # 期限通知の本文 (push 用・本人の国籍言語で送る)
+# title = 「Step Up からお知らせ」固定 / body = 書類の見出し + 詳細
 _NOTIFY_TEXT = {
     "ja": {
+        "from": "Step Up からお知らせ",
         "zairyu_near": "在留カードの期限が近づいています", "zairyu_exp": "在留カードの期限が切れています",
         "menkyo_near": "免許証の期限が近づいています", "menkyo_exp": "免許証の期限が切れています",
         "both": "在留カード・免許証の期限のお知らせ",
@@ -2863,6 +2865,7 @@ _NOTIFY_TEXT = {
         "body_exp": "期限が切れています。アプリから新しい書類を提出してください。",
     },
     "en": {
+        "from": "Notice from Step Up",
         "zairyu_near": "Your residence card is expiring soon", "zairyu_exp": "Your residence card has expired",
         "menkyo_near": "Your driver's license is expiring soon", "menkyo_exp": "Your driver's license has expired",
         "both": "Residence card / driver's license expiry notice",
@@ -2870,6 +2873,7 @@ _NOTIFY_TEXT = {
         "body_exp": "It has expired. Please submit your new document in the app.",
     },
     "pt": {
+        "from": "Aviso da Step Up",
         "zairyu_near": "Seu cartão de permanência está prestes a vencer", "zairyu_exp": "Seu cartão de permanência venceu",
         "menkyo_near": "Sua carteira de motorista está prestes a vencer", "menkyo_exp": "Sua carteira de motorista venceu",
         "both": "Aviso de vencimento (cartão de permanência / carteira)",
@@ -2880,17 +2884,17 @@ _NOTIFY_TEXT = {
 
 
 def _build_expiry_push(kinds: List[str], min_days: int, kokuseki: str) -> Dict[str, str]:
-    """本人の国籍言語で push の title/body を作る。"""
+    """本人の国籍言語で push の title/body を作る。title は「Step Up からお知らせ」固定。"""
     T = _NOTIFY_TEXT.get(_notify_lang(kokuseki), _NOTIFY_TEXT["pt"])
     expired = min_days < 0
     if "zairyu" in kinds and "menkyo" in kinds:
-        title = T["both"]
+        head = T["both"]
     elif "zairyu" in kinds:
-        title = T["zairyu_exp"] if expired else T["zairyu_near"]
+        head = T["zairyu_exp"] if expired else T["zairyu_near"]
     else:
-        title = T["menkyo_exp"] if expired else T["menkyo_near"]
-    body = T["body_exp"] if expired else T["body_near"].format(n=min_days)
-    return {"title": title, "body": body}
+        head = T["menkyo_exp"] if expired else T["menkyo_near"]
+    detail = T["body_exp"] if expired else T["body_near"].format(n=min_days)
+    return {"title": T["from"], "body": head + " " + detail}
 
 
 @app.timer_trigger(schedule="0 0 23 * * *", arg_name="timer", run_on_startup=False)
