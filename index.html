@@ -3662,18 +3662,21 @@ function renderHomeNotices(items) {
     }
   }
 
+  // 期限お知らせの表示範囲: 期限30日前 〜 期限切れ後180日 (それ以前は古い未更新データとみなし非表示)
+  const WARN_DAYS = 30, OVERDUE_GRACE = 180;
+  const inWindow = (d) => d !== null && d >= -OVERDUE_GRACE && d <= WARN_DAYS;
   // 2) 在留カードの期限 (外国籍のみ)
   const isJp = String(p.kokuseki || '').includes('日本');
   if (!isJp && p.zairyuKigen) {
     const d = daysUntil(p.zairyuKigen);
-    if (d !== null && d <= 30) {
+    if (inWindow(d)) {
       _addExpiryNotice(wrap, d, p.zairyuKigen, t('noticeZairyuTitle'), t('noticeZairyuExpired'), t('noticeSubmitZairyu'), 'zairyu');
     }
   }
   // 3) 免許証の期限 (車通勤者のみ)
   if (p.commutesByCar && p.menkyoKigen) {
     const d = daysUntil(p.menkyoKigen);
-    if (d !== null && d <= 30) {
+    if (inWindow(d)) {
       _addExpiryNotice(wrap, d, p.menkyoKigen, t('noticeLicenseTitle'), t('noticeLicenseExpired'), t('noticeSubmitLicense'), 'license');
     }
   }
@@ -3697,7 +3700,7 @@ function escNotice(s) {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v24';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v25';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 

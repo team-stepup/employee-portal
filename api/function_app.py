@@ -2422,11 +2422,11 @@ def _get_graph_token() -> str:
     return tok.token
 
 
-def _send_notification_mail(subject: str, text: str) -> None:
+def _send_notification_mail(subject: str, text: str, to_addr: Optional[str] = None) -> None:
     """Teams チャネルのメールアドレス宛に Graph sendMail で通知。
-    送信元 = SHORUI_MAIL_SENDER (h.yamashita)、宛先 = SHORUI_NOTIFY_EMAIL (チャネルメール)。
+    送信元 = SHORUI_MAIL_SENDER (h.yamashita)、宛先 = to_addr or SHORUI_NOTIFY_EMAIL (チャネルメール)。
     環境変数未設定なら何もしない (申請自体は成功扱い)。"""
-    to_addr = os.environ.get("SHORUI_NOTIFY_EMAIL", "").strip()
+    to_addr = (to_addr or os.environ.get("SHORUI_NOTIFY_EMAIL", "")).strip()
     sender = os.environ.get("SHORUI_MAIL_SENDER", "").strip()
     if not to_addr or not sender:
         return
@@ -2749,6 +2749,80 @@ def zaishoku_data(req: func.HttpRequest) -> func.HttpResponse:
         "complete": complete,
         "company": COMPANY_INFO,
     })
+
+
+# ====== 日次 期限チェック → 総務へ Teams 通知 (Part B) ======
+EXPIRY_WARN_DAYS = 30        # 期限の何日前から通知するか
+EXPIRY_OVERDUE_GRACE = 180   # 期限切れ後この日数まで通知 (これ以上前は古い未更新データとみなし除外)
+
+
+@app.timer_trigger(schedule="0 0 23 * * *", arg_name="timer", run_on_startup=False)
+def daily_expiry_check(timer: func.TimerRequest) -> None:
+    """毎日 23:00 UTC (=08:00 JST)。在留カード(外国籍)/免許証(車通勤)の期限が
+    30日以内 or 切れの在職者を集計し、総務チャネルへ通知 (本人がポータル提出すると翌日に外れる)。"""
+    try:
+        today = (_dt.datetime.utcnow() + _dt.timedelta(hours=9)).date()
+        items = sp_get_items(
+            LIST_SHAIN,
+            select=",".join(["Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_KOKUSEKI,
+                             F_TAISHA_DATE, F_ZAIRYU_KIGEN, F_MENKYO_KIGEN, F_TSUKIN_OLD, F_TSUKIN_NEW]),
+            top=6000, orderby="Id desc",
+        )
+        seen_z, seen_m = set(), set()
+        zairyu_rows, menkyo_rows = [], []
+        for it in items:
+            no = it.get(F_SHAIN_NO)
+            if no in seen_z and no in seen_m:
+                continue
+            taisha = _utc_to_jst_date(it.get(F_TAISHA_DATE))
+            if taisha is not None and taisha < today:
+                continue  # 退社済み
+            name = it.get(F_SHAIN_NAME) or ""
+            kokuseki = it.get(F_KOKUSEKI) or ""
+            haken = strip_buka_prefix(it.get(F_BUKA) or "")
+            if no not in seen_z and "日本" not in kokuseki:
+                zk = _utc_to_jst_date(it.get(F_ZAIRYU_KIGEN))
+                if zk:
+                    days = (zk - today).days
+                    if -EXPIRY_OVERDUE_GRACE <= days <= EXPIRY_WARN_DAYS:
+                        zairyu_rows.append((days, no, name, zk, haken))
+                        seen_z.add(no)
+            if no not in seen_m and commutes_by_car(it):
+                mk = _utc_to_jst_date(it.get(F_MENKYO_KIGEN))
+                if mk:
+                    days = (mk - today).days
+                    if -EXPIRY_OVERDUE_GRACE <= days <= EXPIRY_WARN_DAYS:
+                        menkyo_rows.append((days, no, name, mk, haken))
+                        seen_m.add(no)
+        if not zairyu_rows and not menkyo_rows:
+            logging.info("daily_expiry_check: 対象なし")
+            return
+        zairyu_rows.sort()
+        menkyo_rows.sort()
+
+        def fmt_rows(rows: List[Any]) -> str:
+            out = []
+            for days, no, name, kig, haken in rows:
+                tag = "【期限切れ】" if days < 0 else (f"あと{days}日")
+                out.append(f"  ・{no} {name}（{haken}） 期限{kig.isoformat()} {tag}")
+            return "\n".join(out)
+
+        lines = [f"📋 在留カード・免許証 期限チェック（{today.isoformat()}）", ""]
+        if zairyu_rows:
+            lines.append(f"■ 在留カード 期限間近/切れ（{len(zairyu_rows)}名）")
+            lines.append(fmt_rows(zairyu_rows))
+            lines.append("")
+        if menkyo_rows:
+            lines.append(f"■ 免許証 期限間近/切れ（{len(menkyo_rows)}名）")
+            lines.append(fmt_rows(menkyo_rows))
+            lines.append("")
+        lines.append("※ 本人がポータルで新しいカードを提出すると期限が更新され、翌日以降このリストから外れます。")
+        text = "\n".join(lines)
+        subject = f"【期限アラート】在留/免許 {len(zairyu_rows) + len(menkyo_rows)}件 ({today.isoformat()})"
+        _send_notification_mail(subject, text, to_addr=os.environ.get("EXPIRY_NOTIFY_EMAIL") or None)
+        logging.info(f"daily_expiry_check sent: zairyu={len(zairyu_rows)} menkyo={len(menkyo_rows)}")
+    except Exception as e:
+        logging.exception(f"daily_expiry_check failed: {e}")
 
 
 @app.route(route="health", methods=["GET"])
