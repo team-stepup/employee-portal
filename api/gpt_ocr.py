@@ -22,20 +22,20 @@ def _get_client():
     if _client is not None:
         return _client
     from openai import AzureOpenAI
-    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
     endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "").strip()
     if not endpoint:
         raise RuntimeError("AZURE_OPENAI_ENDPOINT not set")
     api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21")
-    token_provider = get_bearer_token_provider(
-        DefaultAzureCredential(),
-        "https://cognitiveservices.azure.com/.default",
-    )
-    _client = AzureOpenAI(
-        azure_endpoint=endpoint,
-        api_version=api_version,
-        azure_ad_token_provider=token_provider,
-    )
+    api_key = os.environ.get("AZURE_OPENAI_KEY", "").strip()
+    if api_key:
+        # API キー認証 (設定済みなら優先・ロール付与不要)
+        _client = AzureOpenAI(azure_endpoint=endpoint, api_version=api_version, api_key=api_key)
+    else:
+        # Managed Identity (AAD) フォールバック — 要 "Cognitive Services OpenAI User" ロール
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+        token_provider = get_bearer_token_provider(
+            DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default")
+        _client = AzureOpenAI(azure_endpoint=endpoint, api_version=api_version, azure_ad_token_provider=token_provider)
     return _client
 
 

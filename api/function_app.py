@@ -1274,6 +1274,32 @@ def run_zairyu_ocr_gpt(front_bytes: bytes, back_bytes: Optional[bytes] = None) -
     return gpt_ocr.extract_zairyu_fields(front_bytes, back_bytes)
 
 
+# GPT(gpt_ocr) の出力キー → 既存 DI パーサー互換キー の対応
+_GPT_KEY_MAP = {
+    "license": {"licenseNo": "licenseNumber", "licenseType": "licenseType", "licenseGetDate": "licenseDate",
+                "licenseExpiry": "licenseExpiry", "birthday": "birthday", "name": "name"},
+    "shaken": {"carNumber": "carNumber", "carMaker": "carMaker", "carName": "carName",
+               "carDisplacement": "haikiryo", "carFirstReg": "shonendo", "shakenExpiry": "shakenKigen"},
+    "jibaiseki": {"jibaisekiCompany": "jibaiKaisha", "jibaisekiNo": "jibaiShoken", "jibaisekiExpiry": "jibaiKigen"},
+    "nini": {"niniCompany": "niniKaisha", "niniNo": "niniShoken", "niniStartDate": "niniKaishi",
+             "niniExpiry": "niniKigen", "taijin": "taijin", "taibutsu": "taibutsu"},
+}
+
+
+def _gpt_doc_to_di(doc_type: str, gpt_result: Dict[str, Any]) -> Dict[str, Any]:
+    """GPT 抽出結果を DI パーサー互換キーに変換 (非空のみ)。"""
+    out: Dict[str, Any] = {}
+    for gk, dk in _GPT_KEY_MAP.get(doc_type, {}).items():
+        v = gpt_result.get(gk)
+        if v not in (None, ""):
+            out[dk] = v
+    return out
+
+
+def _gpt_ocr_available() -> bool:
+    return bool(os.environ.get("AZURE_OPENAI_ENDPOINT", "").strip())
+
+
 # 国籍の既知値リスト (長い順 — 「アメリカ合衆国」を「アメリカ」より先に)
 NATIONALITY_KNOWN = [
     "アメリカ合衆国", "ドミニカ共和国",
@@ -1464,11 +1490,16 @@ def zairyu_ocr(req: func.HttpRequest) -> func.HttpResponse:
         except Exception:
             back_bytes = None
 
-    # エンジン選択: "gpt" (Azure OpenAI) / それ以外は既定の DI (prebuilt-read + 正規表現)
-    engine = (body.get("engine") or req.params.get("engine") or "di").strip().lower()
+    # エンジン選択: 既定は "gpt" (Azure OpenAI GPT-4o-mini)。失敗時は DI(prebuilt-read+正規表現) に自動フォールバック
+    engine = (body.get("engine") or req.params.get("engine") or "gpt").strip().lower()
     try:
         if engine == "gpt":
-            ocr_result = run_zairyu_ocr_gpt(front_bytes, back_bytes)
+            try:
+                ocr_result = run_zairyu_ocr_gpt(front_bytes, back_bytes)
+            except Exception as ge:
+                logging.warning(f"GPT OCR failed, fallback to DI: {ge}")
+                ocr_result = run_zairyu_ocr(front_bytes)
+                ocr_result["engine"] = "di-fallback"
         else:
             ocr_result = run_zairyu_ocr(front_bytes)
     except Exception as e:
@@ -1641,22 +1672,36 @@ def license_ocr(req: func.HttpRequest) -> func.HttpResponse:
     if len(front_bytes) > 10 * 1024 * 1024:
         return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
 
-    try:
-        from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
-        client = _get_di_client()
-        poller = client.begin_analyze_document(
-            "prebuilt-read",
-            AnalyzeDocumentRequest(bytes_source=front_bytes),
-        )
-        result = poller.result()
-        full_text = ""
-        for page in (result.pages or []):
-            for line in (page.lines or []):
-                full_text += (line.content or "") + "\n"
-        ocr_result = parse_license_card_text(full_text)
-    except Exception as e:
-        logging.exception("license OCR failed")
-        return _json_response({"error": "ocr_failed", "detail": str(e)}, 500)
+    ocr_result = None
+    # GPT-4o-mini 優先
+    if _gpt_ocr_available():
+        try:
+            import gpt_ocr
+            g = gpt_ocr.extract_doc_fields("license", [front_bytes])
+            mapped = _gpt_doc_to_di("license", g)
+            if mapped.get("licenseNumber") or mapped.get("licenseExpiry") or mapped.get("name"):
+                mapped["engine"] = "gpt-4o-mini"
+                ocr_result = mapped
+        except Exception as ge:
+            logging.warning(f"license GPT OCR failed, fallback to DI: {ge}")
+    if ocr_result is None:
+        try:
+            from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
+            client = _get_di_client()
+            poller = client.begin_analyze_document(
+                "prebuilt-read",
+                AnalyzeDocumentRequest(bytes_source=front_bytes),
+            )
+            result = poller.result()
+            full_text = ""
+            for page in (result.pages or []):
+                for line in (page.lines or []):
+                    full_text += (line.content or "") + "\n"
+            ocr_result = parse_license_card_text(full_text)
+            ocr_result["engine"] = "di"
+        except Exception as e:
+            logging.exception("license OCR failed")
+            return _json_response({"error": "ocr_failed", "detail": str(e)}, 500)
 
     # 社員データと突合
     emp = find_active_employee_by_shain(shain_no)
@@ -1992,13 +2037,28 @@ def shaken_ocr(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"error": "invalid_base64", "detail": str(e)}, 400)
     if len(shaken_bytes) > 10 * 1024 * 1024 or len(jibai_bytes) > 10 * 1024 * 1024:
         return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
-    try:
-        shaken_txt = _run_read_ocr(shaken_bytes)
-        jibai_txt = _run_read_ocr(jibai_bytes)
-        result = parse_shaken_jibaiseki_text(shaken_txt, jibai_txt)
-    except Exception as e:
-        logging.exception("shaken OCR failed")
-        return _json_response({"error": "ocr_failed", "detail": str(e)}, 500)
+    result = None
+    if _gpt_ocr_available():
+        try:
+            import gpt_ocr
+            g1 = gpt_ocr.extract_doc_fields("shaken", [shaken_bytes])
+            g2 = gpt_ocr.extract_doc_fields("jibaiseki", [jibai_bytes])
+            merged = _gpt_doc_to_di("shaken", g1)
+            merged.update(_gpt_doc_to_di("jibaiseki", g2))
+            if merged.get("shakenKigen") or merged.get("carNumber") or merged.get("jibaiKigen"):
+                merged["engine"] = "gpt-4o-mini"
+                result = merged
+        except Exception as ge:
+            logging.warning(f"shaken GPT OCR failed, fallback to DI: {ge}")
+    if result is None:
+        try:
+            shaken_txt = _run_read_ocr(shaken_bytes)
+            jibai_txt = _run_read_ocr(jibai_bytes)
+            result = parse_shaken_jibaiseki_text(shaken_txt, jibai_txt)
+            result["engine"] = "di"
+        except Exception as e:
+            logging.exception("shaken OCR failed")
+            return _json_response({"error": "ocr_failed", "detail": str(e)}, 500)
     return _json_response({"ocr": result})
 
 
@@ -2102,12 +2162,25 @@ def hoken_ocr(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"error": "invalid_base64", "detail": str(e)}, 400)
     if len(img_bytes) > 10 * 1024 * 1024:
         return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
-    try:
-        txt = _run_read_ocr(img_bytes)
-        result = parse_nini_hoken_text(txt)
-    except Exception as e:
-        logging.exception("hoken OCR failed")
-        return _json_response({"error": "ocr_failed", "detail": str(e)}, 500)
+    result = None
+    if _gpt_ocr_available():
+        try:
+            import gpt_ocr
+            g = gpt_ocr.extract_doc_fields("nini", [img_bytes])
+            mapped = _gpt_doc_to_di("nini", g)
+            if mapped.get("niniKaisha") or mapped.get("niniKigen") or mapped.get("niniShoken"):
+                mapped["engine"] = "gpt-4o-mini"
+                result = mapped
+        except Exception as ge:
+            logging.warning(f"hoken GPT OCR failed, fallback to DI: {ge}")
+    if result is None:
+        try:
+            txt = _run_read_ocr(img_bytes)
+            result = parse_nini_hoken_text(txt)
+            result["engine"] = "di"
+        except Exception as e:
+            logging.exception("hoken OCR failed")
+            return _json_response({"error": "ocr_failed", "detail": str(e)}, 500)
     return _json_response({"ocr": result})
 
 
