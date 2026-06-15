@@ -1528,6 +1528,14 @@ I18N.ja.noticeExpired = "期限切れです（{date}）"; I18N.en.noticeExpired 
 I18N.ja.noticeExpiryHint = "新しいカードを撮影して提出してください。"; I18N.en.noticeExpiryHint = "Please take a photo of your new card and submit it."; I18N.pt.noticeExpiryHint = "Tire uma foto do seu novo cartão e envie.";
 I18N.ja.noticeSubmitZairyu = "在留カードを提出する"; I18N.en.noticeSubmitZairyu = "Submit Zairyu Card"; I18N.pt.noticeSubmitZairyu = "Enviar Cartão Zairyu";
 I18N.ja.noticeSubmitLicense = "免許証を提出する"; I18N.en.noticeSubmitLicense = "Submit driver's license"; I18N.pt.noticeSubmitLicense = "Enviar carteira de motorista";
+I18N.ja.noticeShakenTitle = "車検の期限が近づいています"; I18N.en.noticeShakenTitle = "Your vehicle inspection is expiring soon"; I18N.pt.noticeShakenTitle = "Sua inspeção (Shaken) está prestes a vencer";
+I18N.ja.noticeShakenExpired = "車検の期限が切れています"; I18N.en.noticeShakenExpired = "Your vehicle inspection has expired"; I18N.pt.noticeShakenExpired = "Sua inspeção (Shaken) venceu";
+I18N.ja.noticeSubmitShaken = "車検証・自賠責を提出する"; I18N.en.noticeSubmitShaken = "Submit inspection / insurance"; I18N.pt.noticeSubmitShaken = "Enviar inspeção / seguro";
+I18N.ja.noticeJibaiTitle = "自賠責保険の期限が近づいています"; I18N.en.noticeJibaiTitle = "Your compulsory insurance is expiring soon"; I18N.pt.noticeJibaiTitle = "Seu seguro obrigatório (Jibaiseki) está prestes a vencer";
+I18N.ja.noticeJibaiExpired = "自賠責保険の期限が切れています"; I18N.en.noticeJibaiExpired = "Your compulsory insurance has expired"; I18N.pt.noticeJibaiExpired = "Seu seguro obrigatório (Jibaiseki) venceu";
+I18N.ja.noticeNiniTitle = "任意保険の期限が近づいています"; I18N.en.noticeNiniTitle = "Your car insurance is expiring soon"; I18N.pt.noticeNiniTitle = "Seu seguro do carro está prestes a vencer";
+I18N.ja.noticeNiniExpired = "任意保険の期限が切れています"; I18N.en.noticeNiniExpired = "Your car insurance has expired"; I18N.pt.noticeNiniExpired = "Seu seguro do carro venceu";
+I18N.ja.noticeSubmitNini = "任意保険を提出する"; I18N.en.noticeSubmitNini = "Submit car insurance"; I18N.pt.noticeSubmitNini = "Enviar seguro do carro";
 // プッシュ通知
 I18N.ja.pushEnable = "お知らせ通知をオンにする"; I18N.en.pushEnable = "Turn on notifications"; I18N.pt.pushEnable = "Ativar notificações";
 I18N.ja.pushEnabled = "✅ 通知オン（タップでオフ）"; I18N.en.pushEnabled = "✅ Notifications on (tap to turn off)"; I18N.pt.pushEnabled = "✅ Notificações ativadas (toque para desativar)";
@@ -3659,14 +3667,25 @@ function updateAppBadge(count) {
 }
 
 // 期限お知らせの件数 (在留+免許のうち通知窓内)
+// 期限お知らせ対象書類 (key=profile日付, cond=対象者, screen=提出画面)
+const EXPIRY_BANNERS = [
+  { key: 'zairyuKigen', cond: 'foreign', titleNear: 'noticeZairyuTitle', titleExp: 'noticeZairyuExpired', btn: 'noticeSubmitZairyu', screen: 'zairyu' },
+  { key: 'menkyoKigen', cond: 'car', titleNear: 'noticeLicenseTitle', titleExp: 'noticeLicenseExpired', btn: 'noticeSubmitLicense', screen: 'license' },
+  { key: 'shakenKigen', cond: 'car', titleNear: 'noticeShakenTitle', titleExp: 'noticeShakenExpired', btn: 'noticeSubmitShaken', screen: 'shaken' },
+  { key: 'jibaiKigen', cond: 'car', titleNear: 'noticeJibaiTitle', titleExp: 'noticeJibaiExpired', btn: 'noticeSubmitShaken', screen: 'shaken' },
+  { key: 'niniKigen', cond: 'car', titleNear: 'noticeNiniTitle', titleExp: 'noticeNiniExpired', btn: 'noticeSubmitNini', screen: 'hoken' },
+];
+
 function getExpiryNoticeCount() {
   const p = state.profile || {};
-  const WARN = 30, GRACE = 180;
-  const inWin = (d) => d !== null && d >= -GRACE && d <= WARN;
-  let n = 0;
+  const inWin = (d) => d !== null && d >= -180 && d <= 30;
   const isJp = String(p.kokuseki || '').includes('日本');
-  if (!isJp && p.zairyuKigen && inWin(daysUntil(p.zairyuKigen))) n++;
-  if (p.commutesByCar && p.menkyoKigen && inWin(daysUntil(p.menkyoKigen))) n++;
+  const car = !!p.commutesByCar;
+  let n = 0;
+  EXPIRY_BANNERS.forEach(s => {
+    const ok = s.cond === 'foreign' ? !isJp : car;
+    if (ok && p[s.key] && inWin(daysUntil(p[s.key]))) n++;
+  });
   return n;
 }
 
@@ -3720,21 +3739,19 @@ function renderHomeNotices(items) {
   // 期限お知らせの表示範囲: 期限30日前 〜 期限切れ後180日 (それ以前は古い未更新データとみなし非表示)
   const WARN_DAYS = 30, OVERDUE_GRACE = 180;
   const inWindow = (d) => d !== null && d >= -OVERDUE_GRACE && d <= WARN_DAYS;
-  // 2) 在留カードの期限 (外国籍のみ)
   const isJp = String(p.kokuseki || '').includes('日本');
-  if (!isJp && p.zairyuKigen) {
-    const d = daysUntil(p.zairyuKigen);
+  const car = !!p.commutesByCar;
+  // 2) 書類の期限お知らせ (在留=外国籍 / 免許・車検・自賠責・任意=車通勤)
+  EXPIRY_BANNERS.forEach(s => {
+    const ok = s.cond === 'foreign' ? !isJp : car;
+    if (!ok) return;
+    const v = p[s.key];
+    if (!v) return;
+    const d = daysUntil(v);
     if (inWindow(d)) {
-      _addExpiryNotice(wrap, d, p.zairyuKigen, t('noticeZairyuTitle'), t('noticeZairyuExpired'), t('noticeSubmitZairyu'), 'zairyu');
+      _addExpiryNotice(wrap, d, v, t(s.titleNear), t(s.titleExp), t(s.btn), s.screen);
     }
-  }
-  // 3) 免許証の期限 (車通勤者のみ)
-  if (p.commutesByCar && p.menkyoKigen) {
-    const d = daysUntil(p.menkyoKigen);
-    if (inWindow(d)) {
-      _addExpiryNotice(wrap, d, p.menkyoKigen, t('noticeLicenseTitle'), t('noticeLicenseExpired'), t('noticeSubmitLicense'), 'license');
-    }
-  }
+  });
 }
 
 function _addExpiryNotice(wrap, days, iso, titleNear, titleExpired, btnLabel, screen) {
@@ -3755,7 +3772,7 @@ function escNotice(s) {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v29';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v30';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 

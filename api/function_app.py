@@ -589,7 +589,7 @@ def find_active_employee(shain_no: int, birthday: str, tel_last4: str) -> Option
             "Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_BIRTHDAY, F_TEL,
             F_TAISHA_DATE, F_ZAIYOKU, F_GINKO, F_SHITEN, F_KOUZA, F_MEIGI, F_ZAIRYU_NAME,
             F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW, F_PORTAL_PIN, F_ADDRESS, F_NYUSHA,
-            F_ZAIRYU_KIGEN, F_MENKYO_KIGEN,
+            F_ZAIRYU_KIGEN, F_MENKYO_KIGEN, F_SHAKEN_KIGEN, F_JIBAI_KIGEN, F_NINI_KIGEN,
         ]),
         filter_=f"{F_SHAIN_NO} eq {shain_no}",
         orderby="Id desc",
@@ -911,6 +911,10 @@ def auth_pin_login(req: func.HttpRequest) -> func.HttpResponse:
     return _json_response({"token": token, "profile": _employee_to_profile(emp)})
 
 
+def _iso_or_none(d: Any) -> Optional[str]:
+    return d.isoformat() if d else None
+
+
 def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
     buka_text = emp.get(F_BUKA) or ""
     kokuseki = emp.get(F_KOKUSEKI) or ""
@@ -931,9 +935,12 @@ def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
         "meigi": emp.get(F_MEIGI),
         "zaiyokuSyubetu": emp.get(F_ZAIYOKU),
         "commutesByCar": commutes_by_car(emp),
-        # 期限お知らせ用 (在留カード/免許証)
+        # 期限お知らせ用 (在留カード/免許証/車検/自賠責/任意保険)
         "zairyuKigen": zairyu_kigen.isoformat() if zairyu_kigen else None,
         "menkyoKigen": menkyo_kigen.isoformat() if menkyo_kigen else None,
+        "shakenKigen": _iso_or_none(_utc_to_jst_date(emp.get(F_SHAKEN_KIGEN))),
+        "jibaiKigen": _iso_or_none(_utc_to_jst_date(emp.get(F_JIBAI_KIGEN))),
+        "niniKigen": _iso_or_none(_utc_to_jst_date(emp.get(F_NINI_KIGEN))),
     }
 
 
@@ -962,7 +969,7 @@ def find_active_employee_by_shain(shain_no: int) -> Optional[Dict[str, Any]]:
             "Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_BIRTHDAY, F_TEL,
             F_TAISHA_DATE, F_ZAIYOKU, F_GINKO, F_SHITEN, F_KOUZA, F_MEIGI, F_ZAIRYU_NAME,
             F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW, F_PORTAL_PIN, F_ADDRESS, F_NYUSHA,
-            F_ZAIRYU_KIGEN, F_MENKYO_KIGEN,
+            F_ZAIRYU_KIGEN, F_MENKYO_KIGEN, F_SHAKEN_KIGEN, F_JIBAI_KIGEN, F_NINI_KIGEN,
         ]),
         filter_=f"{F_SHAIN_NO} eq {shain_no}",
         orderby="Id desc",
@@ -2853,70 +2860,80 @@ def _notify_lang(kokuseki: str) -> str:
     return "pt"
 
 
-# 期限通知の本文 (push 用・本人の国籍言語で送る)
-# title = 「Step Up からお知らせ」固定 / body = 書類の見出し + 詳細
-_NOTIFY_TEXT = {
-    "ja": {
-        "from": "Step Up からお知らせ",
-        "zairyu_near": "在留カードの期限が近づいています", "zairyu_exp": "在留カードの期限が切れています",
-        "menkyo_near": "免許証の期限が近づいています", "menkyo_exp": "免許証の期限が切れています",
-        "both": "在留カード・免許証の期限のお知らせ",
-        "body_near": "期限まであと{n}日です。アプリから新しい書類を提出してください。",
-        "body_exp": "期限が切れています。アプリから新しい書類を提出してください。",
-    },
-    "en": {
-        "from": "Notice from Step Up",
-        "zairyu_near": "Your residence card is expiring soon", "zairyu_exp": "Your residence card has expired",
-        "menkyo_near": "Your driver's license is expiring soon", "menkyo_exp": "Your driver's license has expired",
-        "both": "Residence card / driver's license expiry notice",
-        "body_near": "{n} days until expiry. Please submit your new document in the app.",
-        "body_exp": "It has expired. Please submit your new document in the app.",
-    },
-    "pt": {
-        "from": "Aviso da Step Up",
-        "zairyu_near": "Seu cartão de permanência está prestes a vencer", "zairyu_exp": "Seu cartão de permanência venceu",
-        "menkyo_near": "Sua carteira de motorista está prestes a vencer", "menkyo_exp": "Sua carteira de motorista venceu",
-        "both": "Aviso de vencimento (cartão de permanência / carteira)",
-        "body_near": "Faltam {n} dias para o vencimento. Envie o novo documento no aplicativo.",
-        "body_exp": "Está vencido. Envie o novo documento no aplicativo.",
-    },
+# 通知対象の書類: (kind, 満了日フィールド, 条件 'foreign'|'car', アプリの提出画面)
+EXPIRY_DOC_SPECS = [
+    ("zairyu", F_ZAIRYU_KIGEN, "foreign"),
+    ("menkyo", F_MENKYO_KIGEN, "car"),
+    ("shaken", F_SHAKEN_KIGEN, "car"),
+    ("jibai", F_JIBAI_KIGEN, "car"),
+    ("nini", F_NINI_KIGEN, "car"),
+]
+# 書類名 (言語別)
+_DOC_NAMES = {
+    "ja": {"zairyu": "在留カード", "menkyo": "免許証", "shaken": "車検", "jibai": "自賠責保険", "nini": "任意保険"},
+    "en": {"zairyu": "Residence card", "menkyo": "Driver's license", "shaken": "Vehicle inspection", "jibai": "Compulsory insurance", "nini": "Car insurance"},
+    "pt": {"zairyu": "Cartão de permanência", "menkyo": "Carteira de motorista", "shaken": "Inspeção (Shaken)", "jibai": "Seguro obrigatório (Jibaiseki)", "nini": "Seguro do carro"},
+}
+# 通知文テンプレート (title = 送信元固定 / body = 書類名 + 期限 + 行動)
+_NOTIFY_TPL = {
+    "ja": {"from": "Step Up からお知らせ", "sep": "・",
+           "near": "{docs}の期限まであと{n}日です。アプリから新しい書類を提出してください。",
+           "exp": "{docs}の期限が切れています。アプリから新しい書類を提出してください。"},
+    "en": {"from": "Notice from Step Up", "sep": ", ",
+           "near": "{docs}: {n} days until expiry. Please submit the new document in the app.",
+           "exp": "{docs}: expired. Please submit the new document in the app."},
+    "pt": {"from": "Aviso da Step Up", "sep": ", ",
+           "near": "{docs}: faltam {n} dias para o vencimento. Envie o novo documento no aplicativo.",
+           "exp": "{docs}: vencido. Envie o novo documento no aplicativo."},
 }
 
 
-def _build_expiry_push(kinds: List[str], min_days: int, kokuseki: str) -> Dict[str, str]:
-    """本人の国籍言語で push の title/body を作る。title は「Step Up からお知らせ」固定。"""
-    T = _NOTIFY_TEXT.get(_notify_lang(kokuseki), _NOTIFY_TEXT["pt"])
-    expired = min_days < 0
-    if "zairyu" in kinds and "menkyo" in kinds:
-        head = T["both"]
-    elif "zairyu" in kinds:
-        head = T["zairyu_exp"] if expired else T["zairyu_near"]
-    else:
-        head = T["menkyo_exp"] if expired else T["menkyo_near"]
-    detail = T["body_exp"] if expired else T["body_near"].format(n=min_days)
-    return {"title": T["from"], "body": head + " " + detail}
+def _build_expiry_push(kinds_days: List[Any], kokuseki: str) -> Dict[str, str]:
+    """本人の国籍言語で push の title/body を作る。kinds_days=[(kind,days),...]。title は送信元固定。"""
+    lang = _notify_lang(kokuseki)
+    names = _DOC_NAMES[lang]
+    T = _NOTIFY_TPL[lang]
+    kinds = [k for k, _ in kinds_days]
+    min_days = min(d for _, d in kinds_days)
+    docs = T["sep"].join(dict.fromkeys(names[k] for k in kinds))  # 重複除去・順序保持
+    body = (T["exp"] if min_days < 0 else T["near"]).format(docs=docs, n=min_days)
+    return {"title": T["from"], "body": body}
 
 
-@app.timer_trigger(schedule="0 0 23 * * *", arg_name="timer", run_on_startup=False)
+def _is_working_day(d: _dt.date) -> bool:
+    """就業日か (土日でなく、会社休日カレンダーにもない)。取得失敗時は就業日扱い。"""
+    if d.weekday() >= 5:  # 土(5)・日(6)
+        return False
+    try:
+        if d in set(list_kaisha_kyujitsu_dates()):
+            return False
+    except Exception:
+        logging.warning("会社休日の取得に失敗。就業日として続行")
+    return True
+
+
+@app.timer_trigger(schedule="0 0 3 * * *", arg_name="timer", run_on_startup=False)
 def daily_expiry_check(timer: func.TimerRequest) -> None:
-    """毎日 23:00 UTC (=08:00 JST)。在留カード(外国籍)/免許証(車通勤)の期限が
-    30日以内 or 切れの在職者を集計し、総務チャネルへ通知 (本人がポータル提出すると翌日に外れる)。"""
+    """毎日 03:00 UTC (=12:00 JST)。就業日(土日・会社休日を除く)のみ実行。
+    在留カード(外国籍)/免許証・車検・自賠責・任意保険(車通勤) の期限が 30日前〜切れ後180日 の
+    在職者を集計し、本人へ Web Push + 総務チャネルへ通知 (本人が提出すると翌日に外れる)。"""
     try:
         today = (_dt.datetime.utcnow() + _dt.timedelta(hours=9)).date()
+        if not _is_working_day(today):
+            logging.info(f"daily_expiry_check: {today} は就業日でないためスキップ")
+            return
         items = sp_get_items(
             LIST_SHAIN,
             select=",".join(["Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_KOKUSEKI,
-                             F_TAISHA_DATE, F_ZAIRYU_KIGEN, F_MENKYO_KIGEN, F_TSUKIN_OLD, F_TSUKIN_NEW,
-                             F_PORTAL_PUSH]),
+                             F_TAISHA_DATE, F_TSUKIN_OLD, F_TSUKIN_NEW, F_PORTAL_PUSH,
+                             F_ZAIRYU_KIGEN, F_MENKYO_KIGEN, F_SHAKEN_KIGEN, F_JIBAI_KIGEN, F_NINI_KIGEN]),
             top=6000, orderby="Id desc",
         )
-        seen_z, seen_m = set(), set()
-        zairyu_rows, menkyo_rows = [], []
-        push_targets: Dict[Any, Dict[str, Any]] = {}  # 社員番号 → {sub, kinds:[...]}
+        rows: Dict[str, List[Any]] = {k: [] for k, _, _ in EXPIRY_DOC_SPECS}
+        seen: set = set()  # (社員番号, kind)
+        push_targets: Dict[Any, Dict[str, Any]] = {}
         for it in items:
             no = it.get(F_SHAIN_NO)
-            if no in seen_z and no in seen_m:
-                continue
             taisha = _utc_to_jst_date(it.get(F_TAISHA_DATE))
             if taisha is not None and taisha < today:
                 continue  # 退社済み
@@ -2925,63 +2942,52 @@ def daily_expiry_check(timer: func.TimerRequest) -> None:
             haken = strip_buka_prefix(it.get(F_BUKA) or "")
             sub_json = (it.get(F_PORTAL_PUSH) or "").strip()
             emp_id = it.get("Id")
+            is_foreign = "日本" not in kokuseki
+            is_car = commutes_by_car(it)
+            for kind, field, cond in EXPIRY_DOC_SPECS:
+                if (no, kind) in seen:
+                    continue
+                if not (is_foreign if cond == "foreign" else is_car):
+                    continue
+                kig = _utc_to_jst_date(it.get(field))
+                if not kig:
+                    continue
+                days = (kig - today).days
+                if -EXPIRY_OVERDUE_GRACE <= days <= EXPIRY_WARN_DAYS:
+                    rows[kind].append((days, no, name, kig, haken))
+                    seen.add((no, kind))
+                    if sub_json:
+                        t = push_targets.setdefault(no, {"sub": sub_json, "empId": emp_id, "kinds": [], "kokuseki": kokuseki})
+                        t["kinds"].append((kind, days))
 
-            def _add_push(kind: str, days: int):
-                if not sub_json:
-                    return
-                t = push_targets.setdefault(no, {"sub": sub_json, "empId": emp_id, "kinds": [], "kokuseki": kokuseki})
-                t["kinds"].append((kind, days))
-
-            if no not in seen_z and "日本" not in kokuseki:
-                zk = _utc_to_jst_date(it.get(F_ZAIRYU_KIGEN))
-                if zk:
-                    days = (zk - today).days
-                    if -EXPIRY_OVERDUE_GRACE <= days <= EXPIRY_WARN_DAYS:
-                        zairyu_rows.append((days, no, name, zk, haken))
-                        seen_z.add(no)
-                        _add_push("zairyu", days)
-            if no not in seen_m and commutes_by_car(it):
-                mk = _utc_to_jst_date(it.get(F_MENKYO_KIGEN))
-                if mk:
-                    days = (mk - today).days
-                    if -EXPIRY_OVERDUE_GRACE <= days <= EXPIRY_WARN_DAYS:
-                        menkyo_rows.append((days, no, name, mk, haken))
-                        seen_m.add(no)
-                        _add_push("menkyo", days)
-        if not zairyu_rows and not menkyo_rows:
+        total = sum(len(v) for v in rows.values())
+        if total == 0:
             logging.info("daily_expiry_check: 対象なし")
             return
-        zairyu_rows.sort()
-        menkyo_rows.sort()
 
-        def fmt_rows(rows: List[Any]) -> str:
+        def fmt_rows(rs: List[Any]) -> str:
             out = []
-            for days, no, name, kig, haken in rows:
+            for days, no, name, kig, haken in sorted(rs):
                 tag = "【期限切れ】" if days < 0 else (f"あと{days}日")
                 out.append(f"  ・{no} {name}（{haken}） 期限{kig.isoformat()} {tag}")
             return "\n".join(out)
 
-        lines = [f"📋 在留カード・免許証 期限チェック（{today.isoformat()}）", ""]
-        if zairyu_rows:
-            lines.append(f"■ 在留カード 期限間近/切れ（{len(zairyu_rows)}名）")
-            lines.append(fmt_rows(zairyu_rows))
-            lines.append("")
-        if menkyo_rows:
-            lines.append(f"■ 免許証 期限間近/切れ（{len(menkyo_rows)}名）")
-            lines.append(fmt_rows(menkyo_rows))
-            lines.append("")
-        lines.append("※ 本人がポータルで新しいカードを提出すると期限が更新され、翌日以降このリストから外れます。")
+        lines = [f"📋 期限チェック（{today.isoformat()}）", ""]
+        for kind, _, _ in EXPIRY_DOC_SPECS:
+            if rows[kind]:
+                lines.append(f"■ {_DOC_NAMES['ja'][kind]} 期限間近/切れ（{len(rows[kind])}名）")
+                lines.append(fmt_rows(rows[kind]))
+                lines.append("")
+        lines.append("※ 本人がポータルで新しい書類を提出すると期限が更新され、翌日以降このリストから外れます。")
         text = "\n".join(lines)
-        subject = f"【期限アラート】在留/免許 {len(zairyu_rows) + len(menkyo_rows)}件 ({today.isoformat()})"
+        subject = f"【期限アラート】{total}件 ({today.isoformat()})"
         _send_notification_mail(subject, text, to_addr=os.environ.get("EXPIRY_NOTIFY_EMAIL") or None)
-        logging.info(f"daily_expiry_check sent: zairyu={len(zairyu_rows)} menkyo={len(menkyo_rows)}")
+        logging.info("daily_expiry_check sent: " + " ".join(f"{k}={len(rows[k])}" for k, _, _ in EXPIRY_DOC_SPECS))
 
-        # 本人へ Web Push (購読済みのみ・提出するまで毎日)
+        # 本人へ Web Push (購読済みのみ・提出するまで毎就業日)
         pushed = gone = 0
         for no, tgt in push_targets.items():
-            kinds = [k for k, _ in tgt["kinds"]]
-            min_days = min(d for _, d in tgt["kinds"])
-            msg = _build_expiry_push(kinds, min_days, tgt.get("kokuseki", ""))
+            msg = _build_expiry_push(tgt["kinds"], tgt.get("kokuseki", ""))
             res = _send_web_push(tgt["sub"], {"title": msg["title"], "body": msg["body"],
                                               "url": "/", "badge": len(tgt["kinds"])})
             if res == "ok":
@@ -2989,7 +2995,7 @@ def daily_expiry_check(timer: func.TimerRequest) -> None:
             elif res == "gone":
                 gone += 1
                 try:
-                    sp_patch_item(LIST_SHAIN, int(tgt["empId"]), {F_PORTAL_PUSH: ""})  # 失効購読を削除
+                    sp_patch_item(LIST_SHAIN, int(tgt["empId"]), {F_PORTAL_PUSH: ""})
                 except Exception:
                     pass
         if push_targets:
