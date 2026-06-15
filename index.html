@@ -9,13 +9,13 @@
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <!-- PWA -->
 <link rel="manifest" href="manifest.json">
-<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=29">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v=29">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="ポータル">
+<meta name="apple-mobile-web-app-title" content="StepUp">
 <meta name="mobile-web-app-capable" content="yes">
-<title>従業員ポータル｜有限会社ステップ・アップ</title>
+<title>StepUp 従業員ポータル｜有限会社ステップ・アップ</title>
 <!-- 在職証明書PDF生成用 (self-host・CSP維持) -->
 <script src="pdf-lib.min.js" defer></script>
 <style>
@@ -3755,7 +3755,7 @@ function escNotice(s) {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v28';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v29';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 

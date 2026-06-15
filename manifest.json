@@ -1,6 +1,6 @@
 {
-  "name": "従業員ポータル｜有限会社ステップ・アップ",
-  "short_name": "ポータル",
+  "name": "StepUp 従業員ポータル",
+  "short_name": "StepUp",
   "description": "前払い申請・在留カード・有給管理など、従業員向け各種申請の窓口",
   "start_url": "/",
   "scope": "/",
