@@ -587,6 +587,7 @@ def find_active_employee(shain_no: int, birthday: str, tel_last4: str) -> Option
             "Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_BIRTHDAY, F_TEL,
             F_TAISHA_DATE, F_ZAIYOKU, F_GINKO, F_SHITEN, F_KOUZA, F_MEIGI, F_ZAIRYU_NAME,
             F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW, F_PORTAL_PIN, F_ADDRESS, F_NYUSHA,
+            F_ZAIRYU_KIGEN, F_MENKYO_KIGEN,
         ]),
         filter_=f"{F_SHAIN_NO} eq {shain_no}",
         orderby="Id desc",
@@ -911,6 +912,8 @@ def auth_pin_login(req: func.HttpRequest) -> func.HttpResponse:
 def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
     buka_text = emp.get(F_BUKA) or ""
     kokuseki = emp.get(F_KOKUSEKI) or ""
+    zairyu_kigen = _utc_to_jst_date(emp.get(F_ZAIRYU_KIGEN))
+    menkyo_kigen = _utc_to_jst_date(emp.get(F_MENKYO_KIGEN))
     return {
         "shainNo": emp.get(F_SHAIN_NO),
         "name": emp.get(F_SHAIN_NAME),
@@ -926,6 +929,9 @@ def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
         "meigi": emp.get(F_MEIGI),
         "zaiyokuSyubetu": emp.get(F_ZAIYOKU),
         "commutesByCar": commutes_by_car(emp),
+        # 期限お知らせ用 (在留カード/免許証)
+        "zairyuKigen": zairyu_kigen.isoformat() if zairyu_kigen else None,
+        "menkyoKigen": menkyo_kigen.isoformat() if menkyo_kigen else None,
     }
 
 
@@ -954,6 +960,7 @@ def find_active_employee_by_shain(shain_no: int) -> Optional[Dict[str, Any]]:
             "Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_BIRTHDAY, F_TEL,
             F_TAISHA_DATE, F_ZAIYOKU, F_GINKO, F_SHITEN, F_KOUZA, F_MEIGI, F_ZAIRYU_NAME,
             F_KOKUSEKI, F_TSUKIN_OLD, F_TSUKIN_NEW, F_PORTAL_PIN, F_ADDRESS, F_NYUSHA,
+            F_ZAIRYU_KIGEN, F_MENKYO_KIGEN,
         ]),
         filter_=f"{F_SHAIN_NO} eq {shain_no}",
         orderby="Id desc",

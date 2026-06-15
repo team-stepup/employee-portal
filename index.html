@@ -268,6 +268,25 @@
     border-radius: 10px; font-size: 0.92em; font-weight: 700; color: #8a5a00; cursor: pointer; text-align: center;
   }
   .conbini-guide-link:active { background: #fdeecb; }
+  /* ホームお知らせバナー */
+  #home-notices { display: flex; flex-direction: column; gap: 10px; margin: 0 0 14px; }
+  .notice {
+    border-radius: 12px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start;
+    font-size: 0.92em; line-height: 1.5; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .notice .n-icon { font-size: 1.4em; line-height: 1; flex-shrink: 0; }
+  .notice .n-body { flex: 1; }
+  .notice .n-title { font-weight: 800; margin-bottom: 2px; }
+  .notice .n-btn {
+    display: inline-block; margin-top: 8px; padding: 8px 14px; border: none; border-radius: 9px;
+    font-weight: 700; font-size: 0.95em; color: #fff; cursor: pointer;
+  }
+  .notice .n-close { background: none; border: none; font-size: 1.1em; color: inherit; opacity: 0.55; cursor: pointer; padding: 0 2px; flex-shrink: 0; }
+  .notice.warn   { background: #fff4e5; border: 1.5px solid #ffce93; color: #8a4b00; }
+  .notice.warn .n-btn   { background: linear-gradient(135deg,#ffa726,#ef6c00); }
+  .notice.danger { background: #fdecea; border: 1.5px solid #f5b3ad; color: #a01b10; }
+  .notice.danger .n-btn { background: linear-gradient(135deg,#ef5350,#c62828); }
+  .notice.reject { background: #fdecea; border: 1.5px solid #f5b3ad; color: #a01b10; }
   .conbini-box { max-width: 440px; text-align: left; padding: 18px 18px 14px; border-top: 5px solid #f0a500; max-height: 88vh; display: flex; flex-direction: column; }
   .conbini-box .modal-icon { text-align: center; font-size: 2.2em; margin-bottom: 4px; flex-shrink: 0; }
   .conbini-box .modal-title { text-align: center; margin-bottom: 10px; flex-shrink: 0; }
@@ -574,6 +593,9 @@
     <p class="zairyu-name" id="home-zairyu-name"></p>
     <p class="meta"><span id="home-shainno">―</span> ｜ <span id="home-hakensaki">―</span></p>
   </div>
+
+  <!-- お知らせバナー (却下 / 期限) -->
+  <div id="home-notices"></div>
 
   <div class="menu-grid">
     <div class="menu-card" onclick="openRequestWithRules()">
@@ -1473,6 +1495,20 @@ I18N.ja.zaishokuAddress = "現住所"; I18N.en.zaishokuAddress = "Address"; I18N
 I18N.ja.zaishokuBirthday = "生年月日"; I18N.en.zaishokuBirthday = "Date of birth"; I18N.pt.zaishokuBirthday = "Nascimento";
 I18N.ja.zaishokuNationality = "国籍"; I18N.en.zaishokuNationality = "Nationality"; I18N.pt.zaishokuNationality = "Nacionalidade";
 I18N.ja.zaishokuNyusha = "採用年月日"; I18N.en.zaishokuNyusha = "Hire date"; I18N.pt.zaishokuNyusha = "Data de admissão";
+// ホームお知らせ (却下/期限)
+I18N.ja.noticeRejectTitle = "前払い申請が却下されました"; I18N.en.noticeRejectTitle = "Your advance request was rejected"; I18N.pt.noticeRejectTitle = "Sua solicitação de adiantamento foi rejeitada";
+I18N.ja.noticeRejectBody = "内容をご確認ください。"; I18N.en.noticeRejectBody = "Please check the details."; I18N.pt.noticeRejectBody = "Verifique os detalhes.";
+I18N.ja.noticeViewHistory = "履歴を見る"; I18N.en.noticeViewHistory = "View history"; I18N.pt.noticeViewHistory = "Ver histórico";
+I18N.ja.noticeZairyuTitle = "在留カードの期限が近づいています"; I18N.en.noticeZairyuTitle = "Your Zairyu Card is expiring soon"; I18N.pt.noticeZairyuTitle = "Seu Cartão Zairyu está prestes a vencer";
+I18N.ja.noticeZairyuExpired = "在留カードの期限が切れています"; I18N.en.noticeZairyuExpired = "Your Zairyu Card has expired"; I18N.pt.noticeZairyuExpired = "Seu Cartão Zairyu venceu";
+I18N.ja.noticeLicenseTitle = "免許証の期限が近づいています"; I18N.en.noticeLicenseTitle = "Your driver's license is expiring soon"; I18N.pt.noticeLicenseTitle = "Sua carteira de motorista está prestes a vencer";
+I18N.ja.noticeLicenseExpired = "免許証の期限が切れています"; I18N.en.noticeLicenseExpired = "Your driver's license has expired"; I18N.pt.noticeLicenseExpired = "Sua carteira de motorista venceu";
+I18N.ja.noticeDaysLeft = "あと {n} 日（{date} まで）"; I18N.en.noticeDaysLeft = "{n} days left (until {date})"; I18N.pt.noticeDaysLeft = "Faltam {n} dias (até {date})";
+I18N.ja.noticeExpiresToday = "本日が期限です（{date}）"; I18N.en.noticeExpiresToday = "Expires today ({date})"; I18N.pt.noticeExpiresToday = "Vence hoje ({date})";
+I18N.ja.noticeExpired = "期限切れです（{date}）"; I18N.en.noticeExpired = "Expired ({date})"; I18N.pt.noticeExpired = "Vencido ({date})";
+I18N.ja.noticeExpiryHint = "新しいカードを撮影して提出してください。"; I18N.en.noticeExpiryHint = "Please take a photo of your new card and submit it."; I18N.pt.noticeExpiryHint = "Tire uma foto do seu novo cartão e envie.";
+I18N.ja.noticeSubmitZairyu = "在留カードを提出する"; I18N.en.noticeSubmitZairyu = "Submit Zairyu Card"; I18N.pt.noticeSubmitZairyu = "Enviar Cartão Zairyu";
+I18N.ja.noticeSubmitLicense = "免許証を提出する"; I18N.en.noticeSubmitLicense = "Submit driver's license"; I18N.pt.noticeSubmitLicense = "Enviar carteira de motorista";
 // コンビニ印刷 / 共有
 I18N.ja.close = "閉じる"; I18N.en.close = "Close"; I18N.pt.close = "Fechar";
 I18N.ja.sharePrintBtn = "保存・共有（コンビニ印刷用）"; I18N.en.sharePrintBtn = "Save / Share (for conbini print)"; I18N.pt.sharePrintBtn = "Salvar / Compartilhar (impressão conbini)";
@@ -3252,6 +3288,8 @@ function renderHome() {
     const el = document.getElementById(id);
     if (el) el.style.display = carOnly;
   });
+  // 期限お知らせを即時表示 (履歴取得を待たず profile から)
+  renderHomeNotices(state.historyCache ? state.historyCache.items : null);
   // 未確認の承認/却下件数バッジを更新 (履歴はキャッシュせず鮮度優先)
   state.historyCache = null;
   updateHistoryBadge();
@@ -3573,11 +3611,93 @@ async function updateHistoryBadge() {
       badge.classList.add('hidden');
       status.classList.add('hidden');
     }
+    renderHomeNotices(items);
   } catch (e) { /* silent */ }
 }
 
+// ====== ホームお知らせバナー (却下 / 期限) ======
+function daysUntil(iso) {
+  if (!iso) return null;
+  const d = new Date(iso + 'T00:00:00');
+  if (isNaN(d.getTime())) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.floor((d - today) / 86400000);
+}
+
+function _addNotice(wrap, cls, icon, title, bodyHtml, btnLabel, onClick) {
+  const n = document.createElement('div');
+  n.className = 'notice ' + cls;
+  const ic = document.createElement('div'); ic.className = 'n-icon'; ic.textContent = icon;
+  const body = document.createElement('div'); body.className = 'n-body';
+  const tt = document.createElement('div'); tt.className = 'n-title'; tt.textContent = title;
+  const bd = document.createElement('div'); bd.innerHTML = bodyHtml;
+  body.append(tt, bd);
+  if (btnLabel && onClick) {
+    const btn = document.createElement('button'); btn.className = 'n-btn'; btn.textContent = btnLabel;
+    btn.onclick = onClick;
+    body.append(btn);
+  }
+  n.append(ic, body);
+  wrap.append(n);
+}
+
+function renderHomeNotices(items) {
+  const wrap = document.getElementById('home-notices');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const p = state.profile || {};
+
+  // 1) 前払い却下 (未読のみ)
+  if (items && items.length) {
+    const seen = getSeenStatusMap();
+    const rejected = items.filter(it => (it.status || '').toLowerCase() === 'rejected' && seen[String(it.id)] !== 'rejected');
+    if (rejected.length) {
+      const latest = rejected[0]; // id desc
+      let bodyHtml = '<div>' + escNotice(t('noticeRejectBody')) + '</div>';
+      if (latest.rejectReason) {
+        bodyHtml += '<div style="margin-top:4px;"><b>' + escNotice(t('rejectReason')) + '：</b>' + escNotice(latest.rejectReason) + '</div>';
+      }
+      _addNotice(wrap, 'reject', '🚫', t('noticeRejectTitle'), bodyHtml, t('noticeViewHistory'), () => showScreen('history'));
+    }
+  }
+
+  // 2) 在留カードの期限 (外国籍のみ)
+  const isJp = String(p.kokuseki || '').includes('日本');
+  if (!isJp && p.zairyuKigen) {
+    const d = daysUntil(p.zairyuKigen);
+    if (d !== null && d <= 30) {
+      _addExpiryNotice(wrap, d, p.zairyuKigen, t('noticeZairyuTitle'), t('noticeZairyuExpired'), t('noticeSubmitZairyu'), 'zairyu');
+    }
+  }
+  // 3) 免許証の期限 (車通勤者のみ)
+  if (p.commutesByCar && p.menkyoKigen) {
+    const d = daysUntil(p.menkyoKigen);
+    if (d !== null && d <= 30) {
+      _addExpiryNotice(wrap, d, p.menkyoKigen, t('noticeLicenseTitle'), t('noticeLicenseExpired'), t('noticeSubmitLicense'), 'license');
+    }
+  }
+}
+
+function _addExpiryNotice(wrap, days, iso, titleNear, titleExpired, btnLabel, screen) {
+  const expired = days < 0;
+  const dateStr = fmtWareki(iso);
+  let line;
+  if (expired) line = t('noticeExpired').replace('{date}', dateStr);
+  else if (days === 0) line = t('noticeExpiresToday').replace('{date}', dateStr);
+  else line = t('noticeDaysLeft').replace('{n}', days).replace('{date}', dateStr);
+  const bodyHtml = '<div>' + escNotice(line) + '</div>' +
+                   '<div style="margin-top:3px;">' + escNotice(t('noticeExpiryHint')) + '</div>';
+  _addNotice(wrap, expired ? 'danger' : 'warn', expired ? '⛔' : '⚠️',
+             expired ? titleExpired : titleNear, bodyHtml, btnLabel, () => showScreen(screen));
+}
+
+function escNotice(s) {
+  const d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML;
+}
+
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v23';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v24';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 
