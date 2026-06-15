@@ -279,6 +279,7 @@
   .notice .n-title { font-weight: 800; font-size: 0.97em; }
   .notice .n-meta { font-size: 0.86em; font-weight: 700; opacity: 0.92; margin-top: 1px; }
   .notice .n-hint { font-size: 0.82em; opacity: 0.78; margin-top: 1px; }
+  .notice .n-date { font-size: 0.76em; font-weight: 600; opacity: 0.7; margin-top: 1px; }
   .notice .n-btn {
     display: inline-block; margin-top: 7px; padding: 6px 13px; border: none; border-radius: 8px;
     font-weight: 700; font-size: 0.88em; color: #fff; cursor: pointer;
@@ -1557,6 +1558,7 @@ I18N.ja.docNounMenkyo = "免許証"; I18N.en.docNounMenkyo = "driver's license";
 I18N.ja.docNounShaken = "車検証"; I18N.en.docNounShaken = "inspection certificate"; I18N.pt.docNounShaken = "certificado de inspeção";
 I18N.ja.docNounJibai = "保険証"; I18N.en.docNounJibai = "insurance certificate"; I18N.pt.docNounJibai = "certificado de seguro";
 I18N.ja.docNounNini = "任意保険証券"; I18N.en.docNounNini = "insurance policy"; I18N.pt.docNounNini = "apólice de seguro";
+I18N.ja.noticeContactDate = "📅 連絡日 {date}"; I18N.en.noticeContactDate = "📅 Notified {date}"; I18N.pt.noticeContactDate = "📅 Notificado {date}";
 I18N.ja.noticeSubmitZairyu = "在留カードを提出する"; I18N.en.noticeSubmitZairyu = "Submit Zairyu Card"; I18N.pt.noticeSubmitZairyu = "Enviar Cartão Zairyu";
 I18N.ja.noticeSubmitLicense = "免許証を提出する"; I18N.en.noticeSubmitLicense = "Submit driver's license"; I18N.pt.noticeSubmitLicense = "Enviar carteira de motorista";
 I18N.ja.noticeShakenTitle = "車検の期限が近づいています"; I18N.en.noticeShakenTitle = "Your vehicle inspection is expiring soon"; I18N.pt.noticeShakenTitle = "Sua inspeção (Shaken) está prestes a vencer";
@@ -3820,7 +3822,10 @@ function _addExpiryNotice(wrap, days, iso, titleNear, titleExpired, btnLabel, sc
   else if (days === 0) line = t('noticeExpiresToday').replace('{date}', dateStr);
   else line = t('noticeDaysLeft').replace('{n}', days).replace('{date}', dateStr);
   const hint = t('noticeExpiryHintTpl').replace('{doc}', docNoun || t('docNounZairyu'));
+  const now = new Date();
+  const contactStr = now.getFullYear() + '/' + (now.getMonth() + 1) + '/' + now.getDate();
   const bodyHtml = '<div class="n-meta">' + escNotice(line) + '</div>' +
+                   '<div class="n-date">' + escNotice(t('noticeContactDate').replace('{date}', contactStr)) + '</div>' +
                    '<div class="n-hint">' + escNotice(hint) + '</div>';
   _addNotice(wrap, expired ? 'danger' : 'warn', expired ? '⛔' : '⚠️',
              expired ? titleExpired : titleNear, bodyHtml, btnLabel, () => showScreen(screen));
@@ -3878,7 +3883,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v32';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v33';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 
