@@ -664,6 +664,7 @@
   <div style="text-align:center; margin-top:14px;">
     <button type="button" id="check-update-btn" class="check-update-btn" onclick="checkUpdate()" data-i18n="checkUpdate">🔄 更新を確認</button>
     <div id="version-tag" class="version-tag"></div>
+    <a href="javascript:void(0)" onclick="logout()" style="display:inline-block; margin-top:10px; font-size:0.8em; color:#999; text-decoration:underline;" data-i18n="switchAccount">別のアカウントでログイン</a>
   </div>
 </div>
 
@@ -1535,6 +1536,7 @@ I18N.ja.pushDenied = "通知が許可されませんでした。端末の設定�
 I18N.ja.pushUnsupported = "この端末/ブラウザは通知に対応していません。"; I18N.en.pushUnsupported = "This device/browser doesn't support notifications."; I18N.pt.pushUnsupported = "Este aparelho/navegador não suporta notificações.";
 I18N.ja.pushError = "通知の設定に失敗しました。"; I18N.en.pushError = "Failed to set up notifications."; I18N.pt.pushError = "Falha ao configurar as notificações.";
 I18N.ja.pushIosHint = "※ iPhoneは「ホーム画面に追加」してから開くと通知を受け取れます。"; I18N.en.pushIosHint = "* On iPhone, add to Home Screen first, then open it to receive notifications."; I18N.pt.pushIosHint = "* No iPhone, adicione à Tela de Início e abra por lá para receber notificações.";
+I18N.ja.switchAccount = "別のアカウントでログイン（ログアウト）"; I18N.en.switchAccount = "Sign in with another account (sign out)"; I18N.pt.switchAccount = "Entrar com outra conta (sair)";
 // コンビニ印刷 / 共有
 I18N.ja.close = "閉じる"; I18N.en.close = "Close"; I18N.pt.close = "Fechar";
 I18N.ja.sharePrintBtn = "保存・共有（コンビニ印刷用）"; I18N.en.sharePrintBtn = "Save / Share (for conbini print)"; I18N.pt.sharePrintBtn = "Salvar / Compartilhar (impressão conbini)";
@@ -3728,7 +3730,7 @@ function escNotice(s) {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v26';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v27';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 

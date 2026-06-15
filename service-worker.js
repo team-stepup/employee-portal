@@ -3,7 +3,7 @@
 //      API (Azure Functions) は network-only (キャッシュしない)。
 // 更新: 「🔄 更新」ボタンを押すと skipWaiting() で即時切替。
 
-const CACHE_NAME = 'portal-v26';
+const CACHE_NAME = 'portal-v27';
 const STATIC_ASSETS = ['/', '/index.html', '/manifest.json', '/logo.png', '/emblem.png', '/icon-192.png', '/icon-512.png', '/pdf-lib.min.js', '/zaishoku_jp.png', '/seal_stepup.png'];
 
 self.addEventListener('install', (event) => {
