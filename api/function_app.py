@@ -2935,7 +2935,7 @@ def daily_expiry_check(timer: func.TimerRequest) -> None:
                 title = "免許証の期限が切れています" if min_days < 0 else "免許証の期限が近づいています"
             body_txt = ("期限が切れています。" if min_days < 0
                         else f"期限まであと{min_days}日です。") + " アプリから新しいカードを提出してください。"
-            res = _send_web_push(tgt["sub"], {"title": title, "body": body_txt, "url": "/"})
+            res = _send_web_push(tgt["sub"], {"title": title, "body": body_txt, "url": "/", "badge": len(tgt["kinds"])})
             if res == "ok":
                 pushed += 1
             elif res == "gone":

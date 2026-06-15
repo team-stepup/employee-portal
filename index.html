@@ -3275,6 +3275,7 @@ function logout() {
   state.profile = null;
   state.datesCache = null;
   state.historyCache = null;
+  updateAppBadge(0);
   localStorage.removeItem("token");
   // 言語の明示選択フラグもリセット (次の人がログインしたら推奨言語で開く)
   localStorage.removeItem("langExplicit");
@@ -3642,7 +3643,31 @@ async function updateHistoryBadge() {
       status.classList.add('hidden');
     }
     renderHomeNotices(items);
+    // ホーム画面アイコンのバッジ = 未読の前払い(承認/却下) + 期限お知らせ件数
+    updateAppBadge(total + getExpiryNoticeCount());
   } catch (e) { /* silent */ }
+}
+
+// ====== ホーム画面アイコンのバッジ (Badging API) ======
+function updateAppBadge(count) {
+  try {
+    if ('setAppBadge' in navigator) {
+      if (count > 0) navigator.setAppBadge(count);
+      else navigator.clearAppBadge();
+    }
+  } catch (e) { /* 非対応端末は無視 */ }
+}
+
+// 期限お知らせの件数 (在留+免許のうち通知窓内)
+function getExpiryNoticeCount() {
+  const p = state.profile || {};
+  const WARN = 30, GRACE = 180;
+  const inWin = (d) => d !== null && d >= -GRACE && d <= WARN;
+  let n = 0;
+  const isJp = String(p.kokuseki || '').includes('日本');
+  if (!isJp && p.zairyuKigen && inWin(daysUntil(p.zairyuKigen))) n++;
+  if (p.commutesByCar && p.menkyoKigen && inWin(daysUntil(p.menkyoKigen))) n++;
+  return n;
 }
 
 // ====== ホームお知らせバナー (却下 / 期限) ======
@@ -3730,7 +3755,7 @@ function escNotice(s) {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v27';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v28';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 

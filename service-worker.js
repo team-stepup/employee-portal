@@ -3,7 +3,7 @@
 //      API (Azure Functions) は network-only (キャッシュしない)。
 // 更新: 「🔄 更新」ボタンを押すと skipWaiting() で即時切替。
 
-const CACHE_NAME = 'portal-v27';
+const CACHE_NAME = 'portal-v28';
 const STATIC_ASSETS = ['/', '/index.html', '/manifest.json', '/logo.png', '/emblem.png', '/icon-192.png', '/icon-512.png', '/pdf-lib.min.js', '/zaishoku_jp.png', '/seal_stepup.png'];
 
 self.addEventListener('install', (event) => {
@@ -58,7 +58,13 @@ self.addEventListener('push', (event) => {
     tag: data.tag || 'portal-notice',
     renotify: true,
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  const tasks = [self.registration.showNotification(title, options)];
+  // ホーム画面アイコンのバッジを設定 (対応端末・iOS16.4+のPWA)
+  if (self.navigator && 'setAppBadge' in self.navigator) {
+    const n = typeof data.badge === 'number' ? data.badge : 1;
+    tasks.push(self.navigator.setAppBadge(n).catch(() => {}));
+  }
+  event.waitUntil(Promise.all(tasks));
 });
 
 self.addEventListener('notificationclick', (event) => {
