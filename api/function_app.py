@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -68,6 +69,7 @@ F_ZAIRYU_NAME = "OData__x7279__x8a18__x4e8b__x9805__xff"  # 特記事項１ = �
 F_KOKUSEKI = "OData__x672c__x0028__x56fd__x0029__x7c"  # 本(国)籍
 F_ADDRESS = "OData__x4f4f__x6240_"                        # 住所 (Text)
 F_NYUSHA = "OData__x5165__x793e__x65e5_"                  # 入社日 (DateTime)
+F_PORTAL_PUSH = "PortalPushSub"                           # Web Push 購読情報 (Note, JSON) — ASCII名なのでOData_無し
 F_ZAIRYU_SHIKAKU = "OData__x5728__x7559__x8cc7__x683c_"  # 在留資格 (Text)
 F_ZAIRYU_KIGEN = "OData__x5728__x7559__x671f__x9650_"    # 在留期限 (DateTime)
 F_ZAIRYU_BIKO = "OData__x5728__x7559__xff1a__x5099__x80"  # 在留：備考1 (Text) — 在留カード番号格納用
@@ -2451,6 +2453,91 @@ def _send_notification_mail(subject: str, text: str, to_addr: Optional[str] = No
         logging.warning(f"notification mail failed: {e}")
 
 
+# ====== Web Push (Part C) ======
+_VAPID_PEM_PATH = None
+
+
+def _vapid_pem_path() -> Optional[str]:
+    """VAPID 秘密鍵 (base64 PEM) を /tmp に書き出してパスを返す。"""
+    global _VAPID_PEM_PATH
+    if _VAPID_PEM_PATH:
+        return _VAPID_PEM_PATH
+    b64 = os.environ.get("VAPID_PRIVATE_KEY_B64", "").strip()
+    if not b64:
+        return None
+    try:
+        pem = base64.b64decode(b64).decode()
+        path = os.path.join(tempfile.gettempdir(), "vapid_private.pem")
+        with open(path, "w") as f:
+            f.write(pem)
+        _VAPID_PEM_PATH = path
+        return path
+    except Exception:
+        logging.exception("vapid pem write failed")
+        return None
+
+
+def _send_web_push(sub_json: str, payload: Dict[str, Any]) -> str:
+    """1件の購読へ Web Push 送信。戻り: 'ok' | 'gone'(失効) | 'skip' | 'error'。"""
+    pem = _vapid_pem_path()
+    sub = os.environ.get("VAPID_SUBJECT", "").strip()
+    if not pem or not sub or not sub_json:
+        return "skip"
+    try:
+        from pywebpush import webpush, WebPushException
+        webpush(
+            subscription_info=json.loads(sub_json),
+            data=json.dumps(payload, ensure_ascii=False),
+            vapid_private_key=pem,
+            vapid_claims={"sub": sub},
+            timeout=15,
+        )
+        return "ok"
+    except Exception as e:
+        # 404/410 = 購読失効
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        if status in (404, 410):
+            return "gone"
+        logging.warning(f"web push failed: {e}")
+        return "error"
+
+
+@app.route(route="push/subscribe", methods=["POST", "OPTIONS"])
+def push_subscribe(req: func.HttpRequest) -> func.HttpResponse:
+    """ブラウザの Push 購読情報を本人の社員レコードに保存。
+    Body: { subscription: <PushSubscription JSON> } | { unsubscribe: true }"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    try:
+        emp = find_active_employee_by_shain(shain_no)
+        if not emp:
+            return _json_response({"error": "not_active"}, 403)
+        target_id = emp.get("Id")
+        if body.get("unsubscribe"):
+            sp_patch_item(LIST_SHAIN, int(target_id), {F_PORTAL_PUSH: ""})
+            return _json_response({"ok": True, "subscribed": False})
+        sub = body.get("subscription")
+        if not sub or not isinstance(sub, dict) or not sub.get("endpoint"):
+            return _json_response({"error": "invalid_subscription"}, 400)
+        sub_str = json.dumps(sub, ensure_ascii=False)
+        if len(sub_str) > 4000:
+            return _json_response({"error": "subscription_too_large"}, 400)
+        sp_patch_item(LIST_SHAIN, int(target_id), {F_PORTAL_PUSH: sub_str})
+        return _json_response({"ok": True, "subscribed": True})
+    except Exception as e:
+        logging.exception("push_subscribe failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
 @app.route(route="shorui/apply", methods=["POST", "OPTIONS"])
 def shorui_apply(req: func.HttpRequest) -> func.HttpResponse:
     """必要書類を請求。SP List「必要書類申請」に INSERT (Teams が List 監視で通知)。
@@ -2765,11 +2852,13 @@ def daily_expiry_check(timer: func.TimerRequest) -> None:
         items = sp_get_items(
             LIST_SHAIN,
             select=",".join(["Id", F_SHAIN_NO, F_SHAIN_NAME, F_BUKA, F_KOKUSEKI,
-                             F_TAISHA_DATE, F_ZAIRYU_KIGEN, F_MENKYO_KIGEN, F_TSUKIN_OLD, F_TSUKIN_NEW]),
+                             F_TAISHA_DATE, F_ZAIRYU_KIGEN, F_MENKYO_KIGEN, F_TSUKIN_OLD, F_TSUKIN_NEW,
+                             F_PORTAL_PUSH]),
             top=6000, orderby="Id desc",
         )
         seen_z, seen_m = set(), set()
         zairyu_rows, menkyo_rows = [], []
+        push_targets: Dict[Any, Dict[str, Any]] = {}  # 社員番号 → {sub, kinds:[...]}
         for it in items:
             no = it.get(F_SHAIN_NO)
             if no in seen_z and no in seen_m:
@@ -2780,6 +2869,15 @@ def daily_expiry_check(timer: func.TimerRequest) -> None:
             name = it.get(F_SHAIN_NAME) or ""
             kokuseki = it.get(F_KOKUSEKI) or ""
             haken = strip_buka_prefix(it.get(F_BUKA) or "")
+            sub_json = (it.get(F_PORTAL_PUSH) or "").strip()
+            emp_id = it.get("Id")
+
+            def _add_push(kind: str, days: int):
+                if not sub_json:
+                    return
+                t = push_targets.setdefault(no, {"sub": sub_json, "empId": emp_id, "kinds": []})
+                t["kinds"].append((kind, days))
+
             if no not in seen_z and "日本" not in kokuseki:
                 zk = _utc_to_jst_date(it.get(F_ZAIRYU_KIGEN))
                 if zk:
@@ -2787,6 +2885,7 @@ def daily_expiry_check(timer: func.TimerRequest) -> None:
                     if -EXPIRY_OVERDUE_GRACE <= days <= EXPIRY_WARN_DAYS:
                         zairyu_rows.append((days, no, name, zk, haken))
                         seen_z.add(no)
+                        _add_push("zairyu", days)
             if no not in seen_m and commutes_by_car(it):
                 mk = _utc_to_jst_date(it.get(F_MENKYO_KIGEN))
                 if mk:
@@ -2794,6 +2893,7 @@ def daily_expiry_check(timer: func.TimerRequest) -> None:
                     if -EXPIRY_OVERDUE_GRACE <= days <= EXPIRY_WARN_DAYS:
                         menkyo_rows.append((days, no, name, mk, haken))
                         seen_m.add(no)
+                        _add_push("menkyo", days)
         if not zairyu_rows and not menkyo_rows:
             logging.info("daily_expiry_check: 対象なし")
             return
@@ -2821,6 +2921,31 @@ def daily_expiry_check(timer: func.TimerRequest) -> None:
         subject = f"【期限アラート】在留/免許 {len(zairyu_rows) + len(menkyo_rows)}件 ({today.isoformat()})"
         _send_notification_mail(subject, text, to_addr=os.environ.get("EXPIRY_NOTIFY_EMAIL") or None)
         logging.info(f"daily_expiry_check sent: zairyu={len(zairyu_rows)} menkyo={len(menkyo_rows)}")
+
+        # 本人へ Web Push (購読済みのみ・提出するまで毎日)
+        pushed = gone = 0
+        for no, tgt in push_targets.items():
+            kinds = [k for k, _ in tgt["kinds"]]
+            min_days = min(d for _, d in tgt["kinds"])
+            if "zairyu" in kinds and "menkyo" in kinds:
+                title = "在留カード・免許証の期限のお知らせ"
+            elif "zairyu" in kinds:
+                title = "在留カードの期限が切れています" if min_days < 0 else "在留カードの期限が近づいています"
+            else:
+                title = "免許証の期限が切れています" if min_days < 0 else "免許証の期限が近づいています"
+            body_txt = ("期限が切れています。" if min_days < 0
+                        else f"期限まであと{min_days}日です。") + " アプリから新しいカードを提出してください。"
+            res = _send_web_push(tgt["sub"], {"title": title, "body": body_txt, "url": "/"})
+            if res == "ok":
+                pushed += 1
+            elif res == "gone":
+                gone += 1
+                try:
+                    sp_patch_item(LIST_SHAIN, int(tgt["empId"]), {F_PORTAL_PUSH: ""})  # 失効購読を削除
+                except Exception:
+                    pass
+        if push_targets:
+            logging.info(f"daily_expiry_check web push: ok={pushed} gone={gone} total={len(push_targets)}")
     except Exception as e:
         logging.exception(f"daily_expiry_check failed: {e}")
 
