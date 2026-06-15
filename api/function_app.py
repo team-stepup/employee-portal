@@ -2843,6 +2843,56 @@ EXPIRY_WARN_DAYS = 30        # 期限の何日前から通知するか
 EXPIRY_OVERDUE_GRACE = 180   # 期限切れ後この日数まで通知 (これ以上前は古い未更新データとみなし除外)
 
 
+def _notify_lang(kokuseki: str) -> str:
+    """通知言語: 日本人=ja / フィリピン人=en / それ以外(ブラジル含む)=pt。"""
+    k = kokuseki or ""
+    if "日本" in k:
+        return "ja"
+    if "フィリピン" in k or "philippin" in k.lower():
+        return "en"
+    return "pt"
+
+
+# 期限通知の本文 (push 用・本人の国籍言語で送る)
+_NOTIFY_TEXT = {
+    "ja": {
+        "zairyu_near": "在留カードの期限が近づいています", "zairyu_exp": "在留カードの期限が切れています",
+        "menkyo_near": "免許証の期限が近づいています", "menkyo_exp": "免許証の期限が切れています",
+        "both": "在留カード・免許証の期限のお知らせ",
+        "body_near": "期限まであと{n}日です。アプリから新しい書類を提出してください。",
+        "body_exp": "期限が切れています。アプリから新しい書類を提出してください。",
+    },
+    "en": {
+        "zairyu_near": "Your residence card is expiring soon", "zairyu_exp": "Your residence card has expired",
+        "menkyo_near": "Your driver's license is expiring soon", "menkyo_exp": "Your driver's license has expired",
+        "both": "Residence card / driver's license expiry notice",
+        "body_near": "{n} days until expiry. Please submit your new document in the app.",
+        "body_exp": "It has expired. Please submit your new document in the app.",
+    },
+    "pt": {
+        "zairyu_near": "Seu cartão de permanência está prestes a vencer", "zairyu_exp": "Seu cartão de permanência venceu",
+        "menkyo_near": "Sua carteira de motorista está prestes a vencer", "menkyo_exp": "Sua carteira de motorista venceu",
+        "both": "Aviso de vencimento (cartão de permanência / carteira)",
+        "body_near": "Faltam {n} dias para o vencimento. Envie o novo documento no aplicativo.",
+        "body_exp": "Está vencido. Envie o novo documento no aplicativo.",
+    },
+}
+
+
+def _build_expiry_push(kinds: List[str], min_days: int, kokuseki: str) -> Dict[str, str]:
+    """本人の国籍言語で push の title/body を作る。"""
+    T = _NOTIFY_TEXT.get(_notify_lang(kokuseki), _NOTIFY_TEXT["pt"])
+    expired = min_days < 0
+    if "zairyu" in kinds and "menkyo" in kinds:
+        title = T["both"]
+    elif "zairyu" in kinds:
+        title = T["zairyu_exp"] if expired else T["zairyu_near"]
+    else:
+        title = T["menkyo_exp"] if expired else T["menkyo_near"]
+    body = T["body_exp"] if expired else T["body_near"].format(n=min_days)
+    return {"title": title, "body": body}
+
+
 @app.timer_trigger(schedule="0 0 23 * * *", arg_name="timer", run_on_startup=False)
 def daily_expiry_check(timer: func.TimerRequest) -> None:
     """毎日 23:00 UTC (=08:00 JST)。在留カード(外国籍)/免許証(車通勤)の期限が
@@ -2875,7 +2925,7 @@ def daily_expiry_check(timer: func.TimerRequest) -> None:
             def _add_push(kind: str, days: int):
                 if not sub_json:
                     return
-                t = push_targets.setdefault(no, {"sub": sub_json, "empId": emp_id, "kinds": []})
+                t = push_targets.setdefault(no, {"sub": sub_json, "empId": emp_id, "kinds": [], "kokuseki": kokuseki})
                 t["kinds"].append((kind, days))
 
             if no not in seen_z and "日本" not in kokuseki:
@@ -2927,15 +2977,9 @@ def daily_expiry_check(timer: func.TimerRequest) -> None:
         for no, tgt in push_targets.items():
             kinds = [k for k, _ in tgt["kinds"]]
             min_days = min(d for _, d in tgt["kinds"])
-            if "zairyu" in kinds and "menkyo" in kinds:
-                title = "在留カード・免許証の期限のお知らせ"
-            elif "zairyu" in kinds:
-                title = "在留カードの期限が切れています" if min_days < 0 else "在留カードの期限が近づいています"
-            else:
-                title = "免許証の期限が切れています" if min_days < 0 else "免許証の期限が近づいています"
-            body_txt = ("期限が切れています。" if min_days < 0
-                        else f"期限まであと{min_days}日です。") + " アプリから新しいカードを提出してください。"
-            res = _send_web_push(tgt["sub"], {"title": title, "body": body_txt, "url": "/", "badge": len(tgt["kinds"])})
+            msg = _build_expiry_push(kinds, min_days, tgt.get("kokuseki", ""))
+            res = _send_web_push(tgt["sub"], {"title": msg["title"], "body": msg["body"],
+                                              "url": "/", "badge": len(tgt["kinds"])})
             if res == "ok":
                 pushed += 1
             elif res == "gone":
