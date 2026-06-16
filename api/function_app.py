@@ -43,6 +43,15 @@ LIST_KAISHA_KYUJITSU = "37973404-3c0a-4e02-a64a-6d15b633d072"
 LIST_MAEBARAI_SHINSEI = "9e84553c-73ec-405b-862f-6caaae65900f"
 LIST_MAEBARAI_OLD = "d34be315-365a-460f-976e-fb8da6977cec"
 LIST_SHORUI = "772de2a2-79b2-4ead-9361-f57a969b8002"  # 必要書類申請 (Teams List監視通知)
+LIST_SOUGEI = "60569629-38e0-4dcb-9a73-c5f2904e3036"  # 送迎連絡 (派遣先別・帰り便/終業時間。当日表示+恒久記録)
+# 送迎連絡 List フィールド (ASCII名なので read/write とも OData_ プレフィックス無し)
+SG_DATE = "TargetDate"      # 対象日 (DateOnly)
+SG_SHAINNO = "ShainNo"      # 社員番号 (人単位配信用)
+SG_HAKENSAKI = "Hakensaki"  # 派遣先 (prefix除去済み名)
+SG_ENDTIME = "EndTime"      # 終業時間 (例 "17:00")
+SG_VEHICLE = "Vehicle"      # 帰りの車両 (例 "1号車")
+SG_MEMO = "Memo"            # 補足メモ
+SG_SENTBY = "SentBy"        # 送信者 (staff email)
 
 # 必要書類申請 List フィールド (POST は OData_ プレフィックス無し)
 SH_SHAIN_NO = "_x793e__x54e1__x756a__x53f7_"
@@ -136,6 +145,12 @@ def commutes_by_car(emp: Dict[str, Any]) -> bool:
         if kw in combined:
             return True
     return False
+
+
+def commutes_by_sougei(emp: Dict[str, Any]) -> bool:
+    """通勤方法フィールドから送迎利用かを判定。"""
+    combined = str(emp.get(F_TSUKIN_OLD) or "") + " " + str(emp.get(F_TSUKIN_NEW) or "")
+    return "送迎" in combined
 
 
 def guess_lang_from_kokuseki(kokuseki: Optional[str]) -> str:
@@ -918,9 +933,51 @@ def _iso_or_none(d: Any) -> Optional[str]:
     return d.isoformat() if d else None
 
 
+def _today_jst() -> _dt.date:
+    return (_dt.datetime.utcnow() + _dt.timedelta(hours=9)).date()
+
+
+def _norm_shain(v: Any) -> str:
+    """社員番号を整数文字列に正規化 (SPはNumber型で 70381.0 と float化される)。"""
+    s = str(v if v is not None else "").strip()
+    if s.endswith(".0"):
+        s = s[:-2]
+    return s
+
+
+def _fetch_today_sougei(shain_no: Any) -> Optional[Dict[str, Any]]:
+    """当日・本人(社員番号一致)の送迎連絡レコード(最新)を返す。無ければ None。"""
+    if shain_no in (None, ""):
+        return None
+    sn = _norm_shain(shain_no)
+    today = _today_jst()
+    try:
+        items = sp_get_items(
+            LIST_SOUGEI,
+            select=",".join(["Id", SG_DATE, SG_SHAINNO, SG_HAKENSAKI, SG_ENDTIME, SG_VEHICLE, SG_MEMO]),
+            filter_=f"{SG_SHAINNO} eq '{sn}'",
+            orderby="Id desc", top=10,
+        )
+    except Exception:
+        logging.warning("送迎連絡の取得に失敗")
+        return None
+    for it in items:
+        if _utc_to_jst_date(it.get(SG_DATE)) != today:
+            continue
+        return {
+            "endTime": it.get(SG_ENDTIME) or "",
+            "vehicle": it.get(SG_VEHICLE) or "",
+            "memo": it.get(SG_MEMO) or "",
+            "hakensaki": it.get(SG_HAKENSAKI) or "",
+            "date": today.isoformat(),
+        }
+    return None
+
+
 def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
     buka_text = emp.get(F_BUKA) or ""
     kokuseki = emp.get(F_KOKUSEKI) or ""
+    is_sougei = commutes_by_sougei(emp)
     zairyu_kigen = _utc_to_jst_date(emp.get(F_ZAIRYU_KIGEN))
     menkyo_kigen = _utc_to_jst_date(emp.get(F_MENKYO_KIGEN))
     return {
@@ -938,6 +995,9 @@ def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
         "meigi": emp.get(F_MEIGI),
         "zaiyokuSyubetu": emp.get(F_ZAIYOKU),
         "commutesByCar": commutes_by_car(emp),
+        "commutesBySougei": is_sougei,
+        # 送迎の帰り便連絡 (当日・本人宛のみ。無ければ null)
+        "todaySougei": _fetch_today_sougei(emp.get(F_SHAIN_NO)) if is_sougei else None,
         # 期限お知らせ用 (在留カード/免許証/車検/自賠責/任意保険)
         "zairyuKigen": zairyu_kigen.isoformat() if zairyu_kigen else None,
         "menkyoKigen": menkyo_kigen.isoformat() if menkyo_kigen else None,
@@ -3297,3 +3357,209 @@ def yukyu_file_ocr(req: func.HttpRequest) -> func.HttpResponse:
 
     logging.info("yukyu file-ocr by %s docType=%s files=%d", email, doc_type, len(images_bytes))
     return _json_response({"ocr": result, "files": used_files, "docType": doc_type})
+
+
+# ====== 送迎連絡: 当日の帰り便を派遣先別に従業員へ配信 (Push + ホームバナー) ======
+_SOUGEI_TPL = {
+    "ja": {"title": "🚐 Step Up からお知らせ",
+           "tv": "本日の帰り：終業 {time} ／ 車両 {vehicle}",
+           "t": "本日の帰り：終業 {time}",
+           "v": "本日の帰り：車両 {vehicle}"},
+    "en": {"title": "🚐 Notice from Step Up",
+           "tv": "Ride home today: ends {time} / vehicle {vehicle}",
+           "t": "Ride home today: ends {time}",
+           "v": "Ride home today: vehicle {vehicle}"},
+    "pt": {"title": "🚐 Aviso da Step Up",
+           "tv": "Volta de hoje: término {time} / veículo {vehicle}",
+           "t": "Volta de hoje: término {time}",
+           "v": "Volta de hoje: veículo {vehicle}"},
+}
+
+
+def _build_sougei_push(end_time: str, vehicle: str, kokuseki: str) -> Dict[str, str]:
+    T = _SOUGEI_TPL[_notify_lang(kokuseki)]
+    if end_time and vehicle:
+        body = T["tv"].format(time=end_time, vehicle=vehicle)
+    elif end_time:
+        body = T["t"].format(time=end_time)
+    elif vehicle:
+        body = T["v"].format(vehicle=vehicle)
+    else:
+        body = T["title"]
+    return {"title": T["title"], "body": body}
+
+
+def _push_sougei(hakensaki: str, end_time: str, vehicle: str) -> Tuple[int, int]:
+    """該当派遣先の送迎社員へ Web Push。戻り (pushed, targets)。"""
+    norm = strip_buka_prefix(hakensaki)
+    today = _today_jst()
+    try:
+        emps = sp_get_items(
+            LIST_SHAIN,
+            select=",".join(["Id", F_SHAIN_NO, F_BUKA, F_KOKUSEKI,
+                             F_TSUKIN_OLD, F_TSUKIN_NEW, F_TAISHA_DATE, F_PORTAL_PUSH]),
+            top=10000,
+        )
+    except Exception:
+        logging.exception("送迎社員の取得に失敗")
+        return 0, 0
+    pushed = 0
+    targets = 0
+    for e in emps:
+        taisha = _utc_to_jst_date(e.get(F_TAISHA_DATE))
+        if taisha is not None and taisha < today:
+            continue
+        if strip_buka_prefix(e.get(F_BUKA) or "") != norm:
+            continue
+        if not commutes_by_sougei(e):
+            continue
+        targets += 1
+        sub = (e.get(F_PORTAL_PUSH) or "").strip()
+        if not sub:
+            continue
+        msg = _build_sougei_push(end_time, vehicle, e.get(F_KOKUSEKI) or "")
+        res = _send_web_push(sub, {"title": msg["title"], "body": msg["body"],
+                                   "url": "/", "tag": "sougei-notice", "badge": 1})
+        if res == "ok":
+            pushed += 1
+        elif res == "gone":
+            try:
+                sp_patch_item(LIST_SHAIN, int(e["Id"]), {F_PORTAL_PUSH: ""})
+            except Exception:
+                pass
+    return pushed, targets
+
+
+@app.route(route="yukyu/sougei-send", methods=["POST", "OPTIONS"])
+def yukyu_sougei_send(req: func.HttpRequest) -> func.HttpResponse:
+    """送迎連絡: 派遣先別に当日の帰り便/終業時間を保存し、送迎社員へ Push。
+    Body: { hakensaki, endTime, vehicle, memo?, date? }。staff 認証必須。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    hakensaki = strip_buka_prefix(str(body.get("hakensaki") or "").strip())
+    end_time = str(body.get("endTime") or "").strip()
+    vehicle = str(body.get("vehicle") or "").strip()
+    memo = str(body.get("memo") or "").strip()
+    if not hakensaki:
+        return _json_response({"error": "missing_hakensaki"}, 400)
+    if not end_time and not vehicle:
+        return _json_response({"error": "empty_message"}, 400)
+    date_str = str(body.get("date") or "").strip()
+    today = _today_jst()
+    try:
+        target = _dt.date.fromisoformat(date_str) if date_str else today
+    except Exception:
+        target = today
+    # 1) 恒久記録 (毎回 INSERT。受信側/プリフィルは最新 Id を採用)
+    try:
+        rec_id = sp_post_item(LIST_SOUGEI, {
+            "Title": f"{target.isoformat()} {hakensaki}",
+            SG_DATE: target.strftime("%Y/%m/%d"),
+            SG_HAKENSAKI: hakensaki,
+            SG_ENDTIME: end_time,
+            SG_VEHICLE: vehicle,
+            SG_MEMO: memo,
+            SG_SENTBY: email,
+        })
+    except Exception as e:
+        logging.exception("送迎連絡の保存に失敗")
+        return _json_response({"error": "save_failed", "detail": str(e)}, 500)
+    # 2) 送迎社員へ Push (当日のみ)
+    pushed, targets = (0, 0)
+    if target == today:
+        pushed, targets = _push_sougei(hakensaki, end_time, vehicle)
+    logging.info("送迎連絡 by %s 派遣先=%s 終業=%s 車両=%s targets=%d pushed=%d",
+                 email, hakensaki, end_time, vehicle, targets, pushed)
+    return _json_response({"ok": True, "recordId": rec_id, "hakensaki": hakensaki,
+                           "date": target.isoformat(), "targets": targets, "pushed": pushed})
+
+
+@app.route(route="yukyu/sougei-send-batch", methods=["POST", "OPTIONS"])
+def yukyu_sougei_send_batch(req: func.HttpRequest) -> func.HttpResponse:
+    """送迎連絡(人単位): assignments[{shainNo,hakensaki,endTime,vehicle}] を保存し本人へ Push。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    assignments = body.get("assignments") or []
+    if not isinstance(assignments, list) or not assignments:
+        return _json_response({"error": "no_assignments"}, 400)
+    date_str = str(body.get("date") or "").strip()
+    today = _today_jst()
+    try:
+        target = _dt.date.fromisoformat(date_str) if date_str else today
+    except Exception:
+        target = today
+    # 本人の push購読/国籍を引くため在職社員を1回取得 → 社員番号→最新レコード
+    by_no: Dict[str, Dict[str, Any]] = {}
+    try:
+        emps = sp_get_items(
+            LIST_SHAIN,
+            select=",".join(["Id", F_SHAIN_NO, F_KOKUSEKI, F_TAISHA_DATE, F_PORTAL_PUSH]),
+            top=10000,
+        )
+        for e in emps:
+            taisha = _utc_to_jst_date(e.get(F_TAISHA_DATE))
+            if taisha is not None and taisha < today:
+                continue
+            sn = _norm_shain(e.get(F_SHAIN_NO))
+            if sn and sn not in by_no:
+                by_no[sn] = e
+    except Exception:
+        logging.exception("社員一覧の取得に失敗")
+    saved = 0
+    pushed = 0
+    errors = 0
+    for a in assignments:
+        try:
+            sn = _norm_shain(a.get("shainNo"))
+            et = str(a.get("endTime") or "").strip()
+            veh = str(a.get("vehicle") or "").strip()
+            hk = strip_buka_prefix(str(a.get("hakensaki") or "").strip())
+            if not sn or (not et and not veh):
+                continue
+            sp_post_item(LIST_SOUGEI, {
+                "Title": f"{target.isoformat()} {sn}",
+                SG_DATE: target.strftime("%Y/%m/%d"),
+                SG_SHAINNO: sn,
+                SG_HAKENSAKI: hk,
+                SG_ENDTIME: et,
+                SG_VEHICLE: veh,
+                SG_MEMO: "",
+                SG_SENTBY: email,
+            })
+            saved += 1
+            if target == today:
+                emp = by_no.get(sn)
+                sub = (emp.get(F_PORTAL_PUSH) or "").strip() if emp else ""
+                if sub:
+                    msg = _build_sougei_push(et, veh, emp.get(F_KOKUSEKI) or "")
+                    res = _send_web_push(sub, {"title": msg["title"], "body": msg["body"],
+                                               "url": "/", "tag": "sougei-notice", "badge": 1})
+                    if res == "ok":
+                        pushed += 1
+                    elif res == "gone":
+                        try:
+                            sp_patch_item(LIST_SHAIN, int(emp["Id"]), {F_PORTAL_PUSH: ""})
+                        except Exception:
+                            pass
+        except Exception:
+            errors += 1
+            logging.exception("送迎連絡(人単位)の1件処理に失敗")
+    logging.info("送迎連絡batch by %s saved=%d pushed=%d errors=%d", email, saved, pushed, errors)
+    return _json_response({"ok": True, "saved": saved, "pushed": pushed, "errors": errors,
+                           "date": target.isoformat()})
