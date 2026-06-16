@@ -292,6 +292,8 @@
   .notice.reject { background: #fdecea; border: 1.5px solid #f5b3ad; color: #a01b10; }
   .notice.plan   { background: #e8f3fb; border: 1.5px solid #abd2ef; color: #0f4c7a; }
   .notice.plan .n-btn { background: linear-gradient(135deg,#42a5f5,#1565c0); }
+  .notice.sougei { background: #e6f6f1; border: 1.5px solid #6fcbb3; color: #04604a; }
+  .notice.sougei .n-meta { font-size: 0.95em; opacity: 1; }
   /* プッシュ通知トグル */
   .push-toggle {
     display: block; width: 100%; padding: 13px; border-radius: 11px; cursor: pointer;
@@ -1559,6 +1561,10 @@ I18N.ja.docNounShaken = "車検証"; I18N.en.docNounShaken = "inspection certifi
 I18N.ja.docNounJibai = "保険証"; I18N.en.docNounJibai = "insurance certificate"; I18N.pt.docNounJibai = "certificado de seguro";
 I18N.ja.docNounNini = "任意保険証券"; I18N.en.docNounNini = "insurance policy"; I18N.pt.docNounNini = "apólice de seguro";
 I18N.ja.noticeContactDate = "📅 連絡日 {date}"; I18N.en.noticeContactDate = "📅 Notified {date}"; I18N.pt.noticeContactDate = "📅 Notificado {date}";
+// 送迎の帰り便連絡 (当日)
+I18N.ja.sougeiTitle = "本日の帰りの送迎"; I18N.en.sougeiTitle = "Today's ride home"; I18N.pt.sougeiTitle = "Transporte de volta de hoje";
+I18N.ja.sougeiEndTime = "終業 {time}"; I18N.en.sougeiEndTime = "Ends at {time}"; I18N.pt.sougeiEndTime = "Término às {time}";
+I18N.ja.sougeiVehicle = "車両 {vehicle}"; I18N.en.sougeiVehicle = "Vehicle: {vehicle}"; I18N.pt.sougeiVehicle = "Veículo: {vehicle}";
 I18N.ja.noticeSubmitZairyu = "在留カードを提出する"; I18N.en.noticeSubmitZairyu = "Submit Zairyu Card"; I18N.pt.noticeSubmitZairyu = "Enviar Cartão Zairyu";
 I18N.ja.noticeSubmitLicense = "免許証を提出する"; I18N.en.noticeSubmitLicense = "Submit driver's license"; I18N.pt.noticeSubmitLicense = "Enviar carteira de motorista";
 I18N.ja.noticeShakenTitle = "車検の期限が近づいています"; I18N.en.noticeShakenTitle = "Your vehicle inspection is expiring soon"; I18N.pt.noticeShakenTitle = "Sua inspeção (Shaken) está prestes a vencer";
@@ -3697,8 +3703,9 @@ async function updateHistoryBadge() {
       status.classList.add('hidden');
     }
     renderHomeNotices(items);
-    // ホーム画面アイコンのバッジ = 未読の前払い(承認/却下) + 期限お知らせ件数
-    updateAppBadge(total + getExpiryNoticeCount());
+    // ホーム画面アイコンのバッジ = 未読の前払い(承認/却下) + 期限お知らせ件数 + 当日の送迎連絡
+    const sgCount = (state.profile && state.profile.todaySougei && (state.profile.todaySougei.endTime || state.profile.todaySougei.vehicle)) ? 1 : 0;
+    updateAppBadge(total + getExpiryNoticeCount() + sgCount);
   } catch (e) { /* silent */ }
 }
 
@@ -3770,6 +3777,16 @@ function renderHomeNotices(items) {
   if (!wrap) return;
   wrap.innerHTML = '';
   const p = state.profile || {};
+
+  // 0) 送迎の帰り便連絡 (当日のみ。最上部に表示)
+  const sg = p.todaySougei;
+  if (sg && (sg.endTime || sg.vehicle)) {
+    let line = '';
+    if (sg.endTime) line += '<div class="n-meta">' + escNotice(t('sougeiEndTime').replace('{time}', sg.endTime)) + '</div>';
+    if (sg.vehicle) line += '<div class="n-meta">' + escNotice(t('sougeiVehicle').replace('{vehicle}', sg.vehicle)) + '</div>';
+    if (sg.memo) line += '<div class="n-hint">' + escNotice(sg.memo) + '</div>';
+    _addNotice(wrap, 'sougei', '🚐', t('sougeiTitle'), line, null, null);
+  }
 
   // 1) 前払い却下 (未読のみ)
   if (items && items.length) {
@@ -3883,7 +3900,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v33';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v34';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 
