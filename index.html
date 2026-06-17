@@ -1540,6 +1540,7 @@ I18N.ja.shoruiZaishokuDone = "✅ 在職証明書を発行しました"; I18N.en
 I18N.ja.shoruiZaishokuError = "在職証明書の生成に失敗しました"; I18N.en.shoruiZaishokuError = "Failed to generate the certificate"; I18N.pt.shoruiZaishokuError = "Falha ao gerar o certificado";
 I18N.ja.zaishokuName = "氏名"; I18N.en.zaishokuName = "Name"; I18N.pt.zaishokuName = "Nome";
 I18N.ja.zaishokuAddress = "現住所"; I18N.en.zaishokuAddress = "Address"; I18N.pt.zaishokuAddress = "Endereço";
+I18N.ja.missingPinLogin = "社員番号とPINを入力してください。"; I18N.en.missingPinLogin = "Please enter your employee number and PIN."; I18N.pt.missingPinLogin = "Digite o número do funcionário e o PIN.";
 I18N.ja.zaishokuBirthday = "生年月日"; I18N.en.zaishokuBirthday = "Date of birth"; I18N.pt.zaishokuBirthday = "Nascimento";
 I18N.ja.zaishokuNationality = "国籍"; I18N.en.zaishokuNationality = "Nationality"; I18N.pt.zaishokuNationality = "Nacionalidade";
 I18N.ja.zaishokuNyusha = "採用年月日"; I18N.en.zaishokuNyusha = "Hire date"; I18N.pt.zaishokuNyusha = "Data de admissão";
@@ -1758,6 +1759,10 @@ function applyI18n() {
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.getAttribute('data-i18n');
     el.textContent = t(key);
+  });
+  // 動的に表示中のインラインエラー(社員番号入力エラー等)も言語切替で再翻訳
+  document.querySelectorAll('[data-i18n-key]').forEach(el => {
+    if (!el.classList.contains('hidden')) el.textContent = t(el.getAttribute('data-i18n-key'));
   });
   document.documentElement.lang = currentLang;
   // 全 lang-btn に active クラスを付け直し
@@ -3170,9 +3175,13 @@ function showLoginMode(mode) {
   });
 }
 
-function _showInlineError(id, msg) {
+function _showInlineError(id, msg, key) {
   const el = document.getElementById(id);
-  if (el) { el.textContent = msg; el.classList.remove('hidden'); }
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  // i18nキーを保持 → 言語切替時に applyI18n が再翻訳する
+  if (key) el.setAttribute('data-i18n-key', key); else el.removeAttribute('data-i18n-key');
 }
 
 // 通常ログイン: 社員番号 + PIN
@@ -3181,7 +3190,7 @@ async function tryPinLogin() {
   const pin = document.getElementById('login-pin').value;
   document.getElementById('login-error').classList.add('hidden');
   if (!shainNo || !pin) {
-    _showInlineError('login-error', t('missingLoginFields'));
+    _showInlineError('login-error', t('missingPinLogin'), 'missingPinLogin');
     return;
   }
   showLoading(true);
@@ -3203,9 +3212,9 @@ async function tryPinLogin() {
       document.getElementById('setup-shainno').value = shainNo;
       _showInlineError('setup-error', t('firstTimeDesc'));
     } else if (e.status === 401) {
-      _showInlineError('login-error', t('pinWrong'));
+      _showInlineError('login-error', t('pinWrong'), 'pinWrong');
     } else {
-      _showInlineError('login-error', t('networkError'));
+      _showInlineError('login-error', t('networkError'), 'networkError');
     }
   } finally {
     showLoading(false);
@@ -3219,7 +3228,7 @@ async function tryVerifyForSetup() {
   const telLast4 = document.getElementById('setup-tel').value;
   document.getElementById('setup-error').classList.add('hidden');
   if (!shainNo || !birthday || !telLast4) {
-    _showInlineError('setup-error', t('missingLoginFields'));
+    _showInlineError('setup-error', t('missingLoginFields'), 'missingLoginFields');
     return;
   }
   showLoading(true);
@@ -3266,11 +3275,11 @@ async function tryVerifyForSetup() {
       const remainMin = Math.ceil(((e.data && e.data.remainingSeconds) || 1800) / 60);
       _showInlineError('setup-error', t('lockedOut').replace('{min}', remainMin));
     } else if (e.status === 401) {
-      _showInlineError('setup-error', t('authFailed'));
+      _showInlineError('setup-error', t('authFailed'), 'authFailed');
     } else if (e.status === 403) {
-      _showInlineError('setup-error', t('notActive'));
+      _showInlineError('setup-error', t('notActive'), 'notActive');
     } else {
-      _showInlineError('setup-error', t('networkError'));
+      _showInlineError('setup-error', t('networkError'), 'networkError');
     }
   } finally {
     showLoading(false);
@@ -3283,11 +3292,11 @@ async function trySetPin() {
   const pin2 = document.getElementById('newpin2').value;
   document.getElementById('newpin-error').classList.add('hidden');
   if (!/^\d{4}$/.test(pin1)) {
-    _showInlineError('newpin-error', t('pinInvalid'));
+    _showInlineError('newpin-error', t('pinInvalid'), 'pinInvalid');
     return;
   }
   if (pin1 !== pin2) {
-    _showInlineError('newpin-error', t('pinMismatch'));
+    _showInlineError('newpin-error', t('pinMismatch'), 'pinMismatch');
     return;
   }
   if (!_setupToken) {
@@ -3316,13 +3325,13 @@ async function trySetPin() {
     showScreen('home');
   } catch (e) {
     if (e.status === 400 && e.data && e.data.error === 'invalid_pin') {
-      _showInlineError('newpin-error', t('pinInvalid'));
+      _showInlineError('newpin-error', t('pinInvalid'), 'pinInvalid');
     } else if (e.status === 401 || e.status === 403) {
       // setup トークン期限切れ → 最初からやり直し
-      _showInlineError('newpin-error', t('networkError'));
+      _showInlineError('newpin-error', t('networkError'), 'networkError');
       showLoginMode('setup');
     } else {
-      _showInlineError('newpin-error', t('networkError'));
+      _showInlineError('newpin-error', t('networkError'), 'networkError');
     }
   } finally {
     showLoading(false);
@@ -3900,7 +3909,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v34';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v35';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 
