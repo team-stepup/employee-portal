@@ -3345,12 +3345,15 @@ def yukyu_file_ocr(req: func.HttpRequest) -> func.HttpResponse:
     if not images_bytes:
         return _json_response({"error": "no_images"}, 400)
 
+    # モデル指定(任意): 既定 gpt-4o-mini。在留カード等で精度が要る時に gpt-4o を選べる
+    req_model = str(body.get("model") or "").strip()
+    use_model = req_model if req_model in ("gpt-4o-mini", "gpt-4o") else None
     try:
         if doc_type == "zairyu":
             result = _g.extract_zairyu_fields(
-                images_bytes[0], images_bytes[1] if len(images_bytes) > 1 else None)
+                images_bytes[0], images_bytes[1] if len(images_bytes) > 1 else None, model=use_model)
         else:
-            result = _g.extract_doc_fields(doc_type, images_bytes)
+            result = _g.extract_doc_fields(doc_type, images_bytes, model=use_model)
     except Exception as e:
         logging.exception("yukyu file-ocr failed")
         return _json_response({"error": "ocr_failed", "detail": str(e)}, 500)
@@ -3386,6 +3389,35 @@ def _build_sougei_push(end_time: str, vehicle: str, kokuseki: str) -> Dict[str, 
         body = T["v"].format(vehicle=vehicle)
     else:
         body = T["title"]
+    return {"title": T["title"], "body": body}
+
+
+# 運転手向けマニフェスト(乗車者一覧) テンプレート
+_SOUGEI_DRV_TPL = {
+    "ja": {"title": "🚐 Step Up 本日の送迎（運転）", "head": "本日のあなたの便：",
+           "empty": "本日の送迎担当はなくなりました（変更）", "cnt": "（計{n}名）", "sep": " ／ ", "nm": "・"},
+    "en": {"title": "🚐 Step Up — your ride today", "head": "Your passengers today: ",
+           "empty": "No passengers assigned today (updated)", "cnt": " ({n})", "sep": " / ", "nm": ", "},
+    "pt": {"title": "🚐 Step Up — sua condução hoje", "head": "Seus passageiros hoje: ",
+           "empty": "Sem passageiros hoje (atualizado)", "cnt": " ({n})", "sep": " / ", "nm": ", "},
+}
+
+
+def _build_driver_manifest_push(riders: List[Dict[str, str]], kokuseki: str) -> Dict[str, str]:
+    """運転手へ送る乗車者マニフェスト。riders=[{name,endTime}]。時間別にまとめる。"""
+    T = _SOUGEI_DRV_TPL[_notify_lang(kokuseki)]
+    riders = [r for r in (riders or []) if (str(r.get("name") or "").strip() or str(r.get("endTime") or "").strip())]
+    if not riders:
+        return {"title": T["title"], "body": T["empty"]}
+    by_time: Dict[str, List[str]] = {}
+    for r in riders:
+        t = str(r.get("endTime") or "-").strip() or "-"
+        by_time.setdefault(t, []).append(str(r.get("name") or "").strip())
+    parts = []
+    for t in sorted(by_time.keys()):
+        names = T["nm"].join([n for n in by_time[t] if n])
+        parts.append(f"{t} {names}".strip())
+    body = T["head"] + T["sep"].join(parts) + T["cnt"].format(n=len(riders))
     return {"title": T["title"], "body": body}
 
 
@@ -3521,8 +3553,36 @@ def yukyu_sougei_send_batch(req: func.HttpRequest) -> func.HttpResponse:
                 by_no[sn] = e
     except Exception:
         logging.exception("社員一覧の取得に失敗")
+    # 当日の前回送信レコードを取得 → 差分送信(終業 or 運転手が変わった人だけ通知)
+    prev_today: Dict[str, Dict[str, str]] = {}
+    if target == today:
+        try:
+            recs = sp_get_items(
+                LIST_SOUGEI,
+                select=",".join(["Id", SG_DATE, SG_SHAINNO, SG_ENDTIME, SG_VEHICLE]),
+                orderby="Id desc", top=1000,
+            )
+            for it in recs:
+                if _utc_to_jst_date(it.get(SG_DATE)) != today:
+                    continue
+                sn0 = _norm_shain(it.get(SG_SHAINNO))
+                if sn0 and sn0 not in prev_today:
+                    prev_today[sn0] = {"endTime": it.get(SG_ENDTIME) or "", "vehicle": it.get(SG_VEHICLE) or ""}
+        except Exception:
+            logging.warning("送迎連絡の前回記録取得に失敗")
+    # 運転手通知: vehicleラベル→運転手社員番号 / 現在の便(運転手別 乗車者一覧)
+    driver_by_vehicle = body.get("driverByVehicle") or {}
+    cur_by_driver: Dict[str, List[Dict[str, str]]] = {}
+    for a in assignments:
+        dsn = _norm_shain(a.get("driverShainNo"))
+        if not dsn:
+            continue
+        cur_by_driver.setdefault(dsn, []).append(
+            {"name": str(a.get("name") or ""), "endTime": str(a.get("endTime") or "")})
+    affected_drivers: set = set()
     saved = 0
     pushed = 0
+    unchanged = 0
     errors = 0
     for a in assignments:
         try:
@@ -3531,6 +3591,11 @@ def yukyu_sougei_send_batch(req: func.HttpRequest) -> func.HttpResponse:
             veh = str(a.get("vehicle") or "").strip()
             hk = strip_buka_prefix(str(a.get("hakensaki") or "").strip())
             if not sn or (not et and not veh):
+                continue
+            # 差分: 当日の前回記録と同じ(終業+運転手)なら再通知しない
+            prev = prev_today.get(sn)
+            if prev is not None and prev.get("endTime") == et and prev.get("vehicle") == veh:
+                unchanged += 1
                 continue
             sp_post_item(LIST_SOUGEI, {
                 "Title": f"{target.isoformat()} {sn}",
@@ -3543,6 +3608,14 @@ def yukyu_sougei_send_batch(req: func.HttpRequest) -> func.HttpResponse:
                 SG_SENTBY: email,
             })
             saved += 1
+            # 変わった人の「新しい運転手」と「前の運転手」を通知対象に
+            dsn_new = _norm_shain(a.get("driverShainNo"))
+            if dsn_new:
+                affected_drivers.add(dsn_new)
+            if prev is not None:
+                old_dsn = _norm_shain(driver_by_vehicle.get(prev.get("vehicle")))
+                if old_dsn:
+                    affected_drivers.add(old_dsn)
             if target == today:
                 emp = by_no.get(sn)
                 sub = (emp.get(F_PORTAL_PUSH) or "").strip() if emp else ""
@@ -3560,6 +3633,33 @@ def yukyu_sougei_send_batch(req: func.HttpRequest) -> func.HttpResponse:
         except Exception:
             errors += 1
             logging.exception("送迎連絡(人単位)の1件処理に失敗")
-    logging.info("送迎連絡batch by %s saved=%d pushed=%d errors=%d", email, saved, pushed, errors)
-    return _json_response({"ok": True, "saved": saved, "pushed": pushed, "errors": errors,
-                           "date": target.isoformat()})
+    # 運転手へ「本日のあなたの便(乗車者一覧)」を通知 (影響のあった運転手のみ・当日のみ)
+    driver_targets = 0
+    driver_pushed = 0
+    if target == today and affected_drivers:
+        for dsn in affected_drivers:
+            try:
+                emp = by_no.get(dsn)
+                if not emp:
+                    continue   # 運転手が社員Listに無い/退社 → 通知不可
+                driver_targets += 1
+                sub = (emp.get(F_PORTAL_PUSH) or "").strip()
+                if not sub:
+                    continue   # 通知OFF(未購読) → 届かない
+                msg = _build_driver_manifest_push(cur_by_driver.get(dsn, []), emp.get(F_KOKUSEKI) or "")
+                res = _send_web_push(sub, {"title": msg["title"], "body": msg["body"],
+                                           "url": "/", "tag": "sougei-driver", "badge": 1})
+                if res == "ok":
+                    driver_pushed += 1
+                elif res == "gone":
+                    try:
+                        sp_patch_item(LIST_SHAIN, int(emp["Id"]), {F_PORTAL_PUSH: ""})
+                    except Exception:
+                        pass
+            except Exception:
+                logging.exception("送迎連絡 運転手通知の1件に失敗")
+    logging.info("送迎連絡batch by %s saved=%d pushed=%d unchanged=%d errors=%d drvTargets=%d drvPushed=%d",
+                 email, saved, pushed, unchanged, errors, driver_targets, driver_pushed)
+    return _json_response({"ok": True, "saved": saved, "pushed": pushed, "unchanged": unchanged,
+                           "errors": errors, "date": target.isoformat(),
+                           "driverTargets": driver_targets, "driverPushed": driver_pushed})

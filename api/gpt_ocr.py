@@ -75,10 +75,10 @@ ZAIRYU_USER = """この在留カードの画像から以下の項目を抽出し
 """
 
 
-def extract_zairyu_fields(front_bytes: bytes, back_bytes: Optional[bytes] = None) -> Dict[str, Any]:
-    """在留カード画像(表/任意で裏)から主要項目を GPT-4o-mini で抽出して dict で返す。"""
+def extract_zairyu_fields(front_bytes: bytes, back_bytes: Optional[bytes] = None, model: Optional[str] = None) -> Dict[str, Any]:
+    """在留カード画像(表/任意で裏)から主要項目を抽出して dict で返す。model 省略時は既定(gpt-4o-mini)。"""
     client = _get_client()
-    deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+    deployment = model or os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
     content = [{"type": "text", "text": ZAIRYU_USER},
                {"type": "image_url", "image_url": {"url": _data_url(front_bytes), "detail": "high"}}]
     if back_bytes:
@@ -99,7 +99,7 @@ def extract_zairyu_fields(front_bytes: bytes, back_bytes: Optional[bytes] = None
     except Exception:
         logging.error("GPT OCR returned non-JSON: %s", txt[:500])
         out = {}
-    out["engine"] = "gpt-4o-mini"
+    out["engine"] = deployment
     # 使用トークン (コスト把握用)
     try:
         out["_usage"] = {
@@ -208,13 +208,13 @@ DOC_PROMPTS: Dict[str, Dict[str, str]] = {
 }
 
 
-def extract_doc_fields(doc_type: str, images: list) -> Dict[str, Any]:
-    """書類タイプ別の汎用抽出。images は bytes のリスト (表/裏/複数ページ)。"""
+def extract_doc_fields(doc_type: str, images: list, model: Optional[str] = None) -> Dict[str, Any]:
+    """書類タイプ別の汎用抽出。images は bytes のリスト (表/裏/複数ページ)。model 省略時は既定。"""
     spec = DOC_PROMPTS.get(doc_type)
     if not spec:
         raise ValueError(f"unknown doc_type: {doc_type}")
     client = _get_client()
-    deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+    deployment = model or os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
     content = [{"type": "text", "text": spec["user"]}]
     for b in images[:4]:
         content.append({"type": "image_url", "image_url": {"url": _data_url(b), "detail": "high"}})
@@ -234,7 +234,7 @@ def extract_doc_fields(doc_type: str, images: list) -> Dict[str, Any]:
     except Exception:
         logging.error("GPT doc OCR returned non-JSON: %s", txt[:500])
         out = {}
-    out["engine"] = "gpt-4o-mini"
+    out["engine"] = deployment
     try:
         out["_usage"] = {"prompt": resp.usage.prompt_tokens, "completion": resp.usage.completion_tokens}
     except Exception:
