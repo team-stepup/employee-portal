@@ -3,6 +3,7 @@ azure-identity
 azure-data-tables
 azure-ai-documentintelligence
 openai
+anthropic
 requests
 pyjwt
 pywebpush

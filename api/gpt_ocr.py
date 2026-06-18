@@ -9,11 +9,65 @@ API キーは保持しない。
 """
 import os
 import json
+import re
 import base64
 import logging
 from typing import Dict, Any, Optional
 
 _client = None
+_claude = None
+
+# Claude (Anthropic) ビジョン OCR — 複雑漢字/数字の読取精度が高い。ANTHROPIC_API_KEY 設定時のみ有効。
+CLAUDE_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+
+
+def _claude_client():
+    """Anthropic クライアント。ANTHROPIC_API_KEY が無ければ None。"""
+    global _claude
+    if _claude is not None:
+        return _claude
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not key:
+        return None
+    import anthropic
+    _claude = anthropic.Anthropic(api_key=key)
+    return _claude
+
+
+def _extract_via_claude(system: str, user_prompt: str, images: list) -> Dict[str, Any]:
+    """Claude ビジョンで画像→JSON抽出。ANTHROPIC_API_KEY 必須(無ければ RuntimeError)。"""
+    client = _claude_client()
+    if client is None:
+        raise RuntimeError("ANTHROPIC_API_KEY not set")
+    content = [{"type": "text", "text": user_prompt}]
+    for b in images[:4]:
+        if not b:
+            continue
+        content.append({"type": "image", "source": {
+            "type": "base64", "media_type": "image/jpeg",
+            "data": base64.b64encode(b).decode("ascii")}})
+    resp = client.messages.create(
+        model=CLAUDE_MODEL, max_tokens=1000, temperature=0,
+        system=system + " 出力は JSON オブジェクトのみ。前後に説明やコードフェンスを付けない。",
+        messages=[{"role": "user", "content": content}],
+    )
+    txt = "".join(getattr(b, "text", "") for b in resp.content).strip()
+    m = re.search(r"\{.*\}", txt, re.S)
+    try:
+        out = json.loads(m.group(0) if m else txt)
+    except Exception:
+        logging.error("Claude OCR non-JSON: %s", txt[:500])
+        out = {}
+    out["engine"] = CLAUDE_MODEL
+    try:
+        out["_usage"] = {"prompt": resp.usage.input_tokens, "completion": resp.usage.output_tokens}
+    except Exception:
+        pass
+    return out
+
+
+def _use_claude(model: Optional[str]) -> bool:
+    return bool(model) and str(model).startswith("claude")
 
 
 def _get_client():
@@ -80,9 +134,17 @@ ZAIRYU_USER = """この在留カードの画像から以下の項目を抽出し
 
 
 def extract_zairyu_fields(front_bytes: bytes, back_bytes: Optional[bytes] = None, model: Optional[str] = None) -> Dict[str, Any]:
-    """在留カード画像(表/任意で裏)から主要項目を抽出して dict で返す。model 省略時は既定(gpt-4o-mini)。"""
+    """在留カード画像(表/任意で裏)から主要項目を抽出して dict で返す。
+    model='claude...' なら Claude ビジョン(高精度)、それ以外は Azure OpenAI。省略時は既定(gpt-4o-mini)。"""
+    if _use_claude(model):
+        try:
+            imgs = [front_bytes] + ([back_bytes] if back_bytes else [])
+            return _extract_via_claude(ZAIRYU_SYSTEM, ZAIRYU_USER, imgs)
+        except Exception as e:
+            logging.warning("Claude zairyu OCR failed, fallback to gpt-4o: %s", e)
+            model = "gpt-4o"   # Claude不可(キー無し等)→ gpt-4o にフォールバック
     client = _get_client()
-    deployment = model or os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+    deployment = model if model in ("gpt-4o", "gpt-4o-mini") else os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
     content = [{"type": "text", "text": ZAIRYU_USER},
                {"type": "image_url", "image_url": {"url": _data_url(front_bytes), "detail": "high"}}]
     if back_bytes:
@@ -213,12 +275,18 @@ DOC_PROMPTS: Dict[str, Dict[str, str]] = {
 
 
 def extract_doc_fields(doc_type: str, images: list, model: Optional[str] = None) -> Dict[str, Any]:
-    """書類タイプ別の汎用抽出。images は bytes のリスト (表/裏/複数ページ)。model 省略時は既定。"""
+    """書類タイプ別の汎用抽出。images は bytes のリスト。model='claude...' なら Claude、それ以外 Azure。"""
     spec = DOC_PROMPTS.get(doc_type)
     if not spec:
         raise ValueError(f"unknown doc_type: {doc_type}")
+    if _use_claude(model):
+        try:
+            return _extract_via_claude(spec["system"], spec["user"], images)
+        except Exception as e:
+            logging.warning("Claude doc OCR failed (%s), fallback to gpt-4o: %s", doc_type, e)
+            model = "gpt-4o"
     client = _get_client()
-    deployment = model or os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+    deployment = model if model in ("gpt-4o", "gpt-4o-mini") else os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
     content = [{"type": "text", "text": spec["user"]}]
     for b in images[:4]:
         content.append({"type": "image_url", "image_url": {"url": _data_url(b), "detail": "high"}})

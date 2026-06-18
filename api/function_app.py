@@ -3345,9 +3345,12 @@ def yukyu_file_ocr(req: func.HttpRequest) -> func.HttpResponse:
     if not images_bytes:
         return _json_response({"error": "no_images"}, 400)
 
-    # モデル指定(任意): 既定 gpt-4o-mini。在留カード等で精度が要る時に gpt-4o を選べる
+    # モデル指定(任意): 既定 gpt-4o-mini。gpt-4o / claude(=Claudeビジョン, 要ANTHROPIC_API_KEY) を選べる
     req_model = str(body.get("model") or "").strip()
-    use_model = req_model if req_model in ("gpt-4o-mini", "gpt-4o") else None
+    if req_model in ("gpt-4o-mini", "gpt-4o") or req_model.startswith("claude"):
+        use_model = req_model
+    else:
+        use_model = None
     try:
         if doc_type == "zairyu":
             result = _g.extract_zairyu_fields(
