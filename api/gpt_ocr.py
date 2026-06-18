@@ -246,6 +246,9 @@ DOC_PROMPTS: Dict[str, Dict[str, str]] = {
 - "bankBranch": 支店名 (例 "豊田支店")。
 - "bankAccount": 口座番号 (数字のみ7桁)。
 - "bankMeigi": 口座名義 (カタカナ。記載のまま)。
+※ゆうちょ銀行の場合: カードに『記号(5桁) 番号(最大8桁)』が記載されている。
+  bankAccount には**この「記号-番号」をそのまま**入れる(例 "12340-56980741")。店番・口座番号への変換はしない(アプリ側で変換)。
+  bankBranch は空(null)でよい。
 """ + _COMMON_RULES,
     },
     "mynumber": {
