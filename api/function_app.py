@@ -1472,6 +1472,101 @@ def bento_approve(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"error": "internal", "detail": str(e)}, 500)
 
 
+# --- 弁当: 朝の集計メール (モリマコトのアドレスから自動送信) ---
+BENTO_WD = ['月', '火', '水', '木', '金', '土', '日']
+
+
+def _bento_compose_mail(d: _dt.date, orders: List[Dict[str, Any]]):
+    cnt = {k: 0 for k in BENTO_ORDER_LABEL}
+    total_yen = 0
+    total_n = 0
+    for o in orders:
+        mn = str(o.get("MenuNo") or "")
+        try:
+            p = int(float(o.get("Price") or BENTO_MENU.get(mn, 0)))
+        except Exception:
+            p = BENTO_MENU.get(mn, 0)
+        if mn in cnt:
+            cnt[mn] += 1
+        total_yen += p
+        total_n += 1
+    subj = f"本日（{d.month}/{d.day}（{BENTO_WD[d.weekday()]}））のお弁当注文です"
+    if total_n == 0:
+        lines = ["本日のお弁当注文はありませんでした。"]
+    else:
+        lines = [f"{k} {BENTO_MENU[k]:,}円 × {cnt[k]}食" for k in BENTO_ORDER_LABEL if cnt[k]]
+        lines.append("─────────────")
+        lines.append(f"合計 {total_n}食 ／ {total_yen:,}円")
+    body = ("お世話になります。\nステップアップの森です。\n\n"
+            "下記の通り、注文をお願いします。\n\n" + "\n".join(lines) +
+            "\n\n以上よろしくお願いします。")
+    return subj, body
+
+
+def _bento_send_summary(dry: bool = False) -> Dict[str, Any]:
+    """当日の承認済みを集計し、モリマコト(BENTO_MAIL_FROM)から BENTO_MAIL_TO へ送信。"""
+    d = _today_jst()
+    flt = f"OrderDate eq datetime'{d.isoformat()}T00:00:00' and OrderStatus eq 'approved'"
+    orders = sp_get_items(LIST_BENTO, select="Id,MenuNo,Price,EmpName", filter_=flt, top=500)
+    subj, body = _bento_compose_mail(d, orders)
+    sender = os.environ.get("BENTO_MAIL_FROM", "m.mori@team-stepup.com").strip()
+    to_addr = os.environ.get("BENTO_MAIL_TO", "h.yamashita@team-stepup.com").strip()
+    res = {"date": d.isoformat(), "count": len(orders), "subject": subj, "body": body,
+           "from": sender, "to": to_addr, "sent": False}
+    if dry:
+        return res
+    token = _get_graph_token()
+    payload = {"message": {"subject": subj, "body": {"contentType": "Text", "content": body},
+                           "toRecipients": [{"emailAddress": {"address": to_addr}}]},
+               "saveToSentItems": True}
+    r = requests.post(f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail",
+                      headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                      json=payload, timeout=30)
+    if not r.ok:
+        res["error"] = f"{r.status_code} {r.text[:300]}"
+        return res
+    res["sent"] = True
+    return res
+
+
+@app.timer_trigger(arg_name="timer", schedule="0 5 0 * * 1-5", run_on_startup=False, use_monitor=True)
+def bento_morning_mail_timer(timer: func.TimerRequest) -> None:
+    """毎朝9:05 JST(=00:05 UTC) 平日。稼働日のみ当日の弁当注文集計をメール送信。"""
+    try:
+        d = _today_jst()
+        if not _bento_is_working_day(d):
+            logging.info("弁当朝メール: %s は稼働日でないためスキップ", d)
+            return
+        res = _bento_send_summary(dry=False)
+        logging.info("弁当朝メール: sent=%s count=%d to=%s err=%s",
+                     res.get("sent"), res.get("count"), res.get("to"), res.get("error"))
+    except Exception:
+        logging.exception("弁当朝メール(timer)に失敗")
+
+
+@app.route(route="bento/send-summary", methods=["POST", "OPTIONS"])
+def bento_send_summary(req: func.HttpRequest) -> func.HttpResponse:
+    """テスト/手動再送用: 当日の集計メールを送信(またはdry=trueでプレビュー)。総務/役員(staff)のみ。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json()
+    except Exception:
+        body = {}
+    dry = bool(body.get("dry"))
+    try:
+        res = _bento_send_summary(dry=dry)
+        res["ok"] = True
+        return _json_response(res)
+    except Exception as e:
+        logging.exception("bento_send_summary failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
 @app.route(route="maebarai/cancel", methods=["POST", "OPTIONS"])
 def maebarai_cancel(req: func.HttpRequest) -> func.HttpResponse:
     """本人が pending 申請を取り消す。
