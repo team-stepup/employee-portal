@@ -996,9 +996,10 @@ def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
         "zaiyokuSyubetu": emp.get(F_ZAIYOKU),
         "commutesByCar": commutes_by_car(emp),
         "commutesBySougei": is_sougei,
-        # 弁当注文 (ユーシン/委託管理のみ表示・モリマコトは承認者)
+        # 弁当注文: 注文はユーシン/委託管理のみ。承認は yukyu-app(役員/森まこと/森ゆうじ)で行うため
+        # ポータルには承認UIを出さない (派遣社員=注文する側のみ)
         "bentoEligible": (("ユーシン" in strip_buka_prefix(buka_text)) or ("ﾕｰｼﾝ" in strip_buka_prefix(buka_text))),
-        "isBentoApprover": (_norm_shain(emp.get(F_SHAIN_NO)) == "50500"),
+        "isBentoApprover": False,
         # 送迎の帰り便連絡 (当日・本人宛のみ。無ければ null)
         "todaySougei": _fetch_today_sougei(emp.get(F_SHAIN_NO)) if is_sougei else None,
         # 期限お知らせ用 (在留カード/免許証/車検/自賠責/任意保険)
@@ -1377,7 +1378,7 @@ def bento_order(req: func.HttpRequest) -> func.HttpResponse:
         "Hakensaki": strip_buka_prefix(emp.get(F_BUKA) or ""),
         "MenuNo": menu_no, "Price": str(price), "OrderStatus": "pending",
     })
-    _bento_push_morimakoto(name, menu_no, price)
+    # 承認は yukyu-app 側(役員/森まこと/森ゆうじ)で行うため、ポータルPush(モリマコト宛)は送らない
     return _json_response({"ok": True, "id": new_id, "menuNo": menu_no, "price": price})
 
 
@@ -1499,7 +1500,7 @@ def _bento_compose_mail(d: _dt.date, orders: List[Dict[str, Any]]):
             cnt[mn] += 1
         total_yen += p
         total_n += 1
-    subj = f"本日（{d.month}/{d.day}（{BENTO_WD[d.weekday()]}））のお弁当注文です"
+    subj = f"本日 {d.month}/{d.day}（{BENTO_WD[d.weekday()]}）のお弁当注文です"
     if total_n == 0:
         lines = ["本日のお弁当注文はありませんでした。"]
     else:
@@ -1520,17 +1521,33 @@ def _bento_send_summary(dry: bool = False) -> Dict[str, Any]:
     subj, body = _bento_compose_mail(d, orders)
     sender = os.environ.get("BENTO_MAIL_FROM", "m.mori@team-stepup.com").strip()
     to_addr = os.environ.get("BENTO_MAIL_TO", "h.yamashita@team-stepup.com").strip()
+    cc_addr = os.environ.get("BENTO_MAIL_CC", "").strip()
+    as_draft = os.environ.get("BENTO_MAIL_DRAFT", "1").strip() != "0"   # 既定=下書き保存(送信しない)
     res = {"date": d.isoformat(), "count": len(orders), "subject": subj, "body": body,
-           "from": sender, "to": to_addr, "sent": False}
+           "from": sender, "to": to_addr, "cc": cc_addr,
+           "mode": ("draft" if as_draft else "send"), "sent": False, "draftSaved": False, "draftId": None}
     if dry:
         return res
     token = _get_graph_token()
-    payload = {"message": {"subject": subj, "body": {"contentType": "Text", "content": body},
-                           "toRecipients": [{"emailAddress": {"address": to_addr}}]},
-               "saveToSentItems": True}
+    msg = {"subject": subj, "body": {"contentType": "Text", "content": body},
+           "toRecipients": [{"emailAddress": {"address": to_addr}}]}
+    if cc_addr:
+        msg["ccRecipients"] = [{"emailAddress": {"address": a.strip()}} for a in cc_addr.split(",") if a.strip()]
+    if as_draft:
+        # 森まこと(sender)のメールボックスに【下書き】として保存。送信はしない(本人がOutlookで確認→送信)。Mail.ReadWrite。
+        r = requests.post(f"https://graph.microsoft.com/v1.0/users/{sender}/messages",
+                          headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                          json=msg, timeout=30)
+        if not r.ok:
+            res["error"] = f"{r.status_code} {r.text[:300]}"
+            return res
+        res["draftSaved"] = True
+        res["draftId"] = r.json().get("id")
+        return res
+    # 送信モード (Mail.Send)
     r = requests.post(f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail",
                       headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                      json=payload, timeout=30)
+                      json={"message": msg, "saveToSentItems": True}, timeout=30)
     if not r.ok:
         res["error"] = f"{r.status_code} {r.text[:300]}"
         return res
@@ -1547,8 +1564,8 @@ def bento_morning_mail_timer(timer: func.TimerRequest) -> None:
             logging.info("弁当朝メール: %s は稼働日でないためスキップ", d)
             return
         res = _bento_send_summary(dry=False)
-        logging.info("弁当朝メール: sent=%s count=%d to=%s err=%s",
-                     res.get("sent"), res.get("count"), res.get("to"), res.get("error"))
+        logging.info("弁当朝メール: mode=%s draftSaved=%s sent=%s count=%d to=%s err=%s",
+                     res.get("mode"), res.get("draftSaved"), res.get("sent"), res.get("count"), res.get("to"), res.get("error"))
     except Exception:
         logging.exception("弁当朝メール(timer)に失敗")
 
