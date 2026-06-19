@@ -1234,6 +1234,11 @@ def _now_jst() -> _dt.datetime:
     return _dt.datetime.utcnow() + _dt.timedelta(hours=9)
 
 
+def _bento_test_open() -> bool:
+    """env BENTO_TEST_OPEN=1 のとき、稼働日/9:00締切のゲートを一時的に解除(テスト用)。"""
+    return os.environ.get("BENTO_TEST_OPEN", "").strip() == "1"
+
+
 def _bento_eligible(emp: Dict[str, Any]) -> bool:
     """ユーシン本体(002) または ユーシン委託管理(002-1) の従業員のみ。"""
     buka = strip_buka_prefix(emp.get(F_BUKA) or "")
@@ -1305,6 +1310,9 @@ def bento_status(req: func.HttpRequest) -> func.HttpResponse:
     today = _today_jst()
     working = _bento_is_working_day(today)
     deadline_passed = _now_jst().hour >= BENTO_DEADLINE_HOUR
+    if _bento_test_open():                 # テストモード: ゲート解除
+        working = True
+        deadline_passed = False
     to = _bento_today_order(shain_str, today)
     already = bool(to and (to.get("OrderStatus") in ("pending", "approved")))
     if not eligible:
@@ -1353,10 +1361,11 @@ def bento_order(req: func.HttpRequest) -> func.HttpResponse:
     if not _bento_eligible(emp):
         return _json_response({"error": "not_eligible"}, 403)
     today = _today_jst()
-    if not _bento_is_working_day(today):
-        return _json_response({"error": "holiday"}, 400)
-    if _now_jst().hour >= BENTO_DEADLINE_HOUR:
-        return _json_response({"error": "deadline_passed"}, 400)
+    if not _bento_test_open():             # テストモード時はゲート無効
+        if not _bento_is_working_day(today):
+            return _json_response({"error": "holiday"}, 400)
+        if _now_jst().hour >= BENTO_DEADLINE_HOUR:
+            return _json_response({"error": "deadline_passed"}, 400)
     if _bento_today_order(shain_str, today):
         return _json_response({"error": "already_ordered"}, 409)
     name = emp.get(F_SHAIN_NAME) or ""
