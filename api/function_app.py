@@ -996,6 +996,9 @@ def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
         "zaiyokuSyubetu": emp.get(F_ZAIYOKU),
         "commutesByCar": commutes_by_car(emp),
         "commutesBySougei": is_sougei,
+        # 弁当注文 (ユーシン/委託管理のみ表示・モリマコトは承認者)
+        "bentoEligible": (("ユーシン" in strip_buka_prefix(buka_text)) or ("ﾕｰｼﾝ" in strip_buka_prefix(buka_text))),
+        "isBentoApprover": (_norm_shain(emp.get(F_SHAIN_NO)) == "50500"),
         # 送迎の帰り便連絡 (当日・本人宛のみ。無ければ null)
         "todaySougei": _fetch_today_sougei(emp.get(F_SHAIN_NO)) if is_sougei else None,
         # 期限お知らせ用 (在留カード/免許証/車検/自賠責/任意保険)
@@ -1216,6 +1219,256 @@ def maebarai_history(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"items": out})
     except Exception as e:
         logging.exception("maebarai_history failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+# ====== 弁当注文 (ユーシン/委託管理・当日AM9:00まで・モリマコト承認) ======
+LIST_BENTO = "1d0f9e26-ad32-4fc0-8c9e-02f22a87fe35"
+BENTO_MENU = {"①": 315, "④": 355, "⑥": 460}
+BENTO_ORDER_LABEL = ["①", "④", "⑥"]
+BENTO_DEADLINE_HOUR = 9                 # 当日 09:00 まで
+MORIMAKOTO_SHAIN = "50500"              # 承認担当(モリマコト)
+
+
+def _now_jst() -> _dt.datetime:
+    return _dt.datetime.utcnow() + _dt.timedelta(hours=9)
+
+
+def _bento_eligible(emp: Dict[str, Any]) -> bool:
+    """ユーシン本体(002) または ユーシン委託管理(002-1) の従業員のみ。"""
+    buka = strip_buka_prefix(emp.get(F_BUKA) or "")
+    return ("ユーシン" in buka) or ("ﾕｰｼﾝ" in buka)
+
+
+def _bento_is_working_day(d: _dt.date) -> bool:
+    if d.weekday() >= 5:                # 土日
+        return False
+    try:
+        if d in set(list_kaisha_kyujitsu_dates()):
+            return False
+    except Exception:
+        logging.warning("会社休日の取得に失敗(弁当稼働日判定)")
+    return True
+
+
+def _bento_today_order(shain_str: str, d: _dt.date) -> Optional[Dict[str, Any]]:
+    try:
+        items = sp_get_items(
+            LIST_BENTO,
+            select="Id,OrderDate,MenuNo,Price,OrderStatus,RejectReason",
+            filter_=f"ShainNo eq '{shain_str}' and OrderDate eq datetime'{d.isoformat()}T00:00:00'",
+            orderby="Id desc", top=5)
+        for it in items:
+            if (it.get("OrderStatus") or "") in ("pending", "approved"):
+                return it
+        return items[0] if items else None
+    except Exception:
+        logging.exception("弁当: 当日注文の取得に失敗")
+        return None
+
+
+def _bento_push_morimakoto(emp_name: str, menu_no: str, price: int) -> None:
+    """新規注文をモリマコトへ Push (購読していれば)。"""
+    try:
+        recs = sp_get_items(LIST_SHAIN,
+                            select=f"Id,{F_SHAIN_NO},{F_PORTAL_PUSH}",
+                            filter_=f"{F_SHAIN_NO} eq {MORIMAKOTO_SHAIN}", orderby="Id desc", top=3)
+        rec = recs[0] if recs else None
+        sub = (rec.get(F_PORTAL_PUSH) or "").strip() if rec else ""
+        if not sub:
+            return
+        res = _send_web_push(sub, {"title": "🍱 弁当注文 承認待ち",
+                                   "body": f"{emp_name} さん {menu_no} {price}円",
+                                   "url": "/", "tag": "bento-approve", "badge": 1})
+        if res == "gone" and rec:
+            try:
+                sp_patch_item(LIST_SHAIN, int(rec["Id"]), {F_PORTAL_PUSH: ""})
+            except Exception:
+                pass
+    except Exception:
+        logging.exception("弁当: モリマコトへのPushに失敗")
+
+
+@app.route(route="bento/status", methods=["GET", "OPTIONS"])
+def bento_status(req: func.HttpRequest) -> func.HttpResponse:
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_str = str(payload["shainNo"])
+    emp = find_active_employee_by_shain(payload["shainNo"])
+    if not emp:
+        return _json_response({"error": "not_active"}, 403)
+    eligible = _bento_eligible(emp)
+    today = _today_jst()
+    working = _bento_is_working_day(today)
+    deadline_passed = _now_jst().hour >= BENTO_DEADLINE_HOUR
+    to = _bento_today_order(shain_str, today)
+    already = bool(to and (to.get("OrderStatus") in ("pending", "approved")))
+    if not eligible:
+        reason = "not_eligible"
+    elif not working:
+        reason = "holiday"
+    elif already:
+        reason = "already_ordered"
+    elif deadline_passed:
+        reason = "deadline_passed"
+    else:
+        reason = "ok"
+    return _json_response({
+        "ok": True, "eligible": eligible, "today": today.isoformat(),
+        "isWorkingDay": working, "deadlineHour": BENTO_DEADLINE_HOUR,
+        "deadlinePassed": deadline_passed, "canOrder": (reason == "ok"), "reason": reason,
+        "isApprover": (shain_str == MORIMAKOTO_SHAIN),
+        "menu": [{"no": k, "price": BENTO_MENU[k]} for k in BENTO_ORDER_LABEL],
+        "todayOrder": ({"menuNo": to.get("MenuNo"), "price": to.get("Price"),
+                        "status": to.get("OrderStatus")} if to else None),
+    })
+
+
+@app.route(route="bento/order", methods=["POST", "OPTIONS"])
+def bento_order(req: func.HttpRequest) -> func.HttpResponse:
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_str = str(payload["shainNo"])
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    menu_no = str(body.get("menuNo") or "").strip()
+    if menu_no not in BENTO_MENU:
+        return _json_response({"error": "invalid_menu"}, 400)
+    wait = check_rate_limit(payload["shainNo"], "bento")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait}, 429)
+    emp = find_active_employee_by_shain(payload["shainNo"])
+    if not emp:
+        return _json_response({"error": "not_active"}, 403)
+    if not _bento_eligible(emp):
+        return _json_response({"error": "not_eligible"}, 403)
+    today = _today_jst()
+    if not _bento_is_working_day(today):
+        return _json_response({"error": "holiday"}, 400)
+    if _now_jst().hour >= BENTO_DEADLINE_HOUR:
+        return _json_response({"error": "deadline_passed"}, 400)
+    if _bento_today_order(shain_str, today):
+        return _json_response({"error": "already_ordered"}, 409)
+    name = emp.get(F_SHAIN_NAME) or ""
+    price = BENTO_MENU[menu_no]
+    new_id = sp_post_item(LIST_BENTO, {
+        "Title": f"{today.isoformat()} {shain_str}",
+        "OrderDate": today.strftime("%Y/%m/%d"),
+        "ShainNo": shain_str, "EmpName": name,
+        "Hakensaki": strip_buka_prefix(emp.get(F_BUKA) or ""),
+        "MenuNo": menu_no, "Price": str(price), "OrderStatus": "pending",
+    })
+    _bento_push_morimakoto(name, menu_no, price)
+    return _json_response({"ok": True, "id": new_id, "menuNo": menu_no, "price": price})
+
+
+@app.route(route="bento/history", methods=["GET", "OPTIONS"])
+def bento_history(req: func.HttpRequest) -> func.HttpResponse:
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_str = str(payload["shainNo"])
+    try:
+        items = sp_get_items(
+            LIST_BENTO,
+            select="Id,OrderDate,MenuNo,Price,OrderStatus,ApprovedAt,RejectReason,Created",
+            filter_=f"ShainNo eq '{shain_str}'", orderby="Id desc", top=60)
+        out = []
+        for it in items:
+            od = _utc_to_jst_date(it.get("OrderDate"))
+            ap = _utc_to_jst_date(it.get("ApprovedAt"))
+            cr = _utc_to_jst_date(it.get("Created"))
+            out.append({"id": it.get("Id"), "date": od.isoformat() if od else None,
+                        "menuNo": it.get("MenuNo"), "price": it.get("Price"),
+                        "status": it.get("OrderStatus"),
+                        "approvedAt": ap.isoformat() if ap else None,
+                        "rejectReason": it.get("RejectReason"),
+                        "createdAt": cr.isoformat() if cr else None})
+        return _json_response({"items": out})
+    except Exception as e:
+        logging.exception("bento_history failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+@app.route(route="bento/pending", methods=["GET", "OPTIONS"])
+def bento_pending(req: func.HttpRequest) -> func.HttpResponse:
+    """承認担当(モリマコト)のみ: 当日の承認待ち/承認済み一覧。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    if str(payload["shainNo"]) != MORIMAKOTO_SHAIN:
+        return _json_response({"error": "forbidden"}, 403)
+    today = _today_jst()
+    try:
+        items = sp_get_items(
+            LIST_BENTO,
+            select="Id,OrderDate,ShainNo,EmpName,Hakensaki,MenuNo,Price,OrderStatus",
+            filter_=f"OrderDate eq datetime'{today.isoformat()}T00:00:00'",
+            orderby="Id asc", top=500)
+        pend, appr = [], []
+        for it in items:
+            row = {"id": it.get("Id"), "shainNo": it.get("ShainNo"), "name": it.get("EmpName"),
+                   "hakensaki": it.get("Hakensaki"), "menuNo": it.get("MenuNo"),
+                   "price": it.get("Price"), "status": it.get("OrderStatus")}
+            if it.get("OrderStatus") == "pending":
+                pend.append(row)
+            elif it.get("OrderStatus") == "approved":
+                appr.append(row)
+        return _json_response({"ok": True, "date": today.isoformat(),
+                               "pending": pend, "approved": appr, "pendingCount": len(pend)})
+    except Exception as e:
+        logging.exception("bento_pending failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+@app.route(route="bento/approve", methods=["POST", "OPTIONS"])
+def bento_approve(req: func.HttpRequest) -> func.HttpResponse:
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    if str(payload["shainNo"]) != MORIMAKOTO_SHAIN:
+        return _json_response({"error": "forbidden"}, 403)
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    oid = body.get("id")
+    action = str(body.get("action") or "approve")
+    reason = (body.get("reason") or "")[:300]
+    if not oid:
+        return _json_response({"error": "missing_id"}, 400)
+    approved_at = _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")   # MERGEはISO(UTC)
+    try:
+        if action == "reject":
+            sp_patch_item(LIST_BENTO, int(oid),
+                          {"OrderStatus": "rejected", "RejectReason": reason,
+                           "ApprovedBy": MORIMAKOTO_SHAIN, "ApprovedAt": approved_at})
+        else:
+            sp_patch_item(LIST_BENTO, int(oid),
+                          {"OrderStatus": "approved", "ApprovedBy": MORIMAKOTO_SHAIN,
+                           "ApprovedAt": approved_at})
+        return _json_response({"ok": True, "id": oid, "action": action})
+    except Exception as e:
+        logging.exception("bento_approve failed")
         return _json_response({"error": "internal", "detail": str(e)}, 500)
 
 
@@ -3361,7 +3614,13 @@ def yukyu_file_ocr(req: func.HttpRequest) -> func.HttpResponse:
         logging.exception("yukyu file-ocr failed")
         return _json_response({"error": "ocr_failed", "detail": str(e)}, 500)
 
-    logging.info("yukyu file-ocr by %s docType=%s files=%d", email, doc_type, len(images_bytes))
+    logging.info("yukyu file-ocr by %s docType=%s files=%d model=%s", email, doc_type, len(images_bytes), use_model)
+    # 一時デバッグ: OCRが実際に抽出した内容をログ出力(原因調査用・内部ログのみ)
+    try:
+        logging.info("yukyu file-ocr RESULT docType=%s model=%s -> %s",
+                     doc_type, use_model, json.dumps(result, ensure_ascii=False))
+    except Exception:
+        logging.info("yukyu file-ocr RESULT docType=%s -> %r", doc_type, result)
     return _json_response({"ocr": result, "files": used_files, "docType": doc_type})
 
 

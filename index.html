@@ -618,6 +618,18 @@
       <span class="icon">💴</span>
       <span class="label" data-i18n="menuApply">前払い申請</span>
     </div>
+    <div class="menu-card" id="menu-card-bento" onclick="showScreen('bento')" style="display:none; position:relative;">
+      <span class="card-num">⑧</span>
+      <span class="icon">🍱</span>
+      <span class="label" data-i18n="menuBento">弁当注文</span>
+      <span id="bento-today-badge" class="new-status hidden"></span>
+    </div>
+    <div class="menu-card" id="menu-card-bento-approve" onclick="showScreen('bento-approve')" style="display:none; position:relative;">
+      <span class="card-num">✔</span>
+      <span class="icon">🍱</span>
+      <span class="label" data-i18n="menuBentoApprove">弁当 承認</span>
+      <span id="bento-pending-badge" class="new-badge hidden">0</span>
+    </div>
     <div class="menu-card" onclick="showScreen('history')" style="position:relative;">
       <span class="card-num">②</span>
       <span class="icon">📋</span>
@@ -672,6 +684,28 @@
     <button type="button" id="check-update-btn" class="check-update-btn" onclick="checkUpdate()" data-i18n="checkUpdate">🔄 更新を確認</button>
     <div id="version-tag" class="version-tag"></div>
     <a href="javascript:void(0)" onclick="logout()" style="display:inline-block; margin-top:10px; font-size:0.8em; color:#999; text-decoration:underline;" data-i18n="switchAccount">別のアカウントでログイン</a>
+  </div>
+</div>
+
+<!-- ====== Screen: 弁当注文 ====== -->
+<div id="screen-bento" class="container hidden">
+  <div class="header">
+    <h1>🍱 <span data-i18n="menuBento">弁当注文</span></h1>
+    <span class="logout-btn" onclick="showScreen('home')">✕</span>
+  </div>
+  <div id="bento-body" style="margin-top:10px;">
+    <div style="text-align:center;padding:24px;color:#999;">…</div>
+  </div>
+</div>
+
+<!-- ====== Screen: 弁当 承認 (モリマコト専用) ====== -->
+<div id="screen-bento-approve" class="container hidden">
+  <div class="header">
+    <h1>🍱 <span data-i18n="menuBentoApprove">弁当 承認</span></h1>
+    <span class="logout-btn" onclick="showScreen('home')">✕</span>
+  </div>
+  <div id="bento-approve-body" style="margin-top:10px;">
+    <div style="text-align:center;padding:24px;color:#999;">…</div>
   </div>
 </div>
 
@@ -1546,6 +1580,8 @@ I18N.ja.zaishokuNationality = "国籍"; I18N.en.zaishokuNationality = "Nationali
 I18N.ja.zaishokuNyusha = "採用年月日"; I18N.en.zaishokuNyusha = "Hire date"; I18N.pt.zaishokuNyusha = "Data de admissão";
 // ホームお知らせ (却下/期限)
 I18N.ja.noticeRejectTitle = "前払い申請が却下されました"; I18N.en.noticeRejectTitle = "Your advance request was rejected"; I18N.pt.noticeRejectTitle = "Sua solicitação de adiantamento foi rejeitada";
+I18N.ja.menuBento = "弁当注文"; I18N.en.menuBento = "Bento order"; I18N.pt.menuBento = "Pedido de marmita";
+I18N.ja.menuBentoApprove = "弁当 承認"; I18N.en.menuBentoApprove = "Bento approval"; I18N.pt.menuBentoApprove = "Aprovar marmita";
 I18N.ja.noticeRejectBody = "内容をご確認ください。"; I18N.en.noticeRejectBody = "Please check the details."; I18N.pt.noticeRejectBody = "Verifique os detalhes.";
 I18N.ja.noticeViewHistory = "履歴を見る"; I18N.en.noticeViewHistory = "View history"; I18N.pt.noticeViewHistory = "Ver histórico";
 I18N.ja.noticeZairyuTitle = "在留カードの期限が近づいています"; I18N.en.noticeZairyuTitle = "Your Zairyu Card is expiring soon"; I18N.pt.noticeZairyuTitle = "Seu Cartão Zairyu está prestes a vencer";
@@ -3141,7 +3177,7 @@ function acceptRules() {
 // ====== 画面遷移 ======
 function showScreen(name) {
   ['login','home','request','history','zairyu','zairyu-confirm','license','license-confirm',
-   'shaken','shaken-confirm','hoken','hoken-confirm','shorui','shorui-history'].forEach(s => {
+   'shaken','shaken-confirm','hoken','hoken-confirm','shorui','shorui-history','bento','bento-approve'].forEach(s => {
     const el = document.getElementById('screen-' + s);
     if (el) el.classList.add('hidden');
   });
@@ -3157,6 +3193,8 @@ function showScreen(name) {
   if (name === 'hoken') initHokenScreen();
   if (name === 'shorui') initShoruiScreen();
   if (name === 'shorui-history') initShoruiHistoryScreen();
+  if (name === 'bento') initBentoScreen();
+  if (name === 'bento-approve') initBentoApproveScreen();
 }
 
 // ====== ログイン ======
@@ -3386,6 +3424,12 @@ function renderHome() {
     const el = document.getElementById(id);
     if (el) el.style.display = carOnly;
   });
+  // 弁当注文: ユーシン/委託管理のみ。承認カードはモリマコトのみ
+  const bentoCard = document.getElementById('menu-card-bento');
+  if (bentoCard) bentoCard.style.display = state.profile.bentoEligible ? '' : 'none';
+  const bentoApproveCard = document.getElementById('menu-card-bento-approve');
+  if (bentoApproveCard) bentoApproveCard.style.display = state.profile.isBentoApprover ? '' : 'none';
+  if (state.profile.isBentoApprover) updateBentoApproverBadge();
   // 期限お知らせを即時表示 (履歴取得を待たず profile から)
   renderHomeNotices(state.historyCache ? state.historyCache.items : null);
   // プッシュ通知の設定UI
@@ -3592,11 +3636,34 @@ function renderHistory() {
   document.getElementById('history-loading').classList.add('hidden');
   list.innerHTML = '';
   const items = (state.historyCache && state.historyCache.items) || [];
-  if (items.length === 0) {
+  const bentoItems = state.bentoHistory || [];
+  if (items.length === 0 && bentoItems.length === 0) {
     empty.classList.remove('hidden');
     return;
   }
   empty.classList.add('hidden');
+  // 弁当注文を先頭に表示
+  bentoItems.forEach(it => {
+    const status = (it.status || 'pending').toLowerCase();
+    const item = document.createElement('div');
+    item.className = 'history-item ' + status;
+    const row1 = document.createElement('div'); row1.className = 'row1';
+    const amount = document.createElement('span'); amount.className = 'amount';
+    amount.textContent = '🍱 ' + (it.menuNo || '') + ' ' + _bYen(it.price);
+    const badge = document.createElement('span'); badge.className = 'status-badge status-' + status;
+    badge.textContent = _bStatusLabel(status);
+    row1.append(amount, badge);
+    item.append(row1);
+    const meta = document.createElement('div'); meta.className = 'meta';
+    meta.textContent = (it.date || '―');
+    item.append(meta);
+    if (status === 'rejected' && it.rejectReason) {
+      const rr = document.createElement('div'); rr.className = 'reject-reason';
+      rr.textContent = '📝 ' + it.rejectReason;
+      item.append(rr);
+    }
+    list.appendChild(item);
+  });
   items.forEach(it => {
     const status = (it.status || 'pending').toLowerCase();
     const item = document.createElement('div');
@@ -3656,6 +3723,8 @@ async function initHistoryScreen() {
   try {
     const data = await callApi('GET', '/maebarai/history');
     state.historyCache = data;
+    const bd = await callApi('GET', '/bento/history').catch(() => ({ items: [] }));
+    state.bentoHistory = bd.items || [];
     renderHistory();
     // 履歴画面を開いた瞬間に「現在の承認/却下済み件」を全部「確認済み」として記録
     markHistoryAsSeen(data.items || []);
@@ -3712,9 +3781,10 @@ async function updateHistoryBadge() {
       status.classList.add('hidden');
     }
     renderHomeNotices(items);
-    // ホーム画面アイコンのバッジ = 未読の前払い(承認/却下) + 期限お知らせ件数 + 当日の送迎連絡
+    // ホーム画面アイコンのバッジ = 未読の前払い(承認/却下) + 期限お知らせ + 当日の送迎連絡 + (モリマコトのみ)弁当承認待ち
     const sgCount = (state.profile && state.profile.todaySougei && (state.profile.todaySougei.endTime || state.profile.todaySougei.vehicle)) ? 1 : 0;
-    updateAppBadge(total + getExpiryNoticeCount() + sgCount);
+    const bentoCount = (state.profile && state.profile.isBentoApprover) ? (state.bentoPendingCount || 0) : 0;
+    updateAppBadge(total + getExpiryNoticeCount() + sgCount + bentoCount);
   } catch (e) { /* silent */ }
 }
 
@@ -3726,6 +3796,166 @@ function updateAppBadge(count) {
       else navigator.clearAppBadge();
     }
   } catch (e) { /* 非対応端末は無視 */ }
+}
+
+// ====== 弁当注文 ======
+const BENTO_I18N = {
+  ja: { gateHoliday:'本日はユーシンの稼働日ではないため注文できません。', gatePassed:'9:00を過ぎているので注文できません。', gateNotEligible:'この機能はユーシン勤務の方のみご利用いただけます。',
+        pick:'メニューを選んでください（当日 朝9:00まで）', order:'注文する', confirm:'キャンセルはできませんが、よろしいですか？',
+        ordered:'本日は注文済みです', deadline:'注文は当日 朝9:00まで・キャンセル不可', done:'注文しました（承認待ち）', history:'弁当 注文履歴',
+        statusPending:'承認待ち', statusApproved:'承認', statusRejected:'却下',
+        apvNone:'本日の注文はありません', apvPending:'承認待ち', apvApproved:'承認済み', apvApprove:'承認', apvReject:'拒否', apvRejectConfirm:'この注文を拒否しますか？', apvTotal:'合計', apvMeals:'食', apvForbidden:'権限がありません' },
+  en: { gateHoliday:'Not a Yushin working day — ordering is closed.', gatePassed:'It is past 9:00 — ordering is closed.', gateNotEligible:'Only for Yushin staff.',
+        pick:'Choose a menu (until 9:00 AM today)', order:'Place order', confirm:'This cannot be canceled. Are you sure?',
+        ordered:'You have already ordered today', deadline:'Order by 9:00 AM today · no cancellation', done:'Ordered (pending approval)', history:'Bento order history',
+        statusPending:'Pending', statusApproved:'Approved', statusRejected:'Rejected',
+        apvNone:'No orders today', apvPending:'Pending', apvApproved:'Approved', apvApprove:'Approve', apvReject:'Reject', apvRejectConfirm:'Reject this order?', apvTotal:'Total', apvMeals:'meals', apvForbidden:'No permission' },
+  pt: { gateHoliday:'Hoje não é dia de trabalho da Yushin — pedidos encerrados.', gatePassed:'Já passou das 9:00 — pedidos encerrados.', gateNotEligible:'Apenas para funcionários da Yushin.',
+        pick:'Escolha um menu (até as 9:00 de hoje)', order:'Fazer pedido', confirm:'Não pode ser cancelado. Tem certeza?',
+        ordered:'Você já pediu hoje', deadline:'Pedido até 9:00 de hoje · sem cancelamento', done:'Pedido feito (aguardando aprovação)', history:'Histórico de pedidos',
+        statusPending:'Aguardando', statusApproved:'Aprovado', statusRejected:'Recusado',
+        apvNone:'Sem pedidos hoje', apvPending:'Aguardando', apvApproved:'Aprovados', apvApprove:'Aprovar', apvReject:'Recusar', apvRejectConfirm:'Recusar este pedido?', apvTotal:'Total', apvMeals:'refeições', apvForbidden:'Sem permissão' },
+};
+function _bt(k){ return (BENTO_I18N[currentLang] && BENTO_I18N[currentLang][k]) || BENTO_I18N.ja[k] || k; }
+function _bEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function _bStatusLabel(s){ s=(s||'').toLowerCase(); return s==='approved'?_bt('statusApproved'):s==='rejected'?_bt('statusRejected'):_bt('statusPending'); }
+function _bYen(n){ return '¥'+Number(n||0).toLocaleString('ja-JP'); }
+
+let _bentoStatus = null, _bentoPick = null;
+
+async function initBentoScreen(){
+  const body = document.getElementById('bento-body');
+  body.innerHTML = '<div style="text-align:center;padding:24px;color:#999;">…</div>';
+  _bentoPick = null;
+  try {
+    _bentoStatus = await callApi('GET', '/bento/status');
+    renderBentoOrder();
+  } catch(e){
+    body.innerHTML = '<div style="text-align:center;padding:20px;color:#c00;">'+t('networkError')+'</div>';
+  }
+}
+
+function renderBentoOrder(){
+  const d = _bentoStatus || {};
+  const body = document.getElementById('bento-body');
+  let h = '';
+  if (d.todayOrder) {
+    const o = d.todayOrder;
+    h += '<div class="card" style="padding:18px;text-align:center;">'
+      + '<div style="font-size:1.2em;font-weight:700;margin-bottom:6px;">🍱 '+_bt('ordered')+'</div>'
+      + '<div style="font-size:1.5em;margin:8px 0;">'+_bEsc(o.menuNo||'')+' <b>'+_bYen(o.price)+'</b></div>'
+      + '<div><span class="status-badge status-'+(o.status||'pending')+'">'+_bStatusLabel(o.status)+'</span></div></div>';
+  } else if (!d.canOrder) {
+    const msg = d.reason==='holiday'?_bt('gateHoliday'):d.reason==='not_eligible'?_bt('gateNotEligible'):_bt('gatePassed');
+    h += '<div class="card" style="padding:22px;text-align:center;color:#b14;">'
+      + '<div style="font-size:2.2em;">⏰</div><div style="font-size:1.05em;margin-top:8px;font-weight:600;">'+msg+'</div></div>';
+  } else {
+    h += '<div style="text-align:center;color:#666;margin-bottom:8px;">'+_bt('pick')+'</div>';
+    (d.menu||[]).forEach(m => {
+      h += '<button type="button" class="bento-opt" data-no="'+m.no+'" onclick="selectBentoMenu(\''+m.no+'\')" '
+        + 'style="display:flex;justify-content:space-between;align-items:center;width:100%;padding:16px;margin:8px 0;border:2px solid #ddd;border-radius:12px;background:#fff;font-size:1.25em;cursor:pointer;">'
+        + '<span style="font-weight:700;">'+m.no+'</span><span style="font-weight:700;">'+_bYen(m.price)+'</span></button>';
+    });
+    h += '<button id="bento-order-btn" class="btn btn-primary" onclick="submitBento()" disabled style="opacity:0.5;margin-top:8px;">'+_bt('order')+'</button>';
+    h += '<div style="text-align:center;color:#999;font-size:0.8em;margin-top:8px;">'+_bt('deadline')+'</div>';
+  }
+  h += _bentoHistoryHtml();
+  body.innerHTML = h;
+}
+
+function selectBentoMenu(no){
+  _bentoPick = no;
+  document.querySelectorAll('.bento-opt').forEach(b => {
+    const on = b.getAttribute('data-no')===no;
+    b.style.borderColor = on?'#2a7':'#ddd';
+    b.style.background = on?'#eafaf0':'#fff';
+  });
+  const btn = document.getElementById('bento-order-btn');
+  if (btn){ btn.disabled=false; btn.style.opacity='1'; }
+}
+
+async function submitBento(){
+  if (!_bentoPick) return;
+  if (!confirm(_bt('confirm'))) return;
+  const btn = document.getElementById('bento-order-btn');
+  if (btn) btn.disabled = true;
+  try {
+    await callApi('POST', '/bento/order', { menuNo: _bentoPick });
+    showAlert(_bt('done'), 'success');
+    showScreen('history');
+  } catch(e){
+    const code = (e && e.message) || '';
+    const m = code==='already_ordered'?_bt('ordered'):code==='deadline_passed'?_bt('gatePassed'):code==='holiday'?_bt('gateHoliday'):t('networkError');
+    showAlert(m, 'error');
+    initBentoScreen();
+  }
+}
+
+function _bentoHistoryHtml(){
+  const items = (state.bentoHistory||[]);
+  if (!items.length) return '';
+  let h = '<div style="margin-top:18px;font-weight:700;color:#555;">'+_bt('history')+'</div>';
+  items.slice(0,20).forEach(it => {
+    h += '<div class="history-item '+(it.status||'pending')+'" style="margin-top:8px;">'
+      + '<div class="row1"><span class="amount">'+_bEsc(it.menuNo||'')+' '+_bYen(it.price)+'</span>'
+      + '<span class="status-badge status-'+(it.status||'pending')+'">'+_bStatusLabel(it.status)+'</span></div>'
+      + '<div class="meta">'+_bEsc(it.date||'')+'</div></div>';
+  });
+  return h;
+}
+
+// --- モリマコト 承認 ---
+async function updateBentoApproverBadge(){
+  try {
+    const d = await callApi('GET','/bento/pending');
+    state.bentoPendingCount = d.pendingCount||0;
+    const b = document.getElementById('bento-pending-badge');
+    if (b){ if(state.bentoPendingCount>0){ b.textContent=String(state.bentoPendingCount); b.classList.remove('hidden'); } else b.classList.add('hidden'); }
+    updateHistoryBadge();
+  } catch(e){ /* silent */ }
+}
+
+async function initBentoApproveScreen(){
+  const body = document.getElementById('bento-approve-body');
+  body.innerHTML = '<div style="text-align:center;padding:24px;color:#999;">…</div>';
+  try {
+    const d = await callApi('GET','/bento/pending');
+    let h = '<div style="text-align:center;color:#666;margin-bottom:6px;">'+_bEsc(d.date||'')+'</div>';
+    if (!(d.pending||[]).length && !(d.approved||[]).length){
+      h += '<div style="text-align:center;padding:24px;color:#999;">'+_bt('apvNone')+'</div>';
+    }
+    if ((d.pending||[]).length){
+      h += '<div style="font-weight:700;color:#b14;margin:8px 0;">'+_bt('apvPending')+' '+d.pending.length+'</div>';
+      d.pending.forEach(o => {
+        h += '<div class="card" style="padding:12px;margin:8px 0;display:flex;align-items:center;gap:8px;">'
+          + '<div style="flex:1;"><div style="font-weight:700;">'+_bEsc(o.name||o.shainNo)+'</div>'
+          + '<div style="color:#666;font-size:0.9em;">'+_bEsc(o.menuNo||'')+' '+_bYen(o.price)+'</div></div>'
+          + '<button style="background:#2a7;color:#fff;border:none;border-radius:8px;padding:9px 14px;font-weight:700;" onclick="bentoApprove('+o.id+',\'approve\')">'+_bt('apvApprove')+'</button>'
+          + '<button style="background:#e55;color:#fff;border:none;border-radius:8px;padding:9px 12px;" onclick="bentoApprove('+o.id+',\'reject\')">'+_bt('apvReject')+'</button></div>';
+      });
+    }
+    if ((d.approved||[]).length){
+      let sum=0;
+      h += '<div style="font-weight:700;color:#2a7;margin:14px 0 6px;">'+_bt('apvApproved')+' '+d.approved.length+'</div>';
+      d.approved.forEach(o => { sum += Number(o.price||0);
+        h += '<div style="display:flex;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #eee;">'
+          + '<span>'+_bEsc(o.name||o.shainNo)+'</span><span>'+_bEsc(o.menuNo||'')+' '+_bYen(o.price)+'</span></div>';
+      });
+      h += '<div style="text-align:right;font-weight:700;margin-top:8px;">'+_bt('apvTotal')+' '+d.approved.length+_bt('apvMeals')+' ／ '+_bYen(sum)+'</div>';
+    }
+    body.innerHTML = h;
+  } catch(e){
+    body.innerHTML = '<div style="text-align:center;padding:20px;color:#c00;">'+(e.status===403?_bt('apvForbidden'):t('networkError'))+'</div>';
+  }
+}
+
+async function bentoApprove(id, action){
+  if (action==='reject' && !confirm(_bt('apvRejectConfirm'))) return;
+  try {
+    await callApi('POST','/bento/approve',{ id:id, action:action });
+    initBentoApproveScreen();
+    updateBentoApproverBadge();
+  } catch(e){ showAlert(t('networkError'),'error'); }
 }
 
 // 期限お知らせの件数 (在留+免許のうち通知窓内)
