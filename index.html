@@ -145,6 +145,22 @@
   .status-rejected { background: #f44336; }
   .history-item .meta { font-size: 0.85em; color: #666; }
   .history-item .reject-reason { background: #ffebee; color: #c62828; padding: 8px 10px; border-radius: 6px; margin-top: 8px; font-size: 0.85em; }
+  /* 申請履歴 ハブ (前払い/弁当のボタン) + タブ */
+  .hist-hub-btn { display:flex; align-items:center; gap:12px; width:100%; background:#fff; border:1.5px solid var(--hc,#1f3864); border-radius:14px; padding:16px; margin-bottom:12px; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.06); }
+  .hist-hub-btn:active { transform: scale(0.98); }
+  .hist-hub-btn .hh-icon { font-size:26px; }
+  .hist-hub-btn .hh-label { flex:1; text-align:left; font-size:1.05em; font-weight:800; color:var(--hc,#1f3864); }
+  .hist-hub-btn .hh-count { min-width:30px; text-align:center; background:var(--hbg,#eef2f8); color:var(--hc,#1f3864); border-radius:20px; padding:4px 11px; font-size:0.9em; font-weight:800; }
+  .hist-hub-btn .hh-count.zero { opacity:.4; }
+  .hist-hub-btn .hh-arrow { font-size:20px; color:#bbb; }
+  .hist-detail-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .hist-back { background:#fff; border:1px solid #ddd; border-radius:8px; padding:6px 13px; font-size:1.1em; cursor:pointer; }
+  .hist-detail-title { font-size:1.05em; font-weight:800; color:#1f3864; }
+  .hist-tabs { display:flex; border-bottom:2px solid #eee; margin-bottom:14px; }
+  .hist-tab { flex:1; background:none; border:none; padding:11px 6px; font-size:0.95em; font-weight:700; color:#999; cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px; }
+  .hist-tab.active { color:#1f3864; border-bottom-color:#2e5a99; }
+  .hist-tab-badge { display:inline-block; min-width:18px; background:#f44336; color:#fff; border-radius:10px; font-size:0.75em; padding:0 6px; vertical-align:middle; }
+  .hist-tab-badge.zero { display:none; }
   .footer { text-align: center; padding: 30px 0 10px; color: #888; font-size: 0.8em; }
   .hidden { display: none !important; }
   .new-badge {
@@ -1108,9 +1124,36 @@
   </div>
 
   <div id="history-loading" style="text-align:center; padding:30px;"><div class="spinner"></div></div>
-  <div id="history-list"></div>
-  <div id="history-empty" class="card hidden" style="text-align:center; color:#999;" data-i18n="historyEmpty">
-    申請はまだありません。
+
+  <!-- ハブ: 前払い / 弁当 のボタン (各 承認待ち件数) -->
+  <div id="history-hub">
+    <button type="button" class="hist-hub-btn" onclick="openHistoryCategory('maebari')" style="--hc:#c2185b;--hbg:#fce4ec;">
+      <span class="hh-icon">💴</span>
+      <span class="hh-label" data-i18n="menuApply">前払い申請</span>
+      <span class="hh-count zero" id="hubMaebariCount">0</span>
+      <span class="hh-arrow">›</span>
+    </button>
+    <button type="button" class="hist-hub-btn" id="hubBentoBtn" onclick="openHistoryCategory('bento')" style="--hc:#e65100;--hbg:#fff3e0;">
+      <span class="hh-icon">🍱</span>
+      <span class="hh-label" data-i18n="menuBento">弁当注文</span>
+      <span class="hh-count zero" id="hubBentoCount">0</span>
+      <span class="hh-arrow">›</span>
+    </button>
+    <div id="history-empty" class="card hidden" style="text-align:center; color:#999;" data-i18n="historyEmpty">申請はまだありません。</div>
+  </div>
+
+  <!-- 詳細: 選んだ種別の 承認待ち / 承認済み タブ + リスト -->
+  <div id="history-detail" class="hidden">
+    <div class="hist-detail-head">
+      <button type="button" class="hist-back" onclick="backToHistoryHub()">←</button>
+      <span id="history-detail-title" class="hist-detail-title">前払い申請</span>
+    </div>
+    <div class="hist-tabs">
+      <button type="button" id="histTabPending" class="hist-tab active" onclick="switchHistoryTab('pending')"><span data-i18n="histPending">承認待ち</span> <span class="hist-tab-badge zero" id="histPendingBadge">0</span></button>
+      <button type="button" id="histTabDone" class="hist-tab" onclick="switchHistoryTab('done')"><span data-i18n="histDone">承認済み</span></button>
+    </div>
+    <div id="history-detail-list"></div>
+    <div id="history-detail-empty" class="card hidden" style="text-align:center; color:#999;" data-i18n="histNone">該当する申請はありません。</div>
   </div>
 
   <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="back">戻る</button>
@@ -1245,6 +1288,9 @@ const I18N = {
     back: "戻る",
     applyInfoBanner: "📌 給料日週・GW・お盆・年末年始は申請できません。希望日は金曜日のみ。",
     historyEmpty: "申請はまだありません。",
+    histPending: "承認待ち",
+    histDone: "承認済み",
+    histNone: "該当する申請はありません。",
     statusPending: "承認待ち",
     statusApproved: "承認",
     statusRejected: "却下",
@@ -1305,6 +1351,9 @@ const I18N = {
     back: "Voltar",
     applyInfoBanner: "📌 Não é possível na semana do salário, Golden Week, Obon ou Ano Novo. Apenas sextas.",
     historyEmpty: "Ainda não há pedidos.",
+    histPending: "Aguardando",
+    histDone: "Processados",
+    histNone: "Nenhum pedido nesta aba.",
     statusPending: "Aguardando",
     statusApproved: "Aprovado",
     statusRejected: "Rejeitado",
@@ -1370,6 +1419,9 @@ const I18N = {
     back: "Back",
     applyInfoBanner: "📌 Cannot apply during salary week, Golden Week, Obon, or year-end/new-year. Fridays only.",
     historyEmpty: "No requests yet.",
+    histPending: "Pending",
+    histDone: "Processed",
+    histNone: "No requests in this tab.",
     statusPending: "Pending",
     statusApproved: "Approved",
     statusRejected: "Rejected",
@@ -3620,7 +3672,7 @@ async function cancelApply(id) {
     await callApi('POST', '/maebarai/cancel', { id: id });
     toast(t('cancelSuccess'), 'success');
     state.historyCache = null;
-    await initHistoryScreen();
+    await refreshHistoryData();   // 詳細(前払い)タブを保ったまま再描画
   } catch (e) {
     const detail = (e.data && e.data.error) ? '\n(' + e.data.error + ')' : '';
     showAlert(t('cancelError') + detail, 'error');
@@ -3629,71 +3681,149 @@ async function cancelApply(id) {
   }
 }
 
-// ====== 申請履歴 ======
+// ====== 申請履歴 (ハブ: 前払い/弁当 → 承認待ち/承認済みタブ。yukyu-app の承認ハブと同様の見た目) ======
+function _historyMaebariItems() { return (state.historyCache && state.historyCache.items) || []; }
+function _historyBentoItems() { return state.bentoHistory || []; }
+function _historyIsBentoEligible() { return !!(state.profile && state.profile.bentoEligible); }
+function _historyPendingCount(items) { return (items || []).filter(it => (it.status || 'pending').toLowerCase() === 'pending').length; }
+
+// 履歴画面を開いた直後 = ハブ表示
 function renderHistory() {
-  const list = document.getElementById('history-list');
-  const empty = document.getElementById('history-empty');
   document.getElementById('history-loading').classList.add('hidden');
+  const hub = document.getElementById('history-hub');
+  const detail = document.getElementById('history-detail');
+  if (hub) hub.classList.remove('hidden');
+  if (detail) detail.classList.add('hidden');
+  renderHistoryHub();
+}
+
+function renderHistoryHub() {
+  const mItems = _historyMaebariItems();
+  const bItems = _historyBentoItems();
+  const eligible = _historyIsBentoEligible();
+  // 弁当ボタンは対象者(ユーシン/委託 在職)のみ表示
+  const bentoBtn = document.getElementById('hubBentoBtn');
+  if (bentoBtn) bentoBtn.style.display = eligible ? '' : 'none';
+  // 各ボタンの承認待ち件数
+  const mc = document.getElementById('hubMaebariCount');
+  if (mc) { const n = _historyPendingCount(mItems); mc.textContent = String(n); mc.classList.toggle('zero', n === 0); }
+  const bc = document.getElementById('hubBentoCount');
+  if (bc) { const n = _historyPendingCount(bItems); bc.textContent = String(n); bc.classList.toggle('zero', n === 0); }
+  // 申請が1件も無い場合のみ「申請はまだありません」
+  const empty = document.getElementById('history-empty');
+  const totalAll = mItems.length + (eligible ? bItems.length : 0);
+  if (empty) empty.classList.toggle('hidden', totalAll !== 0);
+}
+
+let _historyCat = 'maebari', _historyTab = 'pending';
+function openHistoryCategory(cat) {
+  _historyCat = cat;
+  document.getElementById('history-hub').classList.add('hidden');
+  document.getElementById('history-detail').classList.remove('hidden');
+  const title = document.getElementById('history-detail-title');
+  if (title) title.textContent = (cat === 'bento') ? t('menuBento') : t('menuApply');
+  _setHistoryTabActive('pending');
+  renderHistoryDetail();
+  window.scrollTo(0, 0);
+}
+function backToHistoryHub() {
+  document.getElementById('history-detail').classList.add('hidden');
+  document.getElementById('history-hub').classList.remove('hidden');
+  renderHistoryHub();
+  window.scrollTo(0, 0);
+}
+function _setHistoryTabActive(tab) {
+  _historyTab = tab;
+  const tp = document.getElementById('histTabPending'), td = document.getElementById('histTabDone');
+  if (tp) tp.classList.toggle('active', tab === 'pending');
+  if (td) td.classList.toggle('active', tab === 'done');
+}
+function switchHistoryTab(tab) { _setHistoryTabActive(tab); renderHistoryDetail(); }
+
+function renderHistoryDetail() {
+  const list = document.getElementById('history-detail-list');
+  const empty = document.getElementById('history-detail-empty');
+  if (!list) return;
   list.innerHTML = '';
-  const items = (state.historyCache && state.historyCache.items) || [];
-  const bentoItems = state.bentoHistory || [];
-  if (items.length === 0 && bentoItems.length === 0) {
-    empty.classList.remove('hidden');
-    return;
+  const isBento = _historyCat === 'bento';
+  const all = isBento ? _historyBentoItems() : _historyMaebariItems();
+  // 承認待ちタブのバッジ
+  const pb = document.getElementById('histPendingBadge');
+  if (pb) { const n = _historyPendingCount(all); pb.textContent = String(n); pb.classList.toggle('zero', n === 0); }
+  // タブ絞り込み: pending=承認待ち / done=承認済み(approved)+却下(rejected)
+  const items = all.filter(it => {
+    const s = (it.status || 'pending').toLowerCase();
+    return _historyTab === 'pending' ? (s === 'pending') : (s === 'approved' || s === 'rejected');
+  });
+  if (!items.length) { if (empty) empty.classList.remove('hidden'); return; }
+  if (empty) empty.classList.add('hidden');
+  items.forEach(it => list.appendChild(isBento ? _historyBentoCard(it) : _historyMaebariCard(it)));
+}
+
+function _historyBentoCard(it) {
+  const status = (it.status || 'pending').toLowerCase();
+  const item = document.createElement('div');
+  item.className = 'history-item ' + status;
+  const row1 = document.createElement('div'); row1.className = 'row1';
+  const amount = document.createElement('span'); amount.className = 'amount';
+  amount.textContent = '🍱 ' + (it.menuNo || '') + ' ' + _bYen(it.price);
+  const badge = document.createElement('span'); badge.className = 'status-badge status-' + status;
+  badge.textContent = _bStatusLabel(status);
+  row1.append(amount, badge);
+  item.append(row1);
+  const meta = document.createElement('div'); meta.className = 'meta';
+  meta.textContent = (it.date || '―');
+  item.append(meta);
+  if (status === 'rejected' && it.rejectReason) {
+    const rr = document.createElement('div'); rr.className = 'reject-reason';
+    rr.textContent = '📝 ' + it.rejectReason;
+    item.append(rr);
   }
-  empty.classList.add('hidden');
-  // 弁当注文を先頭に表示
-  bentoItems.forEach(it => {
-    const status = (it.status || 'pending').toLowerCase();
-    const item = document.createElement('div');
-    item.className = 'history-item ' + status;
-    const row1 = document.createElement('div'); row1.className = 'row1';
-    const amount = document.createElement('span'); amount.className = 'amount';
-    amount.textContent = '🍱 ' + (it.menuNo || '') + ' ' + _bYen(it.price);
-    const badge = document.createElement('span'); badge.className = 'status-badge status-' + status;
-    badge.textContent = _bStatusLabel(status);
-    row1.append(amount, badge);
-    item.append(row1);
-    const meta = document.createElement('div'); meta.className = 'meta';
-    meta.textContent = (it.date || '―');
-    item.append(meta);
-    if (status === 'rejected' && it.rejectReason) {
-      const rr = document.createElement('div'); rr.className = 'reject-reason';
-      rr.textContent = '📝 ' + it.rejectReason;
-      item.append(rr);
-    }
-    list.appendChild(item);
-  });
-  items.forEach(it => {
-    const status = (it.status || 'pending').toLowerCase();
-    const item = document.createElement('div');
-    item.className = 'history-item ' + status;
-    const row1 = document.createElement('div'); row1.className = 'row1';
-    const amount = document.createElement('span'); amount.className = 'amount'; amount.textContent = '¥' + Number(it.amount || 0).toLocaleString();
-    const badge = document.createElement('span'); badge.className = 'status-badge status-' + status;
-    badge.textContent = t('status' + status.charAt(0).toUpperCase() + status.slice(1));
-    row1.append(amount, badge);
-    item.append(row1);
-    const meta = document.createElement('div'); meta.className = 'meta';
-    let mtext = t('kibobi') + ': ' + (it.date || '―');
-    if (it.createdAt) mtext += ' ｜ ' + t('appliedAt') + ': ' + it.createdAt;
-    if (status === 'approved' && it.approvedAt) mtext += ' ｜ ' + t('approvedAt') + ': ' + it.approvedAt;
-    meta.textContent = mtext;
-    item.append(meta);
-    if (status === 'rejected' && it.rejectReason) {
-      const rr = document.createElement('div'); rr.className = 'reject-reason';
-      rr.textContent = '📝 ' + t('rejectReason') + ': ' + it.rejectReason;
-      item.append(rr);
-    }
-    if (status === 'pending') {
-      const cancelBtn = document.createElement('button');
-      cancelBtn.className = 'btn-cancel-apply';
-      cancelBtn.textContent = '✕ ' + t('cancelButton');
-      cancelBtn.onclick = () => cancelApply(it.id);
-      item.append(cancelBtn);
-    }
-    list.appendChild(item);
-  });
+  return item;
+}
+
+function _historyMaebariCard(it) {
+  const status = (it.status || 'pending').toLowerCase();
+  const item = document.createElement('div');
+  item.className = 'history-item ' + status;
+  const row1 = document.createElement('div'); row1.className = 'row1';
+  const amount = document.createElement('span'); amount.className = 'amount'; amount.textContent = '¥' + Number(it.amount || 0).toLocaleString();
+  const badge = document.createElement('span'); badge.className = 'status-badge status-' + status;
+  badge.textContent = t('status' + status.charAt(0).toUpperCase() + status.slice(1));
+  row1.append(amount, badge);
+  item.append(row1);
+  const meta = document.createElement('div'); meta.className = 'meta';
+  let mtext = t('kibobi') + ': ' + (it.date || '―');
+  if (it.createdAt) mtext += ' ｜ ' + t('appliedAt') + ': ' + it.createdAt;
+  if (status === 'approved' && it.approvedAt) mtext += ' ｜ ' + t('approvedAt') + ': ' + it.approvedAt;
+  meta.textContent = mtext;
+  item.append(meta);
+  if (status === 'rejected' && it.rejectReason) {
+    const rr = document.createElement('div'); rr.className = 'reject-reason';
+    rr.textContent = '📝 ' + t('rejectReason') + ': ' + it.rejectReason;
+    item.append(rr);
+  }
+  if (status === 'pending') {
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn-cancel-apply';
+    cancelBtn.textContent = '✕ ' + t('cancelButton');
+    cancelBtn.onclick = () => cancelApply(it.id);
+    item.append(cancelBtn);
+  }
+  return item;
+}
+
+// 前払いキャンセル等の後、現在のビュー(詳細なら詳細)を保ったまま再取得・再描画
+async function refreshHistoryData() {
+  try {
+    const data = await callApi('GET', '/maebarai/history');
+    state.historyCache = data;
+    const bd = await callApi('GET', '/bento/history').catch(() => ({ items: [] }));
+    state.bentoHistory = bd.items || [];
+  } catch (e) { /* 取得失敗時は既存表示を維持 */ }
+  const detailOpen = !document.getElementById('history-detail').classList.contains('hidden');
+  if (detailOpen) renderHistoryDetail(); else renderHistoryHub();
+  try { updateHistoryBadge(); } catch (e) {}
 }
 
 // 確認済み ID の管理 (id → "approved" | "rejected") を localStorage に保存
@@ -3718,8 +3848,10 @@ function markHistoryAsSeen(items) {
 
 async function initHistoryScreen() {
   document.getElementById('history-loading').classList.remove('hidden');
-  document.getElementById('history-list').innerHTML = '';
-  document.getElementById('history-empty').classList.add('hidden');
+  // 開くたびにハブ/詳細を一旦隠す(読み込み後 renderHistory がハブを表示)
+  var _hd = document.getElementById('history-detail'); if (_hd) _hd.classList.add('hidden');
+  var _hh = document.getElementById('history-hub'); if (_hh) _hh.classList.add('hidden');
+  var _he = document.getElementById('history-empty'); if (_he) _he.classList.add('hidden');
   try {
     const data = await callApi('GET', '/maebarai/history');
     state.historyCache = data;
