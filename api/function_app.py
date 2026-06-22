@@ -1167,6 +1167,22 @@ def maebarai_apply(req: func.HttpRequest) -> func.HttpResponse:
             P_STATUS: "pending",
         }
         new_id = sp_post_item(LIST_MAEBARAI_SHINSEI, fields)
+        # 担当者(派遣先別)へ ロック画面 Push。担当者未設定なら役員へ。
+        try:
+            name = (emp.get("Title") or "").strip()
+            try:
+                amt_disp = f"{int(str(amount).replace(',', '')):,}円"
+            except Exception:
+                amt_disp = f"{amount}円"
+            tgt = TANTOU_EMAIL.get(tantou)
+            targets = [tgt] if tgt else list(ADMIN_APPROVER_EMAILS)
+            _push_to_admins(targets, {
+                "title": "💴 前払い申請 承認待ち",
+                "body": f"{name or shain_no} / {amt_disp} / {d.isoformat()}",
+                "url": YUKYU_APP_URL, "tag": "maebari-approve", "badge": 1,
+            })
+        except Exception:
+            logging.exception("maebarai push failed")
         return _json_response({"ok": True, "id": new_id, "tantou": tantou})
     except Exception as e:
         logging.exception("maebarai_apply failed")
@@ -1378,7 +1394,15 @@ def bento_order(req: func.HttpRequest) -> func.HttpResponse:
         "Hakensaki": strip_buka_prefix(emp.get(F_BUKA) or ""),
         "MenuNo": menu_no, "Price": str(price), "OrderStatus": "pending",
     })
-    # 承認は yukyu-app 側(役員/森まこと/森ゆうじ)で行うため、ポータルPush(モリマコト宛)は送らない
+    # 承認者(yukyu-app: 役員/森まこと/森ゆうじ)へ ロック画面 Push
+    try:
+        _push_to_admins(BENTO_APPROVER_EMAILS, {
+            "title": "🍱 弁当注文 承認待ち",
+            "body": f"{name or shain_str} / {menu_no} {price}円",
+            "url": YUKYU_APP_URL, "tag": "bento-approve", "badge": 1,
+        })
+    except Exception:
+        logging.exception("bento push failed")
     return _json_response({"ok": True, "id": new_id, "menuNo": menu_no, "price": price})
 
 
@@ -3044,6 +3068,128 @@ def _send_web_push(sub_json: str, payload: Dict[str, Any]) -> str:
             return "gone"
         logging.warning(f"web push failed: {e}")
         return "error"
+
+
+# ====== 承認者(yukyu-app)向け Push: 前払い/弁当の申請が出たら担当者へロック画面通知 ======
+# 担当者名 → メール (前払いは派遣先別担当者へ通知)
+TANTOU_EMAIL = {
+    "吉浦マルセロ": "m.yoshiura@team-stepup.com",
+    "森ゆうじ": "y.mori@team-stepup.com",
+    "森まこと": "m.mori@team-stepup.com",
+}
+ADMIN_APPROVER_EMAILS = ["h.yamashita@team-stepup.com", "a.yamashita@team-stepup.com"]
+BENTO_APPROVER_EMAILS = ADMIN_APPROVER_EMAILS + ["m.mori@team-stepup.com", "y.mori@team-stepup.com"]
+YUKYU_APP_URL = "https://team-stepup.github.io/yukyu-mobile-app/"
+
+
+def _admin_push_save(email: str, sub_json: str) -> bool:
+    table = _get_lockout_table()
+    if not table or not email:
+        return False
+    try:
+        table.upsert_entity({"PartitionKey": "adminpush", "RowKey": email.lower(), "Sub": sub_json},
+                            mode=UpdateMode.REPLACE)
+        return True
+    except Exception as e:
+        logging.warning(f"admin push save failed: {e}")
+        return False
+
+
+def _admin_push_delete(email: str) -> None:
+    table = _get_lockout_table()
+    if not table or not email:
+        return
+    try:
+        table.delete_entity(partition_key="adminpush", row_key=email.lower())
+    except Exception:
+        pass
+
+
+def _admin_push_get(email: str) -> Optional[str]:
+    table = _get_lockout_table()
+    if not table or not email:
+        return None
+    try:
+        e = table.get_entity(partition_key="adminpush", row_key=email.lower())
+        return e.get("Sub")
+    except ResourceNotFoundError:
+        return None
+    except Exception:
+        return None
+
+
+def _push_to_admins(emails, payload) -> int:
+    """承認者(yukyu-app)の購読へ Push。失効購読は削除。送信成功数を返す。"""
+    sent = 0
+    seen = set()
+    for em in emails:
+        if not em:
+            continue
+        em = em.lower()
+        if em in seen:
+            continue
+        seen.add(em)
+        sub = _admin_push_get(em)
+        if not sub:
+            continue
+        if _send_web_push(sub, payload) == "ok":
+            sent += 1
+        else:
+            _admin_push_delete(em)
+    return sent
+
+
+@app.route(route="push/subscribe-staff", methods=["POST", "OPTIONS"])
+def push_subscribe_staff(req: func.HttpRequest) -> func.HttpResponse:
+    """yukyu-app 利用者(役員/担当者)の Web Push 購読を保存。
+    Body: { subscription: <PushSubscription JSON> } | { unsubscribe: true }"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    if body.get("unsubscribe"):
+        _admin_push_delete(email)
+        return _json_response({"ok": True, "subscribed": False})
+    sub = body.get("subscription")
+    if not sub or not isinstance(sub, dict) or not sub.get("endpoint"):
+        return _json_response({"error": "invalid_subscription"}, 400)
+    sub_str = json.dumps(sub, ensure_ascii=False)
+    if len(sub_str) > 4000:
+        return _json_response({"error": "subscription_too_large"}, 400)
+    ok = _admin_push_save(email, sub_str)
+    return _json_response({"ok": ok, "subscribed": ok})
+
+
+@app.route(route="push/test", methods=["POST", "OPTIONS"])
+def push_test(req: func.HttpRequest) -> func.HttpResponse:
+    """承認者が自分宛に前払い/弁当のテスト通知を送って動作確認する。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    sub = _admin_push_get(email)
+    if not sub:
+        return _json_response({"ok": False, "error": "no_subscription",
+                               "message": "先に「通知をオン」にしてください（ホーム画面に追加したアプリから）"}, 400)
+    r1 = _send_web_push(sub, {"title": "💴 前払い申請 承認待ち（テスト）",
+                              "body": "テスト 太郎 / 30,000円 / 金曜日", "url": YUKYU_APP_URL,
+                              "tag": "maebari-test", "badge": 1})
+    r2 = _send_web_push(sub, {"title": "🍱 弁当注文 承認待ち（テスト）",
+                              "body": "テスト 花子 / ① 315円", "url": YUKYU_APP_URL,
+                              "tag": "bento-test", "badge": 2})
+    if r1 == "gone" or r2 == "gone":
+        _admin_push_delete(email)
+        return _json_response({"ok": False, "error": "subscription_gone",
+                               "message": "購読が失効しています。通知をオフ→オンにし直してください"}, 400)
+    return _json_response({"ok": True, "maebari": r1, "bento": r2})
 
 
 @app.route(route="push/subscribe", methods=["POST", "OPTIONS"])
