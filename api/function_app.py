@@ -3058,6 +3058,7 @@ def _send_web_push(sub_json: str, payload: Dict[str, Any]) -> str:
             data=json.dumps(payload, ensure_ascii=False),
             vapid_private_key=pem,
             vapid_claims={"sub": sub},
+            ttl=86400,  # WNS(Windows PCのEdge/Chrome)はTTL=0を拒否("Ttl value conflicts with X-WNS-Cache-Policy")。明示必須
             timeout=15,
         )
         return "ok"
