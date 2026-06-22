@@ -3083,44 +3083,73 @@ BENTO_APPROVER_EMAILS = ADMIN_APPROVER_EMAILS + ["m.mori@team-stepup.com", "y.mo
 YUKYU_APP_URL = "https://team-stepup.github.io/yukyu-mobile-app/"
 
 
-def _admin_push_save(email: str, sub_json: str) -> bool:
+def _admin_push_list(email: str):
+    """email の購読を全件(list[dict])で返す。1人で複数端末(スマホ+PC等)に対応。
+    旧形式(Subが単一オブジェクト)も配列化して扱う(後方互換)。"""
     table = _get_lockout_table()
     if not table or not email:
-        return False
-    try:
-        table.upsert_entity({"PartitionKey": "adminpush", "RowKey": email.lower(), "Sub": sub_json},
-                            mode=UpdateMode.REPLACE)
-        return True
-    except Exception as e:
-        logging.warning(f"admin push save failed: {e}")
-        return False
-
-
-def _admin_push_delete(email: str) -> None:
-    table = _get_lockout_table()
-    if not table or not email:
-        return
-    try:
-        table.delete_entity(partition_key="adminpush", row_key=email.lower())
-    except Exception:
-        pass
-
-
-def _admin_push_get(email: str) -> Optional[str]:
-    table = _get_lockout_table()
-    if not table or not email:
-        return None
+        return []
     try:
         e = table.get_entity(partition_key="adminpush", row_key=email.lower())
-        return e.get("Sub")
+        raw = e.get("Sub")
+        if not raw:
+            return []
+        data = json.loads(raw)
+        if isinstance(data, list):
+            return [s for s in data if isinstance(s, dict) and s.get("endpoint")]
+        if isinstance(data, dict) and data.get("endpoint"):
+            return [data]
+        return []
     except ResourceNotFoundError:
-        return None
+        return []
     except Exception:
-        return None
+        return []
+
+
+def _admin_push_write(email: str, subs) -> bool:
+    """購読リストを保存。空なら行ごと削除。"""
+    table = _get_lockout_table()
+    if not table or not email:
+        return False
+    try:
+        if subs:
+            table.upsert_entity({"PartitionKey": "adminpush", "RowKey": email.lower(),
+                                 "Sub": json.dumps(subs, ensure_ascii=False)},
+                                mode=UpdateMode.REPLACE)
+        else:
+            try:
+                table.delete_entity(partition_key="adminpush", row_key=email.lower())
+            except Exception:
+                pass
+        return True
+    except Exception as e:
+        logging.warning(f"admin push write failed: {e}")
+        return False
+
+
+def _admin_push_save(email: str, sub) -> bool:
+    """端末の購読を追加(同一endpointは置換)。複数端末=スマホ+PCに対応。"""
+    if not isinstance(sub, dict) or not sub.get("endpoint"):
+        return False
+    ep = sub.get("endpoint")
+    subs = [s for s in _admin_push_list(email) if s.get("endpoint") != ep]   # 同一端末は重複させない
+    subs.append(sub)
+    if len(subs) > 20:                                                       # 暴走防止の上限
+        subs = subs[-20:]
+    return _admin_push_write(email, subs)
+
+
+def _admin_push_delete(email: str, endpoint: str = None) -> None:
+    """endpoint 指定でその端末だけ解除。未指定なら全端末解除。"""
+    if endpoint:
+        subs = [s for s in _admin_push_list(email) if s.get("endpoint") != endpoint]
+        _admin_push_write(email, subs)
+    else:
+        _admin_push_write(email, [])
 
 
 def _push_to_admins(emails, payload) -> int:
-    """承認者(yukyu-app)の購読へ Push。失効購読は削除。送信成功数を返す。"""
+    """承認者(yukyu-app)の全端末へ Push。失効端末(404/410)だけ個別削除。送信成功数を返す。"""
     sent = 0
     seen = set()
     for em in emails:
@@ -3130,13 +3159,22 @@ def _push_to_admins(emails, payload) -> int:
         if em in seen:
             continue
         seen.add(em)
-        sub = _admin_push_get(em)
-        if not sub:
+        subs = _admin_push_list(em)
+        if not subs:
             continue
-        if _send_web_push(sub, payload) == "ok":
-            sent += 1
-        else:
-            _admin_push_delete(em)
+        survivors = []
+        changed = False
+        for s in subs:
+            r = _send_web_push(json.dumps(s, ensure_ascii=False), payload)
+            if r == "ok":
+                sent += 1
+                survivors.append(s)
+            elif r == "gone":
+                changed = True           # 失効端末は survivors に入れない=除外
+            else:
+                survivors.append(s)      # 一時エラーは保持
+        if changed:
+            _admin_push_write(em, survivors)
     return sent
 
 
@@ -3155,15 +3193,14 @@ def push_subscribe_staff(req: func.HttpRequest) -> func.HttpResponse:
     except Exception:
         return _json_response({"error": "invalid_json"}, 400)
     if body.get("unsubscribe"):
-        _admin_push_delete(email)
+        _admin_push_delete(email, body.get("endpoint"))   # endpoint指定でその端末だけ解除(未指定は全端末)
         return _json_response({"ok": True, "subscribed": False})
     sub = body.get("subscription")
     if not sub or not isinstance(sub, dict) or not sub.get("endpoint"):
         return _json_response({"error": "invalid_subscription"}, 400)
-    sub_str = json.dumps(sub, ensure_ascii=False)
-    if len(sub_str) > 4000:
+    if len(json.dumps(sub, ensure_ascii=False)) > 4000:
         return _json_response({"error": "subscription_too_large"}, 400)
-    ok = _admin_push_save(email, sub_str)
+    ok = _admin_push_save(email, sub)
     return _json_response({"ok": ok, "subscribed": ok})
 
 
@@ -3176,21 +3213,30 @@ def push_test(req: func.HttpRequest) -> func.HttpResponse:
     email, err = require_staff_auth(req)
     if err:
         return err
-    sub = _admin_push_get(email)
-    if not sub:
+    subs = _admin_push_list(email)
+    if not subs:
         return _json_response({"ok": False, "error": "no_subscription",
                                "message": "先に「通知をオン」にしてください（ホーム画面に追加したアプリから）"}, 400)
-    r1 = _send_web_push(sub, {"title": "💴 前払い申請 承認待ち（テスト）",
-                              "body": "テスト 太郎 / 30,000円 / 金曜日", "url": YUKYU_APP_URL,
-                              "tag": "maebari-test", "badge": 1})
-    r2 = _send_web_push(sub, {"title": "🍱 弁当注文 承認待ち（テスト）",
-                              "body": "テスト 花子 / ① 315円", "url": YUKYU_APP_URL,
-                              "tag": "bento-test", "badge": 2})
-    if r1 == "gone" or r2 == "gone":
-        _admin_push_delete(email)
-        return _json_response({"ok": False, "error": "subscription_gone",
-                               "message": "購読が失効しています。通知をオフ→オンにし直してください"}, 400)
-    return _json_response({"ok": True, "maebari": r1, "bento": r2})
+    survivors = []
+    n_ok = 0
+    for s in subs:                                  # 登録された全端末(スマホ+PC等)へ送る
+        sj = json.dumps(s, ensure_ascii=False)
+        r1 = _send_web_push(sj, {"title": "💴 前払い申請 承認待ち（テスト）",
+                                 "body": "テスト 太郎 / 30,000円 / 金曜日", "url": YUKYU_APP_URL,
+                                 "tag": "maebari-test", "badge": 1})
+        r2 = _send_web_push(sj, {"title": "🍱 弁当注文 承認待ち（テスト）",
+                                 "body": "テスト 花子 / ① 315円", "url": YUKYU_APP_URL,
+                                 "tag": "bento-test", "badge": 2})
+        if r1 == "gone" or r2 == "gone":
+            continue                                # 失効端末は survivors から除外
+        survivors.append(s)
+        if r1 == "ok" and r2 == "ok":
+            n_ok += 1
+    if len(survivors) != len(subs):
+        _admin_push_write(email, survivors)
+    return _json_response({"ok": n_ok > 0, "devices": len(subs), "sent": n_ok,
+                           "maebari": "ok" if n_ok > 0 else "error",
+                           "bento": "ok" if n_ok > 0 else "error"})
 
 
 @app.route(route="push/subscribe", methods=["POST", "OPTIONS"])
