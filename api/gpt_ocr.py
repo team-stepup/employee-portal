@@ -34,7 +34,7 @@ def _claude_client():
     return _claude
 
 
-def _extract_via_claude(system: str, user_prompt: str, images: list) -> Dict[str, Any]:
+def _extract_via_claude(system: str, user_prompt: str, images: list, max_tokens: int = 1000) -> Dict[str, Any]:
     """Claude ビジョンで画像→JSON抽出。ANTHROPIC_API_KEY 必須(無ければ RuntimeError)。"""
     client = _claude_client()
     if client is None:
@@ -47,7 +47,7 @@ def _extract_via_claude(system: str, user_prompt: str, images: list) -> Dict[str
             "type": "base64", "media_type": "image/jpeg",
             "data": base64.b64encode(b).decode("ascii")}})
     resp = client.messages.create(
-        model=CLAUDE_MODEL, max_tokens=1000, temperature=0,
+        model=CLAUDE_MODEL, max_tokens=max_tokens, temperature=0,
         system=system + " 出力は JSON オブジェクトのみ。前後に説明やコードフェンスを付けない。",
         messages=[{"role": "user", "content": content}],
     )
@@ -293,6 +293,27 @@ DOC_PROMPTS: Dict[str, Dict[str, str]] = {
 最も適切なコードを1つだけ返す。確信が持てない場合は "other"。
 """ + _COMMON_RULES,
     },
+    "repair": {
+        "system": "あなたは日本の自動車整備・修理・車両交換の請求書/整備票/作業伝票を読み取り、車両ごとの明細を構造化する高精度な情報抽出エンジンです。",
+        "user": """この自動車の整備・修理・点検・部品交換の請求書/整備票/納品書/作業伝票の画像から、車両ごと(伝票ごと)の明細を漏れなく抽出し、JSONのみを返してください。
+1枚に複数台・複数伝票が含まれることがあるので、必ず配列で全件返す。
+形式: {"records": [ {明細1}, {明細2}, ... ]}
+各明細の項目:
+- "date": 実施日/作業日/入庫日/請求日 ("YYYY-MM-DD")。和暦(R6.7.4等)は西暦に変換。
+- "plate": 車両のナンバープレート(登録番号)。「浜松 480 あ 12-34」のような地名+分類番号+ひらがな+一連番号を空白・ハイフン無しで連結("浜松480あ1234")。読める範囲で。
+- "no2": 一連指定番号(プレート下段の大きい数字。最大4桁。例 "12-34"→"1234"、"・1-23"→"123")。プレートから分かれば必ず入れる。
+- "vehicleName": 車名/車種(例 "ハイゼット","N-WGN","タント")。記載があれば。
+- "mileage": 走行距離/キロ数(数字のみ、カンマ無し)。記載があれば。
+- "detail": 作業内容・品名の要約。1台に複数作業があれば「、」で連結して1つにまとめる(例 "エンジンオイル交換、オイルエレメント交換、12ヶ月点検")。
+- "amount": その車両(伝票)の金額。税込合計。数字のみ(カンマ・円記号なし。例 27500)。
+重要な注意:
+- ヘッダー/フッター(自社宛名・業者の会社名/住所/電話/FAX/登録番号、小計・消費税・総合計の合算行)は明細(records)に含めない。
+- 1台に複数作業がある場合は1明細にまとめ、detailを連結・amountはその車両分の合計にする。
+- ナンバーが読み取れない明細でも、日付・内容・金額が分かれば records に含める(plate/no2は分かる範囲で、無ければ null)。
+- 該当する明細が1件も無ければ {"records": []} を返す。
+""" + _COMMON_RULES,
+        "max_tokens": 4000,
+    },
     "shohyo": {
         "system": "あなたは日本の領収書・レシート・請求書を読み取り、電子帳簿保存法の検索要件(取引年月日・取引金額・取引先)を正確に抽出する高精度な情報抽出エンジンです。",
         "user": """このレシート/領収書/請求書/納品書の画像から以下を抽出し、JSONのみを返してください。
@@ -314,9 +335,10 @@ def extract_doc_fields(doc_type: str, images: list, model: Optional[str] = None)
     spec = DOC_PROMPTS.get(doc_type)
     if not spec:
         raise ValueError(f"unknown doc_type: {doc_type}")
+    mt = int(spec.get("max_tokens", 0) or 0)
     if _use_claude(model):
         try:
-            return _extract_via_claude(spec["system"], spec["user"], images)
+            return _extract_via_claude(spec["system"], spec["user"], images, mt or 1000)
         except Exception as e:
             logging.warning("Claude doc OCR failed (%s), fallback to gpt-4o: %s", doc_type, e)
             model = "gpt-4o"
@@ -332,7 +354,7 @@ def extract_doc_fields(doc_type: str, images: list, model: Optional[str] = None)
             {"role": "user", "content": content},
         ],
         temperature=0,
-        max_tokens=800,
+        max_tokens=mt or 800,
         response_format={"type": "json_object"},
     )
     txt = (resp.choices[0].message.content or "").strip()
