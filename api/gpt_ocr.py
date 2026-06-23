@@ -34,6 +34,34 @@ def _claude_client():
     return _claude
 
 
+def translate_renraku(title: str, body: str) -> Dict[str, Any]:
+    """連絡事項の件名・本文を「やさしい日本語(ふりがな付)/英語/ポルトガル語」に翻訳して返す。
+    返り値: {"ja":{"title","body"}, "en":{...}, "pt":{...}}。ANTHROPIC_API_KEY 必須。"""
+    client = _claude_client()
+    if client is None:
+        raise RuntimeError("ANTHROPIC_API_KEY not set")
+    src = json.dumps({"title": title or "", "body": body or ""}, ensure_ascii=False)
+    system = (
+        "あなたは日本の人材派遣会社が外国人スタッフへ送る社内連絡を多言語化する専門翻訳者です。"
+        "入力JSON {title, body} を次の3言語に変換し、JSONのみで返してください。\n"
+        "- ja: 「やさしい日本語」。短い文・簡単な語・主語を明示・二重否定を避ける。"
+        "漢字には必ずふりがなを付ける。ふりがなは漢字の直後に《》で書く(例: 健康診断《けんこうしんだん》、明日《あした》)。\n"
+        "- en: 自然で丁寧な英語。\n"
+        "- pt: ブラジルのポルトガル語。\n"
+        "規則: 意味を変えない。日付・時刻・数字・金額・固有名詞・社名はそのまま保持。"
+        "改行は維持。出力は {\"ja\":{\"title\":\"..\",\"body\":\"..\"},\"en\":{\"title\":\"..\",\"body\":\"..\"},\"pt\":{\"title\":\"..\",\"body\":\"..\"}} の形のJSONのみ。"
+        "前後に説明やコードフェンスを付けない。"
+    )
+    resp = client.messages.create(
+        model=CLAUDE_MODEL, max_tokens=2500, temperature=0, system=system,
+        messages=[{"role": "user", "content": [{"type": "text", "text": src}]}],
+    )
+    txt = "".join(getattr(b, "text", "") for b in resp.content).strip()
+    m = re.search(r"\{.*\}", txt, re.S)
+    out = json.loads(m.group(0) if m else txt)
+    return out
+
+
 def _extract_via_claude(system: str, user_prompt: str, images: list, max_tokens: int = 1000) -> Dict[str, Any]:
     """Claude ビジョンで画像→JSON抽出。ANTHROPIC_API_KEY 必須(無ければ RuntimeError)。"""
     client = _claude_client()

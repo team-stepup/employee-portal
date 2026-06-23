@@ -4430,6 +4430,13 @@ def yukyu_renraku_send(req: func.HttpRequest) -> func.HttpResponse:
     honbun = str(body.get("body") or "").strip()
     file_name = str(body.get("fileName") or "").strip()[:255]
     file_url = str(body.get("fileUrl") or "").strip()
+    trans = body.get("trans")
+    trans_str = ""
+    if trans:
+        try:
+            trans_str = json.dumps(trans, ensure_ascii=False)[:30000]
+        except Exception:
+            trans_str = ""
     raw_targets = body.get("targets") or []
     if not title and not honbun and not file_url:
         return _json_response({"error": "empty_message"}, 400)
@@ -4474,6 +4481,7 @@ def yukyu_renraku_send(req: func.HttpRequest) -> func.HttpResponse:
                 "IsRead": False,
                 "FileName": file_name,
                 "FileUrl": file_url,
+                "Trans": trans_str,
             })
             created += 1
         except Exception:
@@ -4506,11 +4514,21 @@ def renraku_list(req: func.HttpRequest) -> func.HttpResponse:
         return err
     sn = str(payload["shainNo"])
     try:
-        recs = sp_get_items(LIST_RENRAKU, select="Id,Title,Honbun,Sender,IsRead,Created,FileName,FileUrl",
+        recs = sp_get_items(LIST_RENRAKU, select="Id,Title,Honbun,Sender,IsRead,Created,FileName,FileUrl,Trans",
                             filter_=f"ShainNo eq '{sn}'", top=100, orderby="Id desc")
-        items = [{"id": r.get("Id"), "title": r.get("Title"), "body": r.get("Honbun"),
-                  "isRead": bool(r.get("IsRead")), "created": r.get("Created"),
-                  "fileName": r.get("FileName") or "", "hasFile": bool((r.get("FileUrl") or "").strip())} for r in recs]
+        items = []
+        for r in recs:
+            tr = None
+            ts = (r.get("Trans") or "").strip()
+            if ts:
+                try:
+                    tr = json.loads(ts)
+                except Exception:
+                    tr = None
+            items.append({"id": r.get("Id"), "title": r.get("Title"), "body": r.get("Honbun"),
+                          "isRead": bool(r.get("IsRead")), "created": r.get("Created"),
+                          "fileName": r.get("FileName") or "", "hasFile": bool((r.get("FileUrl") or "").strip()),
+                          "trans": tr})
         unread = sum(1 for it in items if not it["isRead"])
         return _json_response({"ok": True, "items": items, "unread": unread})
     except Exception as e:
@@ -4616,6 +4634,32 @@ def yukyu_renraku_sent(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.exception("renraku_sent failed")
         return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+@app.route(route="yukyu/translate", methods=["POST", "OPTIONS"])
+def yukyu_translate(req: func.HttpRequest) -> func.HttpResponse:
+    """連絡事項の件名・本文を やさしい日本語(ふりがな)/英語/ポルトガル語 に翻訳(送信前プレビュー用)。staff認証。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json()
+    except Exception:
+        body = {}
+    title = str((body or {}).get("title") or "").strip()
+    text = str((body or {}).get("body") or "").strip()
+    if not title and not text:
+        return _json_response({"error": "empty"}, 400)
+    try:
+        import gpt_ocr
+        out = gpt_ocr.translate_renraku(title, text)
+        return _json_response({"ok": True, "trans": out})
+    except Exception as e:
+        logging.exception("yukyu_translate failed")
+        return _json_response({"error": "translate_failed", "detail": str(e)}, 500)
 
 
 @app.route(route="yukyu/sougei-send-batch", methods=["POST", "OPTIONS"])

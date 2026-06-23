@@ -1311,6 +1311,9 @@ const I18N = {
     histNone: "該当する申請はありません。",
     menuRenraku: "お知らせ",
     renrakuEmpty: "お知らせはありません。",
+    renrakuAutoTrans: "AIによる翻訳",
+    renrakuShowOrig: "原文（日本語）を表示",
+    renrakuHideOrig: "原文を隠す",
     statusPending: "承認待ち",
     statusApproved: "承認",
     statusRejected: "却下",
@@ -1376,6 +1379,9 @@ const I18N = {
     histNone: "Nenhum pedido nesta aba.",
     menuRenraku: "Avisos",
     renrakuEmpty: "Nenhum aviso.",
+    renrakuAutoTrans: "Tradução por IA",
+    renrakuShowOrig: "Ver original (japonês)",
+    renrakuHideOrig: "Ocultar original",
     statusPending: "Aguardando",
     statusApproved: "Aprovado",
     statusRejected: "Rejeitado",
@@ -1446,6 +1452,9 @@ const I18N = {
     histNone: "No requests in this tab.",
     menuRenraku: "Notices",
     renrakuEmpty: "No notices.",
+    renrakuAutoTrans: "AI translation",
+    renrakuShowOrig: "Show original (Japanese)",
+    renrakuHideOrig: "Hide original",
     statusPending: "Pending",
     statusApproved: "Approved",
     statusRejected: "Rejected",
@@ -3948,6 +3957,9 @@ async function updateHistoryBadge() {
 
 // ====== お知らせ (連絡事項) ======
 function escHtmlR(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+// やさしい日本語のふりがな(漢字《かな》)を安全に ruby 化（先にエスケープ→自前のrubyタグのみ挿入）
+function escRubyR(s) { return escHtmlR(s).replace(/([一-鿿々〆ヶ]+)《([^》]+)》/g, '<ruby>$1<rt style="font-size:0.6em;color:#888;">$2<\/rt><\/ruby>'); }
+function toggleRenrakuOrig(id) { const el = document.getElementById('renraku-orig-' + id); if (el) el.classList.toggle('hidden'); }
 async function initRenrakuScreen() {
   document.getElementById('renraku-loading').classList.remove('hidden');
   document.getElementById('renraku-list').innerHTML = '';
@@ -3977,11 +3989,19 @@ function renderRenraku(items) {
     card.style.cssText = 'text-align:left;' + (it.isRead ? '' : 'border-left:4px solid #2e5a99;');
     const created = it.created ? new Date(it.created) : null;
     const dstr = (created && !isNaN(created.getTime())) ? new Date(created.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10) : '';
+    const tr = it.trans && it.trans[currentLang];
+    const hasTr = !!(tr && (tr.title || tr.body));
+    const dTitle = hasTr ? (tr.title || it.title) : it.title;
+    const dBody = hasTr ? (tr.body || it.body) : it.body;
     let h = '';
     if (!it.isRead) h += '<span style="display:inline-block;background:#e53935;color:#fff;font-size:0.65em;font-weight:800;padding:1px 6px;border-radius:8px;vertical-align:middle;margin-right:6px;">NEW</span>';
-    h += '<span style="font-weight:800;color:#1f3864;font-size:1.05em;">' + escHtmlR(it.title || '') + '</span>';
+    h += '<span style="font-weight:800;color:#1f3864;font-size:1.05em;">' + escRubyR(dTitle || '') + '</span>';
     h += '<div style="font-size:0.8em;color:#999;margin:2px 0 8px;">' + dstr + '</div>';
-    h += '<div style="white-space:pre-wrap;line-height:1.7;color:#333;">' + escHtmlR(it.body || '') + '</div>';
+    h += '<div style="white-space:pre-wrap;line-height:1.9;color:#333;">' + escRubyR(dBody || '') + '</div>';
+    if (hasTr) {
+      h += '<div style="margin-top:8px;font-size:0.75em;color:#0277bd;">🌐 ' + t('renrakuAutoTrans') + ' ・ <span onclick="toggleRenrakuOrig(' + it.id + ')" style="text-decoration:underline;cursor:pointer;">' + t('renrakuShowOrig') + '</span></div>';
+      h += '<div id="renraku-orig-' + it.id + '" class="hidden" style="margin-top:6px;padding:8px;background:#f7f7f9;border-radius:8px;border:1px solid #eee;"><div style="font-weight:700;color:#555;font-size:0.92em;">' + escHtmlR(it.title || '') + '</div><div style="white-space:pre-wrap;line-height:1.7;color:#555;font-size:0.92em;margin-top:2px;">' + escHtmlR(it.body || '') + '</div></div>';
+    }
     if (it.hasFile) {
       const fn = String(it.fileName || '資料').replace(/'/g, "\\'");
       h += '<div style="margin-top:10px;"><button onclick="downloadRenrakuFile(' + it.id + ',\'' + escHtmlR(fn) + '\')" style="background:#2e5a99;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:0.9em;font-weight:700;cursor:pointer;">📎 ' + escHtmlR(it.fileName || '資料') + '</button></div>';
