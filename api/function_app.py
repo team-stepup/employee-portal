@@ -4538,6 +4538,43 @@ def renraku_read(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"error": "internal", "detail": str(e)}, 500)
 
 
+@app.route(route="yukyu/renraku-sent", methods=["GET", "POST", "OPTIONS"])
+def yukyu_renraku_sent(req: func.HttpRequest) -> func.HttpResponse:
+    """送信履歴＋既読確認: 過去の連絡を一斉送信(SendId)単位でまとめ、既読数・宛先別既読を返す。staff認証。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        recs = sp_get_items(LIST_RENRAKU, select="Id,Title,Honbun,Sender,SendId,EmpName,ShainNo,Hakensaki,IsRead,Created",
+                            top=5000, orderby="Id desc")
+        groups = {}
+        order = []
+        for r in recs:
+            sid = r.get("SendId") or ("_" + str(r.get("Id")))
+            g = groups.get(sid)
+            if g is None:
+                g = {"sendId": sid, "title": r.get("Title"), "body": r.get("Honbun"),
+                     "sender": r.get("Sender"), "created": r.get("Created"),
+                     "recipients": [], "total": 0, "read": 0}
+                groups[sid] = g
+                order.append(sid)
+            g["total"] += 1
+            isread = bool(r.get("IsRead"))
+            if isread:
+                g["read"] += 1
+            g["recipients"].append({"name": r.get("EmpName") or r.get("ShainNo"),
+                                    "shainNo": r.get("ShainNo"), "hakensaki": r.get("Hakensaki"),
+                                    "isRead": isread})
+        items = [groups[s] for s in order][:200]
+        return _json_response({"ok": True, "items": items})
+    except Exception as e:
+        logging.exception("renraku_sent failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
 @app.route(route="yukyu/sougei-send-batch", methods=["POST", "OPTIONS"])
 def yukyu_sougei_send_batch(req: func.HttpRequest) -> func.HttpResponse:
     """送迎連絡(人単位): assignments[{shainNo,hakensaki,endTime,vehicle}] を保存し本人へ Push。"""
