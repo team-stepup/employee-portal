@@ -653,6 +653,12 @@
       <span id="history-new-badge" class="new-badge hidden">0</span>
       <span id="history-new-status" class="new-status hidden"></span>
     </div>
+    <div class="menu-card" onclick="showScreen('renraku')" style="position:relative;">
+      <span class="card-num">📣</span>
+      <span class="icon">📢</span>
+      <span class="label" data-i18n="menuRenraku">お知らせ</span>
+      <span id="renraku-badge" class="new-badge hidden">0</span>
+    </div>
     <div class="menu-card" id="menu-card-zairyu" onclick="showScreen('zairyu')">
       <span class="card-num">③</span>
       <span class="icon">🪪</span>
@@ -1159,6 +1165,18 @@
   <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="back">戻る</button>
 </div>
 
+<!-- ====== Screen: お知らせ (連絡事項) ====== -->
+<div id="screen-renraku" class="container hidden">
+  <div class="header">
+    <h1>📢 <span data-i18n="menuRenraku">お知らせ</span></h1>
+    <span class="logout-btn" onclick="showScreen('home')">✕</span>
+  </div>
+  <div id="renraku-loading" style="text-align:center; padding:30px;"><div class="spinner"></div></div>
+  <div id="renraku-list"></div>
+  <div id="renraku-empty" class="card hidden" style="text-align:center; color:#999;" data-i18n="renrakuEmpty">お知らせはありません。</div>
+  <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="back">戻る</button>
+</div>
+
 <div class="footer">© 2026 有限会社ステップ・アップ</div>
 
 <!-- ====== カメラビュー (在留カード撮影、ガイド枠付き) ====== -->
@@ -1291,6 +1309,8 @@ const I18N = {
     histPending: "承認待ち",
     histDone: "承認済み",
     histNone: "該当する申請はありません。",
+    menuRenraku: "お知らせ",
+    renrakuEmpty: "お知らせはありません。",
     statusPending: "承認待ち",
     statusApproved: "承認",
     statusRejected: "却下",
@@ -1354,6 +1374,8 @@ const I18N = {
     histPending: "Aguardando",
     histDone: "Processados",
     histNone: "Nenhum pedido nesta aba.",
+    menuRenraku: "Avisos",
+    renrakuEmpty: "Nenhum aviso.",
     statusPending: "Aguardando",
     statusApproved: "Aprovado",
     statusRejected: "Rejeitado",
@@ -1422,6 +1444,8 @@ const I18N = {
     histPending: "Pending",
     histDone: "Processed",
     histNone: "No requests in this tab.",
+    menuRenraku: "Notices",
+    renrakuEmpty: "No notices.",
     statusPending: "Pending",
     statusApproved: "Approved",
     statusRejected: "Rejected",
@@ -3229,7 +3253,7 @@ function acceptRules() {
 // ====== 画面遷移 ======
 function showScreen(name) {
   ['login','home','request','history','zairyu','zairyu-confirm','license','license-confirm',
-   'shaken','shaken-confirm','hoken','hoken-confirm','shorui','shorui-history','bento','bento-approve'].forEach(s => {
+   'shaken','shaken-confirm','hoken','hoken-confirm','shorui','shorui-history','bento','bento-approve','renraku'].forEach(s => {
     const el = document.getElementById('screen-' + s);
     if (el) el.classList.add('hidden');
   });
@@ -3247,6 +3271,7 @@ function showScreen(name) {
   if (name === 'shorui-history') initShoruiHistoryScreen();
   if (name === 'bento') initBentoScreen();
   if (name === 'bento-approve') initBentoApproveScreen();
+  if (name === 'renraku') initRenrakuScreen();
 }
 
 // ====== ログイン ======
@@ -3489,6 +3514,7 @@ function renderHome() {
   // 未確認の承認/却下件数バッジを更新 (履歴はキャッシュせず鮮度優先)
   state.historyCache = null;
   updateHistoryBadge();
+  updateRenrakuBadge();   // お知らせ(連絡事項)の未読バッジ
 }
 
 async function ensureProfile() {
@@ -3916,7 +3942,60 @@ async function updateHistoryBadge() {
     // ホーム画面アイコンのバッジ = 未読の前払い(承認/却下) + 期限お知らせ + 当日の送迎連絡 + (モリマコトのみ)弁当承認待ち
     const sgCount = (state.profile && state.profile.todaySougei && (state.profile.todaySougei.endTime || state.profile.todaySougei.vehicle)) ? 1 : 0;
     const bentoCount = (state.profile && state.profile.isBentoApprover) ? (state.bentoPendingCount || 0) : 0;
-    updateAppBadge(total + getExpiryNoticeCount() + sgCount + bentoCount);
+    updateAppBadge(total + getExpiryNoticeCount() + sgCount + bentoCount + (window._renrakuUnread || 0));
+  } catch (e) { /* silent */ }
+}
+
+// ====== お知らせ (連絡事項) ======
+function escHtmlR(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+async function initRenrakuScreen() {
+  document.getElementById('renraku-loading').classList.remove('hidden');
+  document.getElementById('renraku-list').innerHTML = '';
+  document.getElementById('renraku-empty').classList.add('hidden');
+  try {
+    const data = await callApi('GET', '/renraku/list');
+    const items = (data && data.items) || [];
+    renderRenraku(items);
+    if ((data && data.unread) > 0) {           // 開いた瞬間に既読化→バッジクリア
+      callApi('POST', '/renraku/read', {}).then(() => updateRenrakuBadge()).catch(() => {});
+    }
+  } catch (e) {
+    document.getElementById('renraku-loading').classList.add('hidden');
+    showAlert(t('networkError') + '\n(' + (e.message || '') + ')', 'error');
+  }
+}
+function renderRenraku(items) {
+  document.getElementById('renraku-loading').classList.add('hidden');
+  const list = document.getElementById('renraku-list');
+  const empty = document.getElementById('renraku-empty');
+  list.innerHTML = '';
+  if (!items.length) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  items.forEach(it => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.cssText = 'text-align:left;' + (it.isRead ? '' : 'border-left:4px solid #2e5a99;');
+    const created = it.created ? new Date(it.created) : null;
+    const dstr = (created && !isNaN(created.getTime())) ? new Date(created.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10) : '';
+    let h = '';
+    if (!it.isRead) h += '<span style="display:inline-block;background:#e53935;color:#fff;font-size:0.65em;font-weight:800;padding:1px 6px;border-radius:8px;vertical-align:middle;margin-right:6px;">NEW</span>';
+    h += '<span style="font-weight:800;color:#1f3864;font-size:1.05em;">' + escHtmlR(it.title || '') + '</span>';
+    h += '<div style="font-size:0.8em;color:#999;margin:2px 0 8px;">' + dstr + '</div>';
+    h += '<div style="white-space:pre-wrap;line-height:1.7;color:#333;">' + escHtmlR(it.body || '') + '</div>';
+    card.innerHTML = h;
+    list.appendChild(card);
+  });
+}
+async function updateRenrakuBadge() {
+  const badge = document.getElementById('renraku-badge');
+  try {
+    const data = await callApi('GET', '/renraku/list');
+    const n = (data && data.unread) || 0;
+    window._renrakuUnread = n;
+    if (badge) {
+      if (n > 0) { badge.textContent = String(n); badge.classList.remove('hidden'); }
+      else badge.classList.add('hidden');
+    }
   } catch (e) { /* silent */ }
 }
 

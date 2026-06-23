@@ -3533,11 +3533,23 @@ def soumu_counts_test(req: func.HttpRequest) -> func.HttpResponse:
                 er = requests.get(eurl, headers=eh, timeout=90); er.raise_for_status()
                 ed = er.json().get("d", {}); emps.extend(ed.get("results", [])); eurl = ed.get("__next")
             ksh = fm.get("総務-社保")
-            dbg = {"emps": len(emps), "k_shaho": ksh, "k_rishoku": fm.get("総務-離職票"),
-                   "k_rhyou": fm.get("離職票risyokuhyou"), "k_zai": fm.get("在職zaisyoku"),
+            today = _today_jst()
+            cands = []
+            for e in emps:
+                v = str(e.get(ksh) or "")
+                if "取得完了" not in v:
+                    continue
+                yt = _parse_jst_date(e.get(F_YUKYU_TAISHA))
+                ht = _parse_jst_date(e.get(F_HAKEN_TAISHA))
+                ds = [d for d in (yt, ht) if d]
+                if not ds:
+                    continue
+                latest = max(ds)
+                cands.append({"name": e.get("Title"), "shaho": v, "latest": str(latest),
+                              "le_today": latest <= today, "soshitsu": ("喪失" in v)})
+            dbg = {"today": str(today), "emps": len(emps), "k_shaho": ksh,
                    "n_yukyuTaisha": sum(1 for e in emps if e.get(F_YUKYU_TAISHA)),
-                   "n_hakenTaisha": sum(1 for e in emps if e.get(F_HAKEN_TAISHA)),
-                   "n_shaho_kanryo": sum(1 for e in emps if "取得完了" in str(e.get(ksh) or ""))}
+                   "cand_count": len(cands), "cands": cands[:25]}
         return _json_response({"ok": True, "counts": c, "sent": sent, "debug": dbg})
     except Exception as e:
         logging.exception("soumu_counts_test failed")
@@ -4393,6 +4405,137 @@ def yukyu_sougei_send(req: func.HttpRequest) -> func.HttpResponse:
                  email, hakensaki, end_time, vehicle, targets, pushed)
     return _json_response({"ok": True, "recordId": rec_id, "hakensaki": hakensaki,
                            "date": target.isoformat(), "targets": targets, "pushed": pushed})
+
+
+# ===== 連絡事項: yukyu-appから派遣社員ポータルへ通知＋お知らせ履歴 =====
+LIST_RENRAKU = "05546b2d-4af0-421b-89f9-51fa22dae2e6"  # 連絡事項 (1社員1レコード・既読管理)
+
+
+@app.route(route="yukyu/renraku-send", methods=["POST", "OPTIONS"])
+def yukyu_renraku_send(req: func.HttpRequest) -> func.HttpResponse:
+    """連絡事項を選択した派遣社員へ配信(お知らせ記録＋ロック画面Push)。staff認証必須。
+    Body: { title, body, targets:[{shainNo,name?,hakensaki?}] }"""
+    import uuid
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    title = str(body.get("title") or "").strip()
+    honbun = str(body.get("body") or "").strip()
+    raw_targets = body.get("targets") or []
+    if not title and not honbun:
+        return _json_response({"error": "empty_message"}, 400)
+    targets = []
+    for t in raw_targets:
+        if isinstance(t, dict):
+            sn = str(t.get("shainNo") or "").strip()
+            info = t
+        else:
+            sn = str(t or "").strip()
+            info = {}
+        if sn:
+            targets.append((sn, info))
+    if not targets:
+        return _json_response({"error": "no_targets"}, 400)
+    # 社員の push購読＋氏名をまとめて取得
+    emp_map = {}
+    try:
+        emps = sp_get_items(LIST_SHAIN, select=",".join(["Id", F_SHAIN_NO, "Title", F_BUKA, F_PORTAL_PUSH]), top=10000)
+        for e in emps:
+            sn = _norm_bango(e.get(F_SHAIN_NO))
+            if sn and sn not in emp_map:
+                emp_map[sn] = e
+    except Exception:
+        logging.exception("renraku: 社員取得失敗")
+    send_id = uuid.uuid4().hex[:12]
+    created = 0
+    pushed = 0
+    for sn, info in targets:
+        emp = emp_map.get(_norm_bango(sn))
+        name = (str(info.get("name") or "").strip() or (emp.get("Title") if emp else "") or "")
+        hakensaki = strip_buka_prefix(str(info.get("hakensaki") or "").strip() or (emp.get(F_BUKA) if emp else "") or "")
+        try:
+            sp_post_item(LIST_RENRAKU, {
+                "Title": title or "連絡",
+                "Honbun": honbun,
+                "ShainNo": str(sn),
+                "EmpName": name,
+                "Hakensaki": hakensaki,
+                "Sender": email,
+                "SendId": send_id,
+                "IsRead": False,
+            })
+            created += 1
+        except Exception:
+            logging.exception("renraku: record作成失敗 sn=%s", sn)
+            continue
+        sub = (emp.get(F_PORTAL_PUSH) or "").strip() if emp else ""
+        if sub:
+            r = _send_web_push(sub, {"title": "📣 " + (title or "連絡事項"),
+                                     "body": (honbun[:120] or title), "url": "/",
+                                     "tag": "renraku-" + send_id, "badge": 1})
+            if r == "ok":
+                pushed += 1
+            elif r == "gone":
+                try:
+                    sp_patch_item(LIST_SHAIN, int(emp["Id"]), {F_PORTAL_PUSH: ""})
+                except Exception:
+                    pass
+    logging.info("連絡事項 by %s title=%s targets=%d created=%d pushed=%d", email, title, len(targets), created, pushed)
+    return _json_response({"ok": True, "sendId": send_id, "created": created, "pushed": pushed, "targets": len(targets)})
+
+
+@app.route(route="renraku/list", methods=["GET", "POST", "OPTIONS"])
+def renraku_list(req: func.HttpRequest) -> func.HttpResponse:
+    """本人(派遣社員)宛の連絡事項(お知らせ)一覧を返す。本人JWT必須。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    sn = str(payload["shainNo"])
+    try:
+        recs = sp_get_items(LIST_RENRAKU, select="Id,Title,Honbun,Sender,IsRead,Created",
+                            filter_=f"ShainNo eq '{sn}'", top=100, orderby="Id desc")
+        items = [{"id": r.get("Id"), "title": r.get("Title"), "body": r.get("Honbun"),
+                  "isRead": bool(r.get("IsRead")), "created": r.get("Created")} for r in recs]
+        unread = sum(1 for it in items if not it["isRead"])
+        return _json_response({"ok": True, "items": items, "unread": unread})
+    except Exception as e:
+        logging.exception("renraku_list failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+@app.route(route="renraku/read", methods=["POST", "OPTIONS"])
+def renraku_read(req: func.HttpRequest) -> func.HttpResponse:
+    """本人宛の未読連絡を既読にする。本人JWT必須。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    sn = str(payload["shainNo"])
+    try:
+        recs = sp_get_items(LIST_RENRAKU, select="Id", filter_=f"ShainNo eq '{sn}' and IsRead eq 0", top=300)
+        n = 0
+        for r in recs:
+            try:
+                sp_patch_item(LIST_RENRAKU, int(r["Id"]), {"IsRead": True})
+                n += 1
+            except Exception:
+                pass
+        return _json_response({"ok": True, "marked": n})
+    except Exception as e:
+        logging.exception("renraku_read failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
 
 
 @app.route(route="yukyu/sougei-send-batch", methods=["POST", "OPTIONS"])
