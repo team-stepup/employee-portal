@@ -3306,6 +3306,11 @@ def sankyu_overdue_timer(timer: func.TimerRequest) -> None:
             return
         res = _sankyu_send_overdue_push()
         logging.info("産休育休 遅れ通知: overdue=%s sent=%s", res.get("overdue"), res.get("sent"))
+        try:
+            sres = _soumu_send_push()
+            logging.info("社保・離職票 通知: counts=%s sent=%s", sres.get("counts"), sres.get("sent"))
+        except Exception:
+            logging.exception("社保・離職票 通知に失敗")
     except Exception:
         logging.exception("産休育休 遅れ通知(timer)に失敗")
 
@@ -3329,6 +3334,189 @@ def sankyu_overdue_test(req: func.HttpRequest) -> func.HttpResponse:
                                             "procedures": d.get("procedures")} for d in details]})
     except Exception as e:
         logging.exception("sankyu_overdue_test failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+# ===== 社保 加入/喪失・離職票 の朝の通知 (産休育休と同じ8:30タイマーで) =====
+SOUMU_SHAHO_IN_ROOT = "/Lists/List9"   # ルートサイトの社保加入申請リスト
+F_YUKYU_TAISHA = "OData__x9000__x8077__x5e74__x6708__x65"   # 退職年月(有給使用後退社)
+F_HAKEN_TAISHA = "OData__x6d3e__x9063__x5148__x9000__x79"   # 派遣先退社
+_SOUMU_ALLOWED_KUBUN = {"", "新規加入", "扶養追加", "氏名変更", "その他"}
+
+
+def _parse_jst_date(raw):
+    if not raw:
+        return None
+    try:
+        d = _dt.datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if d.tzinfo is not None:
+            d = d.astimezone(_dt.timezone(_dt.timedelta(hours=9))).replace(tzinfo=None)
+        return d.date()
+    except Exception:
+        return None
+
+
+def _emp_field_map():
+    """社員Listの {フィールドTitle: dataKey(EntityPropertyName)} を返す。"""
+    r = requests.get(f"{SITE_URL}/_api/web/lists(guid'{LIST_SHAIN}')/fields?$select=EntityPropertyName,Title&$top=400",
+                     headers=_sp_headers(verbose=True), timeout=60)
+    r.raise_for_status()
+    m = {}
+    for f in r.json().get("d", {}).get("results", []):
+        epn = f.get("EntityPropertyName")
+        if epn:
+            m[f.get("Title")] = epn
+    return m
+
+
+def _norm_bango(v):
+    s = str(v if v is not None else "").strip()
+    return str(int(s)) if s.isdigit() else s
+
+
+def _soumu_counts():
+    """社保加入/社保喪失/離職票 の件数 (yukyu-app 総務ダッシュボードと同じ計算)。kanyuはroot読取不可ならNone。"""
+    today = _today_jst()
+    fm = _emp_field_map()
+    k_shaho = fm.get("総務-社保")
+    k_rishoku = fm.get("総務-離職票")
+    k_rhyou = fm.get("離職票risyokuhyou")
+    k_zai = fm.get("在職zaisyoku")
+    emps = sp_get_items(LIST_SHAIN, top=5000)
+
+    def zai(e):
+        if k_zai:
+            return str(e.get(k_zai) or "")
+        return "退社" if (e.get(F_YUKYU_TAISHA) or e.get(F_HAKEN_TAISHA)) else "在職"
+
+    # 社保喪失: 退社日(遅い方)<=今日 AND 総務-社保が「取得完了」かつ「喪失」でない
+    shitsu = 0
+    for e in emps:
+        if not e.get("Title"):
+            continue
+        yt = _parse_jst_date(e.get(F_YUKYU_TAISHA))
+        ht = _parse_jst_date(e.get(F_HAKEN_TAISHA))
+        ds = [d for d in (yt, ht) if d]
+        if not ds:
+            continue
+        if max(ds) > today:
+            continue
+        v = str((k_shaho and e.get(k_shaho)) or "")
+        if "取得完了" in v and "喪失" not in v:
+            shitsu += 1
+
+    # 離職票: 退社 AND 離職票=「必要」 AND 総務-離職票 in {不要,空欄}
+    rishoku = 0
+    if k_rhyou and k_rishoku:
+        for e in emps:
+            if not e.get("Title"):
+                continue
+            if zai(e) != "退社":
+                continue
+            if str(e.get(k_rhyou) or "").strip() != "必要":
+                continue
+            if str(e.get(k_rishoku) or "").strip() not in ("不要", ""):
+                continue
+            rishoku += 1
+
+    # 社保加入: ルートサイト List9 ＋ 社員「総務-社保」で重複除外。root未許可なら None
+    kanyu = None
+    try:
+        excl = set()
+        for e in emps:
+            sv = str((k_shaho and e.get(k_shaho)) or "").strip()
+            if sv and ("申請" in sv or "完了" in sv or "喪失" in sv or "移動" in sv):
+                bn = _norm_bango(e.get(F_SHAIN_NO))
+                if bn:
+                    excl.add(bn)
+        lbase = f"{SP_RESOURCE}/_api/web/GetList('{SOUMU_SHAHO_IN_ROOT}')"
+        h = _sp_headers(verbose=True)
+        lf = requests.get(lbase + "/fields?$select=EntityPropertyName,Title&$top=300", headers=h, timeout=60)
+        lf.raise_for_status()
+        lt2k = {}
+        for f in lf.json().get("d", {}).get("results", []):
+            epn = f.get("EntityPropertyName")
+            if epn:
+                lt2k[f.get("Title")] = epn
+
+        def findk(*kw):
+            for k in kw:
+                if k in lt2k:
+                    return lt2k[k]
+            for k in kw:
+                for t, v in lt2k.items():
+                    if k in (t or ""):
+                        return v
+            return None
+        kK = findk("加入日"); kHon = findk("本人加入"); kKub = findk("申請区分"); kBan = findk("社員番号", "社番", "番号")
+        items = []
+        url = lbase + "/items?$top=2000"
+        while url:
+            ir = requests.get(url, headers=h, timeout=60)
+            ir.raise_for_status()
+            dd = ir.json().get("d", {})
+            items.extend(dd.get("results", []))
+            url = dd.get("__next")
+        cnt = 0
+        for it in items:
+            kd = _parse_jst_date(it.get(kK)) if kK else None
+            if not kd or kd >= today:
+                continue
+            if kHon and str(it.get(kHon) or "").strip() != "":
+                continue
+            if kKub and str(it.get(kKub) or "").strip() not in _SOUMU_ALLOWED_KUBUN:
+                continue
+            bn = _norm_bango(it.get(kBan)) if kBan else ""
+            if bn and bn in excl:
+                continue
+            cnt += 1
+        kanyu = cnt
+    except Exception:
+        logging.exception("社保加入カウント(root List9)読取に失敗")
+        kanyu = None
+
+    return {"kanyu": kanyu, "shitsu": shitsu, "rishoku": rishoku}
+
+
+def _soumu_send_push():
+    c = _soumu_counts()
+    parts = []
+    if c.get("kanyu"):
+        parts.append(f"社保加入 {c['kanyu']}名")
+    if c.get("shitsu"):
+        parts.append(f"社保喪失 {c['shitsu']}名")
+    if c.get("rishoku"):
+        parts.append(f"離職票 {c['rishoku']}名")
+    if not parts:
+        return {"ok": True, "counts": c, "sent": 0}
+    badge = (c.get("kanyu") or 0) + (c.get("shitsu") or 0) + (c.get("rishoku") or 0)
+    sent = _push_to_admins(ADMIN_APPROVER_EMAILS, {
+        "title": "📋 社保・離職票 手続き",
+        "body": "未処理: " + "、".join(parts) + "。総務ダッシュボードをご確認ください。",
+        "url": YUKYU_APP_URL,
+        "tag": "soumu-tetsuduki",
+        "badge": badge,
+    })
+    return {"ok": True, "counts": c, "sent": sent}
+
+
+@app.route(route="sankyu/soumu-test", methods=["POST", "GET", "OPTIONS"])
+def soumu_counts_test(req: func.HttpRequest) -> func.HttpResponse:
+    """手動確認用: 社保加入/喪失・離職票の件数を返す。?push=1 で実際にPushも送る。総務/役員のみ。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        c = _soumu_counts()
+        sent = 0
+        if req.params.get("push") == "1":
+            sent = _soumu_send_push().get("sent", 0)
+        return _json_response({"ok": True, "counts": c, "sent": sent})
+    except Exception as e:
+        logging.exception("soumu_counts_test failed")
         return _json_response({"error": "internal", "detail": str(e)}, 500)
 
 
