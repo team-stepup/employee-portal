@@ -3982,6 +3982,10 @@ function renderRenraku(items) {
     h += '<span style="font-weight:800;color:#1f3864;font-size:1.05em;">' + escHtmlR(it.title || '') + '</span>';
     h += '<div style="font-size:0.8em;color:#999;margin:2px 0 8px;">' + dstr + '</div>';
     h += '<div style="white-space:pre-wrap;line-height:1.7;color:#333;">' + escHtmlR(it.body || '') + '</div>';
+    if (it.hasFile) {
+      const fn = String(it.fileName || '資料').replace(/'/g, "\\'");
+      h += '<div style="margin-top:10px;"><button onclick="downloadRenrakuFile(' + it.id + ',\'' + escHtmlR(fn) + '\')" style="background:#2e5a99;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:0.9em;font-weight:700;cursor:pointer;">📎 ' + escHtmlR(it.fileName || '資料') + '</button></div>';
+    }
     card.innerHTML = h;
     list.appendChild(card);
   });
@@ -3997,6 +4001,21 @@ async function updateRenrakuBadge() {
       else badge.classList.add('hidden');
     }
   } catch (e) { /* silent */ }
+}
+async function downloadRenrakuFile(id, fname) {
+  try {
+    showLoading(true);
+    const resp = await fetch(API_BASE + '/renraku/file?id=' + id, { headers: state.token ? { 'Authorization': 'Bearer ' + state.token } : {} });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fname || 'file';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 8000);
+  } catch (e) {
+    showAlert(t('networkError') + '\n(' + (e.message || '') + ')', 'error');
+  } finally { showLoading(false); }
 }
 
 // ====== ホーム画面アイコンのバッジ (Badging API) ======

@@ -4428,8 +4428,10 @@ def yukyu_renraku_send(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"error": "invalid_json"}, 400)
     title = str(body.get("title") or "").strip()
     honbun = str(body.get("body") or "").strip()
+    file_name = str(body.get("fileName") or "").strip()[:255]
+    file_url = str(body.get("fileUrl") or "").strip()
     raw_targets = body.get("targets") or []
-    if not title and not honbun:
+    if not title and not honbun and not file_url:
         return _json_response({"error": "empty_message"}, 400)
     targets = []
     for t in raw_targets:
@@ -4470,6 +4472,8 @@ def yukyu_renraku_send(req: func.HttpRequest) -> func.HttpResponse:
                 "Sender": email,
                 "SendId": send_id,
                 "IsRead": False,
+                "FileName": file_name,
+                "FileUrl": file_url,
             })
             created += 1
         except Exception:
@@ -4502,10 +4506,11 @@ def renraku_list(req: func.HttpRequest) -> func.HttpResponse:
         return err
     sn = str(payload["shainNo"])
     try:
-        recs = sp_get_items(LIST_RENRAKU, select="Id,Title,Honbun,Sender,IsRead,Created",
+        recs = sp_get_items(LIST_RENRAKU, select="Id,Title,Honbun,Sender,IsRead,Created,FileName,FileUrl",
                             filter_=f"ShainNo eq '{sn}'", top=100, orderby="Id desc")
         items = [{"id": r.get("Id"), "title": r.get("Title"), "body": r.get("Honbun"),
-                  "isRead": bool(r.get("IsRead")), "created": r.get("Created")} for r in recs]
+                  "isRead": bool(r.get("IsRead")), "created": r.get("Created"),
+                  "fileName": r.get("FileName") or "", "hasFile": bool((r.get("FileUrl") or "").strip())} for r in recs]
         unread = sum(1 for it in items if not it["isRead"])
         return _json_response({"ok": True, "items": items, "unread": unread})
     except Exception as e:
@@ -4535,6 +4540,44 @@ def renraku_read(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"ok": True, "marked": n})
     except Exception as e:
         logging.exception("renraku_read failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+@app.route(route="renraku/file", methods=["GET", "OPTIONS"])
+def renraku_file(req: func.HttpRequest) -> func.HttpResponse:
+    """本人宛の連絡に添付されたファイルを取得(ダウンロード)。本人JWT必須。?id=レコードId"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    sn = str(payload["shainNo"])
+    rid = req.params.get("id")
+    if not rid or not str(rid).isdigit():
+        return _json_response({"error": "missing_id"}, 400)
+    try:
+        recs = sp_get_items(LIST_RENRAKU, select="Id,ShainNo,FileUrl,FileName", filter_=f"Id eq {int(rid)}", top=1)
+        if not recs:
+            return _json_response({"error": "not_found"}, 404)
+        r = recs[0]
+        if str(r.get("ShainNo")) != sn:                 # 本人宛の連絡のみ
+            return _json_response({"error": "forbidden"}, 403)
+        url = (r.get("FileUrl") or "").strip()
+        if not url:
+            return _json_response({"error": "no_file"}, 404)
+        from urllib.parse import quote as _q
+        api = f"{SITE_URL}/_api/web/GetFileByServerRelativeUrl('{_q(url)}')/$value"
+        fr = requests.get(api, headers={"Authorization": f"Bearer {_get_sp_token()}"}, timeout=90)
+        fr.raise_for_status()
+        fname = r.get("FileName") or "file"
+        return func.HttpResponse(fr.content, status_code=200, headers={
+            "Content-Type": "application/octet-stream",
+            "Content-Disposition": "attachment; filename*=UTF-8''" + _q(fname),
+            "Access-Control-Allow-Origin": "*",
+        })
+    except Exception as e:
+        logging.exception("renraku_file failed")
         return _json_response({"error": "internal", "detail": str(e)}, 500)
 
 
