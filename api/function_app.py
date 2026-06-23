@@ -3239,6 +3239,99 @@ def push_test(req: func.HttpRequest) -> func.HttpResponse:
                            "bento": "ok" if n_ok > 0 else "error"})
 
 
+# ===== 産休育休「注(申請遅れ)」の朝の通知 (毎朝8:30 JST・稼働日のみ・スマホ+PC両方) =====
+SANKYU_LIST_PATH = "/sites/PowerApps/Lists/List52"
+_SANKYU_SKIP_FIELDS = {'ContentType', 'Modified', 'Created', 'Author', 'Editor', '_UIVersionString',
+                       'Attachments', 'Edit', 'LinkTitleNoMenu', 'LinkTitle', 'DocIcon',
+                       'ItemChildCount', 'FolderChildCount'}
+
+
+def _sankyu_overdue_now():
+    """List52を読み、産休育休の申請遅れ件数と内訳を返す (yukyu-app の「注N」と同じ計算)。→ (total, details)"""
+    import sankyu_overdue as _s   # 遅延import (gpt_ocr と同方式)
+    base = f"{SITE_URL}/_api/web/GetList('{SANKYU_LIST_PATH}')"
+    h = _sp_headers(verbose=True)
+    fr = requests.get(base + "/fields?$filter=Hidden eq false&$select=InternalName,Title,TypeAsString&$top=300",
+                      headers=h, timeout=60)
+    fr.raise_for_status()
+    meta = {}
+    for f in fr.json().get("d", {}).get("results", []):
+        iname = f.get("InternalName")
+        if not iname or iname in _SANKYU_SKIP_FIELDS:
+            continue
+        if iname in ("Title", "Id", "ID"):
+            dk = iname
+        elif iname.startswith("_"):
+            dk = "OData_" + iname
+        else:
+            dk = iname
+        meta[iname] = {"title": f.get("Title"), "type": f.get("TypeAsString"), "dataKey": dk}
+    items = []
+    url = base + "/items?$top=500"
+    while url:
+        ir = requests.get(url, headers=h, timeout=60)
+        ir.raise_for_status()
+        d = ir.json().get("d", {})
+        items.extend(d.get("results", []))
+        url = d.get("__next")
+    return _s.compute_overdue(items, meta)
+
+
+def _sankyu_send_overdue_push():
+    """遅れがあれば承認者(役員)のスマホ+PC全端末へPush。送信成功数を返す。"""
+    total, details = _sankyu_overdue_now()
+    if total <= 0:
+        return {"ok": True, "overdue": 0, "sent": 0}
+    names = "、".join((d.get("name") or "") for d in details[:5])
+    if len(details) > 5:
+        names += " ほか"
+    sent = _push_to_admins(ADMIN_APPROVER_EMAILS, {
+        "title": "👶 産休育休 申請遅れ",
+        "body": f"申請遅れ {total}件（{names}）。手続きの申請日をご確認ください。",
+        "url": YUKYU_APP_URL,
+        "tag": "sankyu-overdue",
+        "badge": total,
+    })
+    return {"ok": True, "overdue": total, "sent": sent}
+
+
+@app.timer_trigger(arg_name="timer", schedule="0 30 23 * * *", run_on_startup=False, use_monitor=True)
+def sankyu_overdue_timer(timer: func.TimerRequest) -> None:
+    """毎朝8:30 JST(=23:30 UTC前日)。稼働日のみ、産休育休の申請遅れがあれば承認者へPush(スマホ+PC)。
+    休日(土日・会社休日List)はスキップ → 休日明け最初の稼働日に当日の遅れ全件を送る(その時点で再計算するので取りこぼし無し)。"""
+    try:
+        d = _today_jst()
+        if not _bento_is_working_day(d):
+            logging.info("産休育休 遅れ通知: %s は稼働日でないためスキップ", d)
+            return
+        res = _sankyu_send_overdue_push()
+        logging.info("産休育休 遅れ通知: overdue=%s sent=%s", res.get("overdue"), res.get("sent"))
+    except Exception:
+        logging.exception("産休育休 遅れ通知(timer)に失敗")
+
+
+@app.route(route="sankyu/overdue-test", methods=["POST", "GET", "OPTIONS"])
+def sankyu_overdue_test(req: func.HttpRequest) -> func.HttpResponse:
+    """手動確認用: 現在の産休育休の遅れ件数・内訳を返す。?push=1 で実際にPushも送る。総務/役員のみ。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        total, details = _sankyu_overdue_now()
+        sent = 0
+        if req.params.get("push") == "1" and total > 0:
+            sent = _sankyu_send_overdue_push().get("sent", 0)
+        return _json_response({"ok": True, "overdue": total, "sent": sent,
+                               "details": [{"name": d.get("name"), "count": d.get("count"),
+                                            "procedures": d.get("procedures")} for d in details]})
+    except Exception as e:
+        logging.exception("sankyu_overdue_test failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
 @app.route(route="push/subscribe", methods=["POST", "OPTIONS"])
 def push_subscribe(req: func.HttpRequest) -> func.HttpResponse:
     """ブラウザの Push 購読情報を本人の社員レコードに保存。
