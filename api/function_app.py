@@ -3382,7 +3382,16 @@ def _soumu_counts():
     k_rishoku = fm.get("総務-離職票")
     k_rhyou = fm.get("離職票risyokuhyou")
     k_zai = fm.get("在職zaisyoku")
-    emps = sp_get_items(LIST_SHAIN, top=5000)
+    # 社員アイテムは _emp_field_map(verbose) のキーに合わせ verbose(d.results)で読む
+    emps = []
+    eurl = f"{SITE_URL}/_api/web/lists(guid'{LIST_SHAIN}')/items?$top=5000"
+    eh = _sp_headers(verbose=True)
+    while eurl:
+        er = requests.get(eurl, headers=eh, timeout=90)
+        er.raise_for_status()
+        ed = er.json().get("d", {})
+        emps.extend(ed.get("results", []))
+        eurl = ed.get("__next")
 
     def zai(e):
         if k_zai:
@@ -3514,7 +3523,22 @@ def soumu_counts_test(req: func.HttpRequest) -> func.HttpResponse:
         sent = 0
         if req.params.get("push") == "1":
             sent = _soumu_send_push().get("sent", 0)
-        return _json_response({"ok": True, "counts": c, "sent": sent})
+        dbg = None
+        if req.params.get("debug") == "1":
+            fm = _emp_field_map()
+            emps = []
+            eurl = f"{SITE_URL}/_api/web/lists(guid'{LIST_SHAIN}')/items?$top=5000"
+            eh = _sp_headers(verbose=True)
+            while eurl:
+                er = requests.get(eurl, headers=eh, timeout=90); er.raise_for_status()
+                ed = er.json().get("d", {}); emps.extend(ed.get("results", [])); eurl = ed.get("__next")
+            ksh = fm.get("総務-社保")
+            dbg = {"emps": len(emps), "k_shaho": ksh, "k_rishoku": fm.get("総務-離職票"),
+                   "k_rhyou": fm.get("離職票risyokuhyou"), "k_zai": fm.get("在職zaisyoku"),
+                   "n_yukyuTaisha": sum(1 for e in emps if e.get(F_YUKYU_TAISHA)),
+                   "n_hakenTaisha": sum(1 for e in emps if e.get(F_HAKEN_TAISHA)),
+                   "n_shaho_kanryo": sum(1 for e in emps if "取得完了" in str(e.get(ksh) or ""))}
+        return _json_response({"ok": True, "counts": c, "sent": sent, "debug": dbg})
     except Exception as e:
         logging.exception("soumu_counts_test failed")
         return _json_response({"error": "internal", "detail": str(e)}, 500)
