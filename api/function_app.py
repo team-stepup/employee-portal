@@ -3295,9 +3295,9 @@ def _sankyu_send_overdue_push():
     return {"ok": True, "overdue": total, "sent": sent}
 
 
-@app.timer_trigger(arg_name="timer", schedule="0 30 23 * * *", run_on_startup=False, use_monitor=True)
+@app.timer_trigger(arg_name="timer", schedule="0 15 0 * * *", run_on_startup=False, use_monitor=True)
 def sankyu_overdue_timer(timer: func.TimerRequest) -> None:
-    """毎朝8:30 JST(=23:30 UTC前日)。稼働日のみ、産休育休の申請遅れがあれば承認者へPush(スマホ+PC)。
+    """毎朝9:15 JST(=00:15 UTC)。稼働日のみ、産休育休の申請遅れがあれば承認者へPush(スマホ+PC)。
     休日(土日・会社休日List)はスキップ → 休日明け最初の稼働日に当日の遅れ全件を送る(その時点で再計算するので取りこぼし無し)。"""
     try:
         d = _today_jst()
