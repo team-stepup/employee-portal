@@ -2421,6 +2421,55 @@ def kyuyu_apply(req: func.HttpRequest) -> func.HttpResponse:
     return _json_response({"ok": True, "id": new_id})
 
 
+def _kyuyu_item_to_notify(it: Dict[str, Any]) -> None:
+    """List54 アイテム(OData_付き) から通知を再構築し、送迎関係チャネル + Push へ送る(再送/テスト用)。"""
+    def og(key):
+        v = it.get("OData_" + key)
+        return str(v) if v not in (None, "") else ""
+    title = (it.get("Title") or "").strip()
+    name = re.sub(r"\s*\([^)]*\)\s*$", "", re.sub(r"^\s*\d+\s*", "", title)).strip() if title else ""
+    m = re.match(r"\s*(\d+)", title)
+    shain_no = m.group(1) if m else ""
+    vehicle = og(GAS_F_VEHICLE)
+    amount, liters, odometer = og(GAS_F_AMOUNT), og(GAS_F_LITERS), og(GAS_F_ODO)
+    dist_s, nenpi_s, kankaku_s = og(GAS_F_DIST), og(GAS_F_NENPI), og(GAS_F_KANKAKU)
+    pay_type = og(GAS_F_PAYTYPE)
+    purposes = [p for p in og(GAS_F_PURPOSE).split(",") if p] or ["ガソリン給油"]
+    receipt_urls = [og(k) for k in [GAS_F_RECEIPT, GAS_F_RECEIPT2, GAS_F_RECEIPT3] if og(k)]
+    odo_url = og(GAS_F_ODOIMG)
+    _kyuyu_notify_teams(shain_no, name, vehicle, _today_jst(), amount, liters, odometer,
+                        dist_s, nenpi_s, kankaku_s, pay_type, purposes, receipt_urls, odo_url)
+    try:
+        veh_short = re.sub(r"[\s　]+", " ", vehicle).strip()
+        amt = f"¥{int(float(amount)):,}" if amount else ""
+        _push_to_admins(KYUYU_PUSH_EMAILS, {
+            "title": "⛽ 給油申請", "body": f"{name}（{veh_short}）{amt}".strip(),
+            "url": f"{SITE_URL}/Lists/List54/AllItems.aspx", "tag": "kyuyu-apply", "badge": 1,
+        })
+    except Exception:
+        logging.exception("kyuyu item push failed")
+
+
+@app.timer_trigger(arg_name="timer", schedule="0 0 3 27 6 *", run_on_startup=False, use_monitor=True)
+def kyuyu_test_timer(timer: func.TimerRequest) -> None:
+    """【一時・実施後に削除】2026-06-27 12:00 JST(=03:00 UTC) のPC-offテスト。
+    最新のヒラタミゲル(50466)給油データを送迎関係チャネル+Pushへ送る。
+    クラウド実行のためPCがオフでも届く=本システムがPC不要なことの実証。
+    日付ガードで当日以外は何もしない(翌年6/27の誤発火防止)。"""
+    try:
+        if _today_jst().isoformat() != "2026-06-27":
+            return
+        items = sp_get_items(LIST_GASORIN, orderby="Id desc", top=50)
+        cands = [it for it in items if "50466" in (it.get("Title") or "")]
+        if not cands:
+            logging.warning("kyuyu test timer: ヒラタミゲル(50466)のエントリ無し")
+            return
+        _kyuyu_item_to_notify(cands[0])
+        logging.info("kyuyu test timer: 送信 Id=%s", cands[0].get("Id"))
+    except Exception:
+        logging.exception("kyuyu test timer 失敗")
+
+
 # ====== 運転免許証 OCR ======
 def parse_license_card_text(text: str) -> Dict[str, Any]:
     """汎用OCRテキストから日本の運転免許証の主要項目を抽出。"""
