@@ -2031,6 +2031,34 @@ def _kyuyu_vehicles() -> List[str]:
     return GAS_VEHICLES
 
 
+def _kyuyu_default_vehicle(shain_no: int, vehicles: List[str]) -> str:
+    """車両管理(List=/sites/PowerApps/Lists/List)の DriverShainNo==社員番号 の担当車両を探し、
+    vehicles(List54の選択肢)から ナンバー一致 する1件を返す。無ければ ''(=選択してください)。"""
+    try:
+        h = {"Authorization": f"Bearer {_get_sp_token()}", "Accept": "application/json;odata=nometadata"}
+        url = f"{SITE_URL}/_api/web/GetList('/sites/PowerApps/Lists/List')/items?$top=500"
+        items = requests.get(url, headers=h, timeout=30).json().get("value", [])
+        for it in items:
+            ds = it.get("DriverShainNo")
+            try:
+                if ds is None or int(float(ds)) != int(shain_no):
+                    continue
+            except Exception:
+                continue
+            num = str(it.get("OData__x004e_O2") or it.get("_x004e_O2") or "").strip()   # ナンバー(例 1724)
+            digits = re.sub(r"\D", "", num)
+            if not digits:
+                continue
+            for v in vehicles:
+                vfirst = (v.split() or [""])[0]
+                if re.sub(r"\D", "", vfirst) == digits or v.replace("　", "").replace(" ", "").startswith(digits):
+                    return v
+        return ""
+    except Exception:
+        logging.exception("kyuyu default vehicle lookup failed")
+        return ""
+
+
 def _kyuyu_eligible(emp: Dict[str, Any]) -> bool:
     """給油申請の対象=送迎運転手(社員番号がドライバーセットに含まれる)。"""
     try:
@@ -2060,9 +2088,12 @@ def kyuyu_status(req: func.HttpRequest) -> func.HttpResponse:
     emp = find_active_employee_by_shain(payload["shainNo"])
     if not emp:
         return _json_response({"error": "not_active"}, 403)
+    vehicles = _kyuyu_vehicles()
     return _json_response({
         "ok": True, "eligible": _kyuyu_eligible(emp),
-        "vehicles": _kyuyu_vehicles(), "purposes": GAS_PURPOSES, "payTypes": GAS_PAYTYPES,
+        "vehicles": vehicles,
+        "defaultVehicle": _kyuyu_default_vehicle(int(payload["shainNo"]), vehicles),
+        "purposes": GAS_PURPOSES, "payTypes": GAS_PAYTYPES,
     })
 
 

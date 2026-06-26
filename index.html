@@ -3627,7 +3627,7 @@ Object.assign(I18N.pt, {
   kyuyuDone: 'Solicitação de abastecimento enviada.', kyuyuSubmitFail: 'Falha no envio. Tente novamente.',
 });
 
-Object.assign(I18N.ja, { kyuyuMultiHint: '複数選択できます（給油＋オイル交換＋洗車など）', kyuyuReceiptHint: '給油・オイル交換・洗車で別々のレシートが出る場合、最大3枚撮影できます（金額は自動で合計）。', kyuyuAddReceipt: 'レシートを追加で撮影' });
+Object.assign(I18N.ja, { kyuyuMultiHint: '複数選択できます（給油＋オイル交換＋洗車など）', kyuyuReceiptHint: '給油・オイル交換・洗車で別々のレシートが出る場合、最大3枚撮影できます（金額は自動で合計）。', kyuyuAddReceipt: '＋レシートを追加（オイル交換・洗車など）' });
 Object.assign(I18N.en, { kyuyuMultiHint: 'You can select multiple (fuel + oil + wash, etc.)', kyuyuReceiptHint: 'If fuel / oil change / car wash have separate receipts, take up to 3 photos (amount is summed automatically).', kyuyuAddReceipt: 'Add another receipt' });
 Object.assign(I18N.pt, { kyuyuMultiHint: 'Pode selecionar vários (combustível + óleo + lavagem)', kyuyuReceiptHint: 'Se combustível / troca de óleo / lavagem tiverem recibos separados, tire até 3 fotos (o valor é somado automaticamente).', kyuyuAddReceipt: 'Adicionar outro recibo' });
 
@@ -3650,10 +3650,11 @@ async function openKyuyu() {
   document.getElementById('kyuyu-error').classList.add('hidden');
   try {
     const data = await callApi('GET', '/kyuyu/status');
-    // 車両(SP=List54から動的取得・使用回数順)
+    // 車両(SP=List54から動的取得・使用回数順)。担当車両(車両管理)があれば既定選択
     const vsel = document.getElementById('kyuyu-vehicle');
     vsel.innerHTML = '<option value="">' + t('kyuyuSelectVehicle') + '</option>';
     (data.vehicles || []).forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; vsel.appendChild(o); });
+    if (data.defaultVehicle && [...vsel.options].some(o => o.value === data.defaultVehicle)) vsel.value = data.defaultVehicle;
     // 利用目的(複数選択可): ヒント + チェックボックス(表示は各言語)
     const pwrap = document.getElementById('kyuyu-purposes');
     pwrap.innerHTML = '<div style="font-size:0.82em;color:#1f6fb2;margin-bottom:6px;">✔ ' + t('kyuyuMultiHint') + '</div>';
@@ -3689,9 +3690,15 @@ function _kyuyuRecalcAmount() {
 function _kyuyuUpdateReceiptBtn() {
   const btn = document.getElementById('kyuyu-receipt-btn');
   if (!btn) return;
-  btn.style.display = (kyuyuState.receipts.length >= 3) ? 'none' : '';
+  const n = kyuyuState.receipts.length;
+  btn.style.display = (n >= 3) ? 'none' : '';
   const lbl = document.getElementById('kyuyu-receipt-btn-label');
-  if (lbl) lbl.textContent = (kyuyuState.receipts.length === 0) ? t('kyuyuTakePhoto') : t('kyuyuAddReceipt');
+  if (lbl) lbl.textContent = (n === 0) ? t('kyuyuTakePhoto') : (t('kyuyuAddReceipt') + ' (' + n + '/3)');
+  const icon = btn.querySelector('.cam-icon');
+  if (icon) icon.textContent = (n === 0) ? '📷' : '➕';
+  // 2枚目以降を促す: オレンジで強調
+  if (n >= 1 && n < 3) { btn.style.background = '#fff3e0'; btn.style.borderColor = '#ff9800'; btn.style.color = '#e65100'; btn.style.fontWeight = '700'; }
+  else { btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; btn.style.fontWeight = ''; }
 }
 function _kyuyuRenderReceipts() {
   const wrap = document.getElementById('kyuyu-receipt-preview');
@@ -3734,7 +3741,7 @@ async function onKyuyuReceipt(event) {
       if (ocr.liters != null && ocr.liters !== '' && !document.getElementById('kyuyu-liters').value) document.getElementById('kyuyu-liters').value = ocr.liters;
       if (idx === 0) { const cb = [...document.querySelectorAll('#kyuyu-purposes input')].find(c => c.value === 'ガソリン給油'); if (cb) cb.checked = true; }
       if (Array.isArray(ocr.purposeHints)) ocr.purposeHints.forEach(h => { const cb = [...document.querySelectorAll('#kyuyu-purposes input')].find(c => c.value === h); if (cb) cb.checked = true; });
-      if (ocr.paymentType && idx === 0) { const ps = document.getElementById('kyuyu-paytype'); if ([...ps.options].some(o => o.value === ocr.paymentType)) ps.value = ocr.paymentType; }
+      // 支払い方法は会社カード固定デフォルト(OCRで上書きしない。PayPay等は運転手が手動変更)
     } catch (e) { showAlert(t('kyuyuOcrFailHint'), 'warning'); }
     finally { showLoading(false); }
   };
