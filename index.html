@@ -3626,6 +3626,18 @@ Object.assign(I18N.pt, {
   kyuyuDone: 'Solicitação de abastecimento enviada.', kyuyuSubmitFail: 'Falha no envio. Tente novamente.',
 });
 
+Object.assign(I18N.ja, { kyuyuMultiHint: '複数選択できます（給油＋オイル交換＋洗車など）' });
+Object.assign(I18N.en, { kyuyuMultiHint: 'You can select multiple (fuel + oil + wash, etc.)' });
+Object.assign(I18N.pt, { kyuyuMultiHint: 'Pode selecionar vários (combustível + óleo + lavagem)' });
+
+// 利用目的・支払い方法の表示翻訳(値は日本語で保存・表示は各言語)
+var KYUYU_OPT_LABEL = {
+  ja: { 'ガソリン給油': 'ガソリン給油', 'オイル交換': 'オイル交換', '洗車': '洗車', 'その他': 'その他', '会社カード': '会社カード', 'PayPay': 'PayPay' },
+  en: { 'ガソリン給油': 'Fuel', 'オイル交換': 'Oil change', '洗車': 'Car wash', 'その他': 'Other', '会社カード': 'Company card', 'PayPay': 'PayPay' },
+  pt: { 'ガソリン給油': 'Abastecimento', 'オイル交換': 'Troca de óleo', '洗車': 'Lavagem', 'その他': 'Outros', '会社カード': 'Cartão da empresa', 'PayPay': 'PayPay' },
+};
+function _kyuyuOptLabel(v) { return (KYUYU_OPT_LABEL[currentLang] || KYUYU_OPT_LABEL.ja)[v] || v; }
+
 var kyuyuState = { receiptUrl: null, odoUrl: null };
 
 async function openKyuyu() {
@@ -3636,21 +3648,25 @@ async function openKyuyu() {
   document.getElementById('kyuyu-error').classList.add('hidden');
   try {
     const data = await callApi('GET', '/kyuyu/status');
+    // 車両(SP=List54から動的取得・使用回数順)
     const vsel = document.getElementById('kyuyu-vehicle');
     vsel.innerHTML = '<option value="">' + t('kyuyuSelectVehicle') + '</option>';
     (data.vehicles || []).forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; vsel.appendChild(o); });
+    // 利用目的(複数選択可): ヒント + チェックボックス(表示は各言語)
     const pwrap = document.getElementById('kyuyu-purposes');
-    pwrap.innerHTML = '';
+    pwrap.innerHTML = '<div style="font-size:0.82em;color:#1f6fb2;margin-bottom:6px;">✔ ' + t('kyuyuMultiHint') + '</div>';
     (data.purposes || []).forEach((p, i) => {
       const lab = document.createElement('label');
       lab.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 0;font-size:1em;';
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = p; cb.id = 'kyuyu-purpose-' + i;
       cb.style.cssText = 'width:20px;height:20px;'; if (p === 'ガソリン給油') cb.checked = true;
-      lab.appendChild(cb); lab.appendChild(document.createTextNode(p)); pwrap.appendChild(lab);
+      lab.appendChild(cb); lab.appendChild(document.createTextNode(_kyuyuOptLabel(p))); pwrap.appendChild(lab);
     });
+    // 支払い方法(表示は各言語・既定=会社カード)
     const psel = document.getElementById('kyuyu-paytype');
-    psel.innerHTML = '<option value="">' + t('kyuyuSelectPay') + '</option>';
-    (data.payTypes || []).forEach(pt => { const o = document.createElement('option'); o.value = pt; o.textContent = pt; psel.appendChild(o); });
+    psel.innerHTML = '';
+    (data.payTypes || []).forEach(pt => { const o = document.createElement('option'); o.value = pt; o.textContent = _kyuyuOptLabel(pt); psel.appendChild(o); });
+    if ([...psel.options].some(o => o.value === '会社カード')) psel.value = '会社カード';
   } catch (e) {
     showAlert(t('networkError'), 'error');
   }

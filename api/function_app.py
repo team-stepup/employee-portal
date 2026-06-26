@@ -1988,21 +1988,45 @@ def zairyu_ocr(req: func.HttpRequest) -> func.HttpResponse:
 LIST_GASORIN = "ac84ec0e-6853-463a-9469-d94b52940485"   # SP「ガソリン代払い戻し」(List54)
 KYUYU_DRIVERS = {50466, 50565, 50692, 50709, 50736, 50743, 50750, 60057, 111113, 111356}
 KYUYU_FOLDER_BASE = "/sites/TeamStepup/Shared Documents/給油申請レシート"
-# List54 業務フィールド (書込キー=OData_ 付き内部名)
-GAS_F_VEHICLE = "OData__x30ca__x30f3__x30d0__x30fc__x30"   # ナンバー、車両
-GAS_F_AMOUNT  = "OData__x6255__x623b__x91d1__x984d_"        # 払戻金額
-GAS_F_PAYTYPE = "OData__x652f__x6255__x3044__x306e__x7a"    # 支払いの種類
-GAS_F_RECEIPT = "OData__x9818__x53ce__x66f8_NEW"            # 領収書NEW
-GAS_F_ODOIMG  = "OData__x8d70__x884c__x8ddd__x96e2__x75"    # 走行距離画像
-GAS_F_ODO     = "OData__x73fe__x5728__x8d70__x884c__x8d"    # 現在走行距離
-GAS_F_LITERS  = "OData__x7d66__x6cb9__x91cf__x2113_"        # 給油量ℓ
-GAS_F_PURPOSE = "OData__x5229__x7528__x76ee__x7684_"        # 利用目的
+# List54 業務フィールド (AddValidateUpdateItemUsingPath は InternalName を要求=OData_ プレフィックス無し)
+GAS_F_VEHICLE = "_x30ca__x30f3__x30d0__x30fc__x30"   # ナンバー、車両
+GAS_F_AMOUNT  = "_x6255__x623b__x91d1__x984d_"        # 払戻金額
+GAS_F_PAYTYPE = "_x652f__x6255__x3044__x306e__x7a"    # 支払いの種類
+GAS_F_RECEIPT = "_x9818__x53ce__x66f8_NEW"            # 領収書NEW
+GAS_F_ODOIMG  = "_x8d70__x884c__x8ddd__x96e2__x75"    # 走行距離画像
+GAS_F_ODO     = "_x73fe__x5728__x8d70__x884c__x8d"    # 現在走行距離
+GAS_F_LITERS  = "_x7d66__x6cb9__x91cf__x2113_"        # 給油量ℓ
+GAS_F_PURPOSE = "_x5229__x7528__x76ee__x7684_"        # 利用目的
 GAS_VEHICLES = ["997　エスクァイア HV", "1967　ハイエース", "3011  ノア", "8504　ハイエース",
                 "1724  ノア", "363    ハイエース", "5344  ノア　HV", "5179　ノア HV",
                 "4222　ハイエース", "6441  プリウスα　HV", "6803　ノア", "2862　ノア",
                 "26　　ヴォクシー", "514     ヴォクシー", "7638   ハイエース", "代車　Carro reserva"]
 GAS_PURPOSES = ["ガソリン給油", "オイル交換", "洗車", "その他"]
-GAS_PAYTYPES = ["PayPay", "個人用カード", "現金", "その他"]
+GAS_PAYTYPES = ["会社カード", "PayPay", "その他"]   # 既定=会社カード(先頭)
+
+_kyuyu_veh_cache = {"vehicles": None, "ts": 0.0}
+
+
+def _kyuyu_vehicles() -> List[str]:
+    """List54「ナンバー、車両」の既存値から車両一覧を動的生成(使用回数多い順)。1時間キャッシュ。失敗時はGAS_VEHICLES。"""
+    now = time.time()
+    if _kyuyu_veh_cache["vehicles"] and (now - _kyuyu_veh_cache["ts"] < 3600):
+        return _kyuyu_veh_cache["vehicles"]
+    try:
+        items = sp_get_items(LIST_GASORIN, top=5000)
+        cnt: Dict[str, int] = {}
+        for it in items:
+            v = str(it.get("OData_" + GAS_F_VEHICLE) or it.get(GAS_F_VEHICLE) or "").strip()
+            if v:
+                cnt[v] = cnt.get(v, 0) + 1
+        if cnt:
+            vs = [v for v, _ in sorted(cnt.items(), key=lambda x: -x[1])]
+            _kyuyu_veh_cache["vehicles"] = vs
+            _kyuyu_veh_cache["ts"] = now
+            return vs
+    except Exception:
+        logging.exception("kyuyu vehicles fetch failed")
+    return GAS_VEHICLES
 
 
 def _kyuyu_eligible(emp: Dict[str, Any]) -> bool:
@@ -2036,7 +2060,7 @@ def kyuyu_status(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"error": "not_active"}, 403)
     return _json_response({
         "ok": True, "eligible": _kyuyu_eligible(emp),
-        "vehicles": GAS_VEHICLES, "purposes": GAS_PURPOSES, "payTypes": GAS_PAYTYPES,
+        "vehicles": _kyuyu_vehicles(), "purposes": GAS_PURPOSES, "payTypes": GAS_PAYTYPES,
     })
 
 
