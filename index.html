@@ -754,11 +754,12 @@
 
   <div class="card">
     <h2>② <span data-i18n="kyuyuReceipt">給油レシート</span></h2>
-    <input type="file" accept="image/*" capture="environment" id="kyuyu-receipt-input" onchange="onKyuyuPhoto('receipt', event)" style="display:none;">
-    <button type="button" class="btn-camera" onclick="document.getElementById('kyuyu-receipt-input').click()">
-      <span class="cam-icon">📷</span> <span data-i18n="kyuyuTakePhoto">撮影する</span>
+    <div style="font-size:0.82em;color:#888;margin-bottom:6px;" data-i18n="kyuyuReceiptHint">給油・オイル交換・洗車で別々のレシートが出る場合、最大3枚撮影できます（金額は自動で合計）。</div>
+    <input type="file" accept="image/*" capture="environment" id="kyuyu-receipt-input" onchange="onKyuyuReceipt(event)" style="display:none;">
+    <button type="button" class="btn-camera" id="kyuyu-receipt-btn" onclick="document.getElementById('kyuyu-receipt-input').click()">
+      <span class="cam-icon">📷</span> <span id="kyuyu-receipt-btn-label" data-i18n="kyuyuTakePhoto">撮影する</span>
     </button>
-    <div id="kyuyu-receipt-preview" class="zairyu-preview hidden"></div>
+    <div id="kyuyu-receipt-preview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;"></div>
   </div>
 
   <div class="card">
@@ -3626,9 +3627,9 @@ Object.assign(I18N.pt, {
   kyuyuDone: 'Solicitação de abastecimento enviada.', kyuyuSubmitFail: 'Falha no envio. Tente novamente.',
 });
 
-Object.assign(I18N.ja, { kyuyuMultiHint: '複数選択できます（給油＋オイル交換＋洗車など）' });
-Object.assign(I18N.en, { kyuyuMultiHint: 'You can select multiple (fuel + oil + wash, etc.)' });
-Object.assign(I18N.pt, { kyuyuMultiHint: 'Pode selecionar vários (combustível + óleo + lavagem)' });
+Object.assign(I18N.ja, { kyuyuMultiHint: '複数選択できます（給油＋オイル交換＋洗車など）', kyuyuReceiptHint: '給油・オイル交換・洗車で別々のレシートが出る場合、最大3枚撮影できます（金額は自動で合計）。', kyuyuAddReceipt: 'レシートを追加で撮影' });
+Object.assign(I18N.en, { kyuyuMultiHint: 'You can select multiple (fuel + oil + wash, etc.)', kyuyuReceiptHint: 'If fuel / oil change / car wash have separate receipts, take up to 3 photos (amount is summed automatically).', kyuyuAddReceipt: 'Add another receipt' });
+Object.assign(I18N.pt, { kyuyuMultiHint: 'Pode selecionar vários (combustível + óleo + lavagem)', kyuyuReceiptHint: 'Se combustível / troca de óleo / lavagem tiverem recibos separados, tire até 3 fotos (o valor é somado automaticamente).', kyuyuAddReceipt: 'Adicionar outro recibo' });
 
 // 利用目的・支払い方法の表示翻訳(値は日本語で保存・表示は各言語)
 var KYUYU_OPT_LABEL = {
@@ -3638,12 +3639,13 @@ var KYUYU_OPT_LABEL = {
 };
 function _kyuyuOptLabel(v) { return (KYUYU_OPT_LABEL[currentLang] || KYUYU_OPT_LABEL.ja)[v] || v; }
 
-var kyuyuState = { receiptUrl: null, odoUrl: null };
+var kyuyuState = { receipts: [], odoUrl: null };
 
 async function openKyuyu() {
   showScreen('kyuyu');
-  kyuyuState = { receiptUrl: null, odoUrl: null };
+  kyuyuState = { receipts: [], odoUrl: null };
   ['kyuyu-receipt-preview', 'kyuyu-odo-preview'].forEach(id => { const e = document.getElementById(id); if (e) { e.innerHTML = ''; e.classList.add('hidden'); } });
+  _kyuyuUpdateReceiptBtn();
   ['kyuyu-liters', 'kyuyu-amount', 'kyuyu-odovalue'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
   document.getElementById('kyuyu-error').classList.add('hidden');
   try {
@@ -3679,28 +3681,81 @@ function _kyuyuPreview(slot, dataUrl) {
   el.classList.remove('hidden');
 }
 
+// ---- レシート(最大3枚・給油/オイル交換/洗車) ----
+function _kyuyuRecalcAmount() {
+  const total = kyuyuState.receipts.reduce((s, r) => s + (r.amount || 0), 0);
+  document.getElementById('kyuyu-amount').value = total ? Math.round(total) : '';
+}
+function _kyuyuUpdateReceiptBtn() {
+  const btn = document.getElementById('kyuyu-receipt-btn');
+  if (!btn) return;
+  btn.style.display = (kyuyuState.receipts.length >= 3) ? 'none' : '';
+  const lbl = document.getElementById('kyuyu-receipt-btn-label');
+  if (lbl) lbl.textContent = (kyuyuState.receipts.length === 0) ? t('kyuyuTakePhoto') : t('kyuyuAddReceipt');
+}
+function _kyuyuRenderReceipts() {
+  const wrap = document.getElementById('kyuyu-receipt-preview');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  kyuyuState.receipts.forEach((r, i) => {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:relative;display:inline-block;';
+    const img = document.createElement('img');
+    img.src = r.url;
+    img.style.cssText = 'width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid #ccc;';
+    d.appendChild(img);
+    const x = document.createElement('span');
+    x.textContent = '✕';
+    x.style.cssText = 'position:absolute;top:-7px;right:-7px;background:#f85149;color:#fff;border-radius:50%;width:22px;height:22px;line-height:22px;text-align:center;font-size:13px;cursor:pointer;';
+    x.onclick = () => { kyuyuState.receipts.splice(i, 1); _kyuyuRenderReceipts(); _kyuyuRecalcAmount(); };
+    d.appendChild(x);
+    wrap.appendChild(d);
+  });
+  _kyuyuUpdateReceiptBtn();
+}
+async function onKyuyuReceipt(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file || !file.type.startsWith('image/')) return;
+  if (kyuyuState.receipts.length >= 3) return;
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    const dataUrl = ev.target.result;
+    const rec = { url: dataUrl, amount: 0 };
+    kyuyuState.receipts.push(rec);
+    const idx = kyuyuState.receipts.length - 1;
+    _kyuyuRenderReceipts();
+    showLoading(true);
+    try {
+      const data = await callApi('POST', '/kyuyu/ocr', { image: dataUrl, kind: 'receipt' });
+      const ocr = data.ocr || {};
+      if (ocr.amountJpy != null && ocr.amountJpy !== '') rec.amount = parseFloat(String(ocr.amountJpy).replace(/[^\d.]/g, '')) || 0;
+      _kyuyuRecalcAmount();
+      if (ocr.liters != null && ocr.liters !== '' && !document.getElementById('kyuyu-liters').value) document.getElementById('kyuyu-liters').value = ocr.liters;
+      if (idx === 0) { const cb = [...document.querySelectorAll('#kyuyu-purposes input')].find(c => c.value === 'ガソリン給油'); if (cb) cb.checked = true; }
+      if (Array.isArray(ocr.purposeHints)) ocr.purposeHints.forEach(h => { const cb = [...document.querySelectorAll('#kyuyu-purposes input')].find(c => c.value === h); if (cb) cb.checked = true; });
+      if (ocr.paymentType && idx === 0) { const ps = document.getElementById('kyuyu-paytype'); if ([...ps.options].some(o => o.value === ocr.paymentType)) ps.value = ocr.paymentType; }
+    } catch (e) { showAlert(t('kyuyuOcrFailHint'), 'warning'); }
+    finally { showLoading(false); }
+  };
+  reader.readAsDataURL(file);
+}
+// ---- メーター(走行距離・1枚) ----
 async function onKyuyuPhoto(kind, event) {
   const file = event.target.files && event.target.files[0];
   if (!file || !file.type.startsWith('image/')) return;
   const reader = new FileReader();
   reader.onload = async (ev) => {
     const dataUrl = ev.target.result;
-    if (kind === 'receipt') { kyuyuState.receiptUrl = dataUrl; _kyuyuPreview('receipt', dataUrl); }
-    else { kyuyuState.odoUrl = dataUrl; _kyuyuPreview('odometer', dataUrl); }
+    kyuyuState.odoUrl = dataUrl;
+    _kyuyuPreview('odometer', dataUrl);
     showLoading(true);
     try {
-      const data = await callApi('POST', '/kyuyu/ocr', { image: dataUrl, kind: (kind === 'odometer' ? 'odometer' : 'receipt') });
+      const data = await callApi('POST', '/kyuyu/ocr', { image: dataUrl, kind: 'odometer' });
       const ocr = data.ocr || {};
-      if (kind === 'receipt') {
-        if (ocr.liters != null && ocr.liters !== '') document.getElementById('kyuyu-liters').value = ocr.liters;
-        if (ocr.amountJpy != null && ocr.amountJpy !== '') document.getElementById('kyuyu-amount').value = ocr.amountJpy;
-        if (ocr.paymentType) { const ps = document.getElementById('kyuyu-paytype'); if ([...ps.options].some(o => o.value === ocr.paymentType)) ps.value = ocr.paymentType; }
-        if (Array.isArray(ocr.purposeHints)) ocr.purposeHints.forEach(h => { const cb = [...document.querySelectorAll('#kyuyu-purposes input')].find(c => c.value === h); if (cb) cb.checked = true; });
-      } else {
-        if (ocr.odometer != null && ocr.odometer !== '') document.getElementById('kyuyu-odovalue').value = ocr.odometer;
-      }
+      if (ocr.odometer != null && ocr.odometer !== '') document.getElementById('kyuyu-odovalue').value = ocr.odometer;
     } catch (e) {
-      showAlert(t('kyuyuOcrFailHint'), 'warning');   // OCR失敗は致命的でない(手入力可)
+      showAlert(t('kyuyuOcrFailHint'), 'warning');
     } finally { showLoading(false); }
   };
   reader.readAsDataURL(file);
@@ -3711,7 +3766,7 @@ function _kyuyuErr(msg) { const e = document.getElementById('kyuyu-error'); e.te
 async function submitKyuyu() {
   const vehicle = document.getElementById('kyuyu-vehicle').value;
   if (!vehicle) { _kyuyuErr(t('kyuyuNeedVehicle')); return; }
-  if (!kyuyuState.receiptUrl) { _kyuyuErr(t('kyuyuNeedReceipt')); return; }
+  if (!kyuyuState.receipts.length) { _kyuyuErr(t('kyuyuNeedReceipt')); return; }
   const purposes = [...document.querySelectorAll('#kyuyu-purposes input:checked')].map(c => c.value);
   const btn = document.getElementById('kyuyu-submit-btn');
   btn.disabled = true; showLoading(true);
@@ -3723,7 +3778,7 @@ async function submitKyuyu() {
       odometer: document.getElementById('kyuyu-odovalue').value,
       payType: document.getElementById('kyuyu-paytype').value,
       purposes: purposes,
-      receiptImage: kyuyuState.receiptUrl,
+      receiptImages: kyuyuState.receipts.map(r => r.url),
       odometerImage: kyuyuState.odoUrl,
     });
     showAlert(t('kyuyuDone'), 'success');

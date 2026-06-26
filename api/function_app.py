@@ -1992,7 +1992,9 @@ KYUYU_FOLDER_BASE = "/sites/TeamStepup/Shared Documents/給油申請レシート
 GAS_F_VEHICLE = "_x30ca__x30f3__x30d0__x30fc__x30"   # ナンバー、車両
 GAS_F_AMOUNT  = "_x6255__x623b__x91d1__x984d_"        # 払戻金額
 GAS_F_PAYTYPE = "_x652f__x6255__x3044__x306e__x7a"    # 支払いの種類
-GAS_F_RECEIPT = "_x9818__x53ce__x66f8_NEW"            # 領収書NEW
+GAS_F_RECEIPT = "_x9818__x53ce__x66f8_NEW"            # 領収書NEW (1枚目)
+GAS_F_RECEIPT2 = "_x9818__x53ce__x66f8_2"             # 領収書2 (2枚目)
+GAS_F_RECEIPT3 = "_x9818__x53ce__x66f8_3"             # 領収書3 (3枚目)
 GAS_F_ODOIMG  = "_x8d70__x884c__x8ddd__x96e2__x75"    # 走行距離画像
 GAS_F_ODO     = "_x73fe__x5728__x8d70__x884c__x8d"    # 現在走行距離
 GAS_F_LITERS  = "_x7d66__x6cb9__x91cf__x2113_"        # 給油量ℓ
@@ -2129,10 +2131,16 @@ def kyuyu_apply(req: func.HttpRequest) -> func.HttpResponse:
     except Exception:
         return _json_response({"error": "invalid_json"}, 400)
     vehicle = (body.get("vehicle") or "").strip()
-    if vehicle not in GAS_VEHICLES:
+    valid_vehicles = set(_kyuyu_vehicles()) | set(GAS_VEHICLES)
+    if vehicle not in valid_vehicles:
         return _json_response({"error": "invalid_vehicle"}, 400)
-    receipt_data = body.get("receiptImage")
-    if not receipt_data:
+    # レシート: 最大3枚(receiptImages配列 / 後方互換で receiptImage 単体も可)
+    receipt_datas = body.get("receiptImages")
+    if not receipt_datas:
+        single = body.get("receiptImage")
+        receipt_datas = [single] if single else []
+    receipt_datas = [r for r in receipt_datas if r][:3]
+    if not receipt_datas:
         return _json_response({"error": "missing_receipt"}, 400)
     pay_type = (body.get("payType") or "").strip()
     if pay_type and pay_type not in GAS_PAYTYPES:
@@ -2144,23 +2152,26 @@ def kyuyu_apply(req: func.HttpRequest) -> func.HttpResponse:
     odo_data = body.get("odometerImage")
     name = emp.get(F_SHAIN_NAME) or ""
     today = _today_jst()
-    # 写真を SP に保存
+    # 画像デコード(レシート最大3枚 + メーター)
     try:
-        receipt_bytes = base64.b64decode(_strip_data_url(receipt_data))
+        receipt_bytes_list = [base64.b64decode(_strip_data_url(r)) for r in receipt_datas]
         odo_bytes = base64.b64decode(_strip_data_url(odo_data)) if odo_data else None
     except Exception as e:
         return _json_response({"error": "invalid_base64", "detail": str(e)}, 400)
-    if len(receipt_bytes) > 10 * 1024 * 1024 or (odo_bytes and len(odo_bytes) > 10 * 1024 * 1024):
+    if any(len(b) > 10 * 1024 * 1024 for b in receipt_bytes_list) or (odo_bytes and len(odo_bytes) > 10 * 1024 * 1024):
         return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
+    # 写真を SP に保存
     try:
         year_folder = f"{KYUYU_FOLDER_BASE}/{today.year}"
         sp_create_folder_if_not_exists(KYUYU_FOLDER_BASE)
         sp_create_folder_if_not_exists(year_folder)
         ts = _now_jst().strftime("%Y%m%d_%H%M%S")
         url_base = f"{SITE_TEAMSTEPUP}/Shared Documents/給油申請レシート/{today.year}"
-        receipt_name = _safe_filename(f"{shain_no}_{today.isoformat()}_領収書_{ts}.jpg")
-        sp_upload_file(year_folder, receipt_name, receipt_bytes)
-        receipt_url = f"{url_base}/{receipt_name}"
+        receipt_urls = []
+        for i, rb in enumerate(receipt_bytes_list):
+            rname = _safe_filename(f"{shain_no}_{today.isoformat()}_領収書{i+1}_{ts}.jpg")
+            sp_upload_file(year_folder, rname, rb)
+            receipt_urls.append(f"{url_base}/{rname}")
         odo_url = ""
         if odo_bytes:
             odo_name = _safe_filename(f"{shain_no}_{today.isoformat()}_メーター_{ts}.jpg")
@@ -2174,9 +2185,10 @@ def kyuyu_apply(req: func.HttpRequest) -> func.HttpResponse:
     fields: Dict[str, Any] = {
         "Title": f"{shain_no} {name} ({today.isoformat()})",
         GAS_F_VEHICLE: vehicle,
-        GAS_F_RECEIPT: receipt_url,
         GAS_F_PURPOSE: ",".join(purposes),
     }
+    for i, ru in enumerate(receipt_urls):   # レシートURLを 領収書NEW/2/3 に割当
+        fields[[GAS_F_RECEIPT, GAS_F_RECEIPT2, GAS_F_RECEIPT3][i]] = ru
     if amount:
         fields[GAS_F_AMOUNT] = amount
     if liters:
