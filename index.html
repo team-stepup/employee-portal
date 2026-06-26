@@ -646,6 +646,11 @@
       <span class="label" data-i18n="menuBentoApprove">弁当 承認</span>
       <span id="bento-pending-badge" class="new-badge hidden">0</span>
     </div>
+    <div class="menu-card" id="menu-card-kyuyu" onclick="openKyuyu()" style="display:none;">
+      <span class="card-num">⛽</span>
+      <span class="icon">🚗</span>
+      <span class="label" data-i18n="menuKyuyu">給油申請</span>
+    </div>
     <div class="menu-card" onclick="showScreen('history')" style="position:relative;">
       <span class="card-num">②</span>
       <span class="icon">📋</span>
@@ -729,6 +734,66 @@
   <div id="bento-approve-body" style="margin-top:10px;">
     <div style="text-align:center;padding:24px;color:#999;">…</div>
   </div>
+</div>
+
+<!-- ====== Screen: 給油申請 (送迎運転手) ====== -->
+<div id="screen-kyuyu" class="container hidden">
+  <div class="header">
+    <h1>⛽ <span data-i18n="menuKyuyu">給油申請</span></h1>
+    <span class="logout-btn" onclick="showScreen('home')">✕</span>
+  </div>
+  <div class="info-banner" data-i18n="kyuyuInfo">📌 レシートとメーターを撮影すると、金額・給油量・走行距離が自動で入ります。</div>
+  <div id="kyuyu-error" class="error-banner hidden"></div>
+
+  <div class="card">
+    <h2>① <span data-i18n="kyuyuVehicle">車両</span></h2>
+    <select id="kyuyu-vehicle" style="width:100%;padding:11px;border:1px solid #cdd5df;border-radius:8px;font-size:1em;box-sizing:border-box;margin-top:4px;">
+      <option value="" data-i18n="kyuyuSelectVehicle">選択してください</option>
+    </select>
+  </div>
+
+  <div class="card">
+    <h2>② <span data-i18n="kyuyuReceipt">給油レシート</span></h2>
+    <input type="file" accept="image/*" capture="environment" id="kyuyu-receipt-input" onchange="onKyuyuPhoto('receipt', event)" style="display:none;">
+    <button type="button" class="btn-camera" onclick="document.getElementById('kyuyu-receipt-input').click()">
+      <span class="cam-icon">📷</span> <span data-i18n="kyuyuTakePhoto">撮影する</span>
+    </button>
+    <div id="kyuyu-receipt-preview" class="zairyu-preview hidden"></div>
+  </div>
+
+  <div class="card">
+    <h2>③ <span data-i18n="kyuyuOdometer">走行距離メーター</span></h2>
+    <input type="file" accept="image/*" capture="environment" id="kyuyu-odo-input" onchange="onKyuyuPhoto('odometer', event)" style="display:none;">
+    <button type="button" class="btn-camera" onclick="document.getElementById('kyuyu-odo-input').click()">
+      <span class="cam-icon">📷</span> <span data-i18n="kyuyuTakePhoto">撮影する</span>
+    </button>
+    <div id="kyuyu-odo-preview" class="zairyu-preview hidden"></div>
+  </div>
+
+  <div class="card">
+    <h2>④ <span data-i18n="kyuyuValues">内容（自動入力・修正できます）</span></h2>
+    <label style="display:block;font-weight:600;font-size:0.9em;color:#333;margin-top:8px;" data-i18n="kyuyuLiters">給油量 (ℓ)</label>
+    <input type="number" inputmode="decimal" step="0.01" id="kyuyu-liters" style="width:100%;padding:11px;border:1px solid #cdd5df;border-radius:8px;font-size:1em;box-sizing:border-box;margin-top:4px;">
+    <label style="display:block;font-weight:600;font-size:0.9em;color:#333;margin-top:10px;" data-i18n="kyuyuAmount">金額 (円)</label>
+    <input type="number" inputmode="numeric" id="kyuyu-amount" style="width:100%;padding:11px;border:1px solid #cdd5df;border-radius:8px;font-size:1em;box-sizing:border-box;margin-top:4px;">
+    <label style="display:block;font-weight:600;font-size:0.9em;color:#333;margin-top:10px;" data-i18n="kyuyuOdoValue">現在の走行距離 (km)</label>
+    <input type="number" inputmode="numeric" id="kyuyu-odovalue" style="width:100%;padding:11px;border:1px solid #cdd5df;border-radius:8px;font-size:1em;box-sizing:border-box;margin-top:4px;">
+  </div>
+
+  <div class="card">
+    <h2>⑤ <span data-i18n="kyuyuPurpose">利用目的</span></h2>
+    <div id="kyuyu-purposes"></div>
+  </div>
+
+  <div class="card">
+    <h2>⑥ <span data-i18n="kyuyuPayType">支払い方法</span></h2>
+    <select id="kyuyu-paytype" style="width:100%;padding:11px;border:1px solid #cdd5df;border-radius:8px;font-size:1em;box-sizing:border-box;margin-top:4px;">
+      <option value="" data-i18n="kyuyuSelectPay">選択してください</option>
+    </select>
+  </div>
+
+  <button class="btn btn-primary" id="kyuyu-submit-btn" onclick="submitKyuyu()" data-i18n="kyuyuSubmit">この内容で申請する</button>
+  <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="cancel">キャンセル</button>
 </div>
 
 <!-- ====== Screen: 前払い申請 ====== -->
@@ -3516,6 +3581,9 @@ function renderHome() {
   const bentoApproveCard = document.getElementById('menu-card-bento-approve');
   if (bentoApproveCard) bentoApproveCard.style.display = state.profile.isBentoApprover ? '' : 'none';
   if (state.profile.isBentoApprover) updateBentoApproverBadge();
+  // 給油申請: 送迎運転手(社員番号セット)のみ
+  const kyuyuCard = document.getElementById('menu-card-kyuyu');
+  if (kyuyuCard) kyuyuCard.style.display = state.profile.kyuyuEligible ? '' : 'none';
   // 期限お知らせを即時表示 (履歴取得を待たず profile から)
   renderHomeNotices(state.historyCache ? state.historyCache.items : null);
   // プッシュ通知の設定UI
@@ -3524,6 +3592,130 @@ function renderHome() {
   state.historyCache = null;
   updateHistoryBadge();
   updateRenrakuBadge();   // お知らせ(連絡事項)の未読バッジ
+}
+
+// ====== 給油申請 (送迎運転手・レシート/メーターOCR自動入力) ======
+Object.assign(I18N.ja, {
+  menuKyuyu: '給油申請', kyuyuInfo: '📌 レシートとメーターを撮影すると、金額・給油量・走行距離が自動で入ります。',
+  kyuyuVehicle: '車両', kyuyuSelectVehicle: '選択してください', kyuyuReceipt: '給油レシート',
+  kyuyuTakePhoto: '撮影する', kyuyuOdometer: '走行距離メーター', kyuyuValues: '内容（自動入力・修正できます）',
+  kyuyuLiters: '給油量 (ℓ)', kyuyuAmount: '金額 (円)', kyuyuOdoValue: '現在の走行距離 (km)',
+  kyuyuPurpose: '利用目的', kyuyuPayType: '支払い方法', kyuyuSelectPay: '選択してください',
+  kyuyuSubmit: 'この内容で申請する', kyuyuOcrFailHint: '自動で読み取れませんでした。手で入力してください。',
+  kyuyuNeedVehicle: '車両を選択してください。', kyuyuNeedReceipt: 'レシートを撮影してください。',
+  kyuyuDone: '給油申請を送信しました。', kyuyuSubmitFail: '送信に失敗しました。もう一度お試しください。',
+});
+Object.assign(I18N.en, {
+  menuKyuyu: 'Fuel Request', kyuyuInfo: '📌 Take photos of the receipt and odometer — amount, liters and mileage fill in automatically.',
+  kyuyuVehicle: 'Vehicle', kyuyuSelectVehicle: 'Select', kyuyuReceipt: 'Fuel receipt',
+  kyuyuTakePhoto: 'Take photo', kyuyuOdometer: 'Odometer', kyuyuValues: 'Details (auto-filled, editable)',
+  kyuyuLiters: 'Liters (ℓ)', kyuyuAmount: 'Amount (JPY)', kyuyuOdoValue: 'Current mileage (km)',
+  kyuyuPurpose: 'Purpose', kyuyuPayType: 'Payment method', kyuyuSelectPay: 'Select',
+  kyuyuSubmit: 'Submit', kyuyuOcrFailHint: 'Could not auto-read. Please enter manually.',
+  kyuyuNeedVehicle: 'Please select a vehicle.', kyuyuNeedReceipt: 'Please take a photo of the receipt.',
+  kyuyuDone: 'Fuel request submitted.', kyuyuSubmitFail: 'Submission failed. Please try again.',
+});
+Object.assign(I18N.pt, {
+  menuKyuyu: 'Abastecimento', kyuyuInfo: '📌 Fotografe o recibo e o hodômetro — valor, litros e quilometragem são preenchidos automaticamente.',
+  kyuyuVehicle: 'Veículo', kyuyuSelectVehicle: 'Selecione', kyuyuReceipt: 'Recibo de abastecimento',
+  kyuyuTakePhoto: 'Tirar foto', kyuyuOdometer: 'Hodômetro', kyuyuValues: 'Detalhes (preenchido, editável)',
+  kyuyuLiters: 'Litros (ℓ)', kyuyuAmount: 'Valor (ienes)', kyuyuOdoValue: 'Quilometragem atual (km)',
+  kyuyuPurpose: 'Finalidade', kyuyuPayType: 'Forma de pagamento', kyuyuSelectPay: 'Selecione',
+  kyuyuSubmit: 'Enviar', kyuyuOcrFailHint: 'Não foi possível ler. Insira manualmente.',
+  kyuyuNeedVehicle: 'Selecione um veículo.', kyuyuNeedReceipt: 'Fotografe o recibo.',
+  kyuyuDone: 'Solicitação de abastecimento enviada.', kyuyuSubmitFail: 'Falha no envio. Tente novamente.',
+});
+
+var kyuyuState = { receiptUrl: null, odoUrl: null };
+
+async function openKyuyu() {
+  showScreen('kyuyu');
+  kyuyuState = { receiptUrl: null, odoUrl: null };
+  ['kyuyu-receipt-preview', 'kyuyu-odo-preview'].forEach(id => { const e = document.getElementById(id); if (e) { e.innerHTML = ''; e.classList.add('hidden'); } });
+  ['kyuyu-liters', 'kyuyu-amount', 'kyuyu-odovalue'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  document.getElementById('kyuyu-error').classList.add('hidden');
+  try {
+    const data = await callApi('GET', '/kyuyu/status');
+    const vsel = document.getElementById('kyuyu-vehicle');
+    vsel.innerHTML = '<option value="">' + t('kyuyuSelectVehicle') + '</option>';
+    (data.vehicles || []).forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; vsel.appendChild(o); });
+    const pwrap = document.getElementById('kyuyu-purposes');
+    pwrap.innerHTML = '';
+    (data.purposes || []).forEach((p, i) => {
+      const lab = document.createElement('label');
+      lab.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 0;font-size:1em;';
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = p; cb.id = 'kyuyu-purpose-' + i;
+      cb.style.cssText = 'width:20px;height:20px;'; if (p === 'ガソリン給油') cb.checked = true;
+      lab.appendChild(cb); lab.appendChild(document.createTextNode(p)); pwrap.appendChild(lab);
+    });
+    const psel = document.getElementById('kyuyu-paytype');
+    psel.innerHTML = '<option value="">' + t('kyuyuSelectPay') + '</option>';
+    (data.payTypes || []).forEach(pt => { const o = document.createElement('option'); o.value = pt; o.textContent = pt; psel.appendChild(o); });
+  } catch (e) {
+    showAlert(t('networkError'), 'error');
+  }
+}
+
+function _kyuyuPreview(slot, dataUrl) {
+  const el = document.getElementById(slot === 'receipt' ? 'kyuyu-receipt-preview' : 'kyuyu-odo-preview');
+  el.innerHTML = '';
+  const img = document.createElement('img'); img.src = dataUrl; el.appendChild(img);
+  el.classList.remove('hidden');
+}
+
+async function onKyuyuPhoto(kind, event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file || !file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    const dataUrl = ev.target.result;
+    if (kind === 'receipt') { kyuyuState.receiptUrl = dataUrl; _kyuyuPreview('receipt', dataUrl); }
+    else { kyuyuState.odoUrl = dataUrl; _kyuyuPreview('odometer', dataUrl); }
+    showLoading(true);
+    try {
+      const data = await callApi('POST', '/kyuyu/ocr', { image: dataUrl, kind: (kind === 'odometer' ? 'odometer' : 'receipt') });
+      const ocr = data.ocr || {};
+      if (kind === 'receipt') {
+        if (ocr.liters != null && ocr.liters !== '') document.getElementById('kyuyu-liters').value = ocr.liters;
+        if (ocr.amountJpy != null && ocr.amountJpy !== '') document.getElementById('kyuyu-amount').value = ocr.amountJpy;
+        if (ocr.paymentType) { const ps = document.getElementById('kyuyu-paytype'); if ([...ps.options].some(o => o.value === ocr.paymentType)) ps.value = ocr.paymentType; }
+        if (Array.isArray(ocr.purposeHints)) ocr.purposeHints.forEach(h => { const cb = [...document.querySelectorAll('#kyuyu-purposes input')].find(c => c.value === h); if (cb) cb.checked = true; });
+      } else {
+        if (ocr.odometer != null && ocr.odometer !== '') document.getElementById('kyuyu-odovalue').value = ocr.odometer;
+      }
+    } catch (e) {
+      showAlert(t('kyuyuOcrFailHint'), 'warning');   // OCR失敗は致命的でない(手入力可)
+    } finally { showLoading(false); }
+  };
+  reader.readAsDataURL(file);
+}
+
+function _kyuyuErr(msg) { const e = document.getElementById('kyuyu-error'); e.textContent = msg; e.classList.remove('hidden'); window.scrollTo(0, 0); }
+
+async function submitKyuyu() {
+  const vehicle = document.getElementById('kyuyu-vehicle').value;
+  if (!vehicle) { _kyuyuErr(t('kyuyuNeedVehicle')); return; }
+  if (!kyuyuState.receiptUrl) { _kyuyuErr(t('kyuyuNeedReceipt')); return; }
+  const purposes = [...document.querySelectorAll('#kyuyu-purposes input:checked')].map(c => c.value);
+  const btn = document.getElementById('kyuyu-submit-btn');
+  btn.disabled = true; showLoading(true);
+  try {
+    await callApi('POST', '/kyuyu/apply', {
+      vehicle: vehicle,
+      amount: document.getElementById('kyuyu-amount').value,
+      liters: document.getElementById('kyuyu-liters').value,
+      odometer: document.getElementById('kyuyu-odovalue').value,
+      payType: document.getElementById('kyuyu-paytype').value,
+      purposes: purposes,
+      receiptImage: kyuyuState.receiptUrl,
+      odometerImage: kyuyuState.odoUrl,
+    });
+    showAlert(t('kyuyuDone'), 'success');
+    showScreen('home');
+  } catch (e) {
+    if (e.status === 429) { const sec = (e.data && e.data.retryAfterSeconds) || 60; showAlert(t('rateLimited').replace('{sec}', sec), 'warning'); }
+    else { _kyuyuErr(t('kyuyuSubmitFail')); }
+  } finally { btn.disabled = false; showLoading(false); }
 }
 
 async function ensureProfile() {

@@ -209,6 +209,7 @@ RATE_LIMITS = {
     "apply": 10,       # 申請 10/min
     "cancel": 10,      # 取消 10/min
     "zairyu": 5,       # 在留カード提出 5/min (画像アップロード重め)
+    "kyuyu": 12,       # 給油申請 OCR/送信 12/min (写真2枚×OCR+送信)
 }
 _storage_conn = os.environ.get("AzureWebJobsStorage", "")
 _table_client_cache = None
@@ -1000,6 +1001,8 @@ def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
         # ポータルには承認UIを出さない (派遣社員=注文する側のみ)
         "bentoEligible": (("ユーシン" in strip_buka_prefix(buka_text)) or ("ﾕｰｼﾝ" in strip_buka_prefix(buka_text))),
         "isBentoApprover": False,
+        # 給油申請: 送迎運転手(社員番号セット)のみボタン表示
+        "kyuyuEligible": _kyuyu_eligible(emp),
         # 送迎の帰り便連絡 (当日・本人宛のみ。無ければ null)
         "todaySougei": _fetch_today_sougei(emp.get(F_SHAIN_NO)) if is_sougei else None,
         # 期限お知らせ用 (在留カード/免許証/車検/自賠責/任意保険)
@@ -1976,6 +1979,196 @@ def zairyu_ocr(req: func.HttpRequest) -> func.HttpResponse:
             except Exception:
                 pass
     return _json_response({"ocr": ocr_result, "matches": matches})
+
+
+# ====== 給油申請 (送迎運転手のみ・レシート/メーターOCR自動入力・List54へ書込) ======
+# ポータルは SP List「ガソリン代払い戻し」(List54) への INSERT までを担当。
+# 既存の Power Automate フローが新規アイテムを拾い、給油間距離/燃費/間隔の自動計算 +
+# Teams「送迎関係」チャネルへの通知を行う(フローは作り直し不要)。精算は浩俊が随時。
+LIST_GASORIN = "ac84ec0e-6853-463a-9469-d94b52940485"   # SP「ガソリン代払い戻し」(List54)
+KYUYU_DRIVERS = {50466, 50565, 50692, 50709, 50736, 50743, 50750, 60057, 111113, 111356}
+KYUYU_FOLDER_BASE = "/sites/TeamStepup/Shared Documents/給油申請レシート"
+# List54 業務フィールド (書込キー=OData_ 付き内部名)
+GAS_F_VEHICLE = "OData__x30ca__x30f3__x30d0__x30fc__x30"   # ナンバー、車両
+GAS_F_AMOUNT  = "OData__x6255__x623b__x91d1__x984d_"        # 払戻金額
+GAS_F_PAYTYPE = "OData__x652f__x6255__x3044__x306e__x7a"    # 支払いの種類
+GAS_F_RECEIPT = "OData__x9818__x53ce__x66f8_NEW"            # 領収書NEW
+GAS_F_ODOIMG  = "OData__x8d70__x884c__x8ddd__x96e2__x75"    # 走行距離画像
+GAS_F_ODO     = "OData__x73fe__x5728__x8d70__x884c__x8d"    # 現在走行距離
+GAS_F_LITERS  = "OData__x7d66__x6cb9__x91cf__x2113_"        # 給油量ℓ
+GAS_F_PURPOSE = "OData__x5229__x7528__x76ee__x7684_"        # 利用目的
+GAS_VEHICLES = ["997　エスクァイア HV", "1967　ハイエース", "3011  ノア", "8504　ハイエース",
+                "1724  ノア", "363    ハイエース", "5344  ノア　HV", "5179　ノア HV",
+                "4222　ハイエース", "6441  プリウスα　HV", "6803　ノア", "2862　ノア",
+                "26　　ヴォクシー", "514     ヴォクシー", "7638   ハイエース", "代車　Carro reserva"]
+GAS_PURPOSES = ["ガソリン給油", "オイル交換", "洗車", "その他"]
+GAS_PAYTYPES = ["PayPay", "個人用カード", "現金", "その他"]
+
+
+def _kyuyu_eligible(emp: Dict[str, Any]) -> bool:
+    """給油申請の対象=送迎運転手(社員番号がドライバーセットに含まれる)。"""
+    try:
+        return int(float(emp.get(F_SHAIN_NO))) in KYUYU_DRIVERS
+    except Exception:
+        return False
+
+
+def _kyuyu_num(v) -> str:
+    """金額/給油量/走行距離を数字文字列に正規化(List54はNote型なので文字列で保存)。"""
+    try:
+        s = re.sub(r"[^\d.]", "", str(v if v is not None else ""))
+        return s.strip(".") if s else ""
+    except Exception:
+        return ""
+
+
+@app.route(route="kyuyu/status", methods=["GET", "OPTIONS"])
+def kyuyu_status(req: func.HttpRequest) -> func.HttpResponse:
+    """給油画面の初期データ: 対象可否・車両/利用目的/支払いの選択肢。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    emp = find_active_employee_by_shain(payload["shainNo"])
+    if not emp:
+        return _json_response({"error": "not_active"}, 403)
+    return _json_response({
+        "ok": True, "eligible": _kyuyu_eligible(emp),
+        "vehicles": GAS_VEHICLES, "purposes": GAS_PURPOSES, "payTypes": GAS_PAYTYPES,
+    })
+
+
+@app.route(route="kyuyu/ocr", methods=["POST", "OPTIONS"])
+def kyuyu_ocr(req: func.HttpRequest) -> func.HttpResponse:
+    """給油レシート or メーター写真を OCR。body {image:<dataURL>, kind:'receipt'|'odometer'}"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    emp = find_active_employee_by_shain(shain_no)
+    if not emp or not _kyuyu_eligible(emp):
+        return _json_response({"error": "not_eligible"}, 403)
+    wait = check_rate_limit(shain_no, "kyuyu")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait}, 429,
+                              extra_headers={"Retry-After": str(wait)})
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    kind = (body.get("kind") or "receipt").strip().lower()
+    doc_type = "odometer" if kind == "odometer" else "kyuyu"
+    img = body.get("image")
+    if not img:
+        return _json_response({"error": "missing_image"}, 400)
+    try:
+        img_bytes = base64.b64decode(_strip_data_url(img))
+    except Exception as e:
+        return _json_response({"error": "invalid_base64", "detail": str(e)}, 400)
+    if len(img_bytes) > 10 * 1024 * 1024:
+        return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
+    try:
+        import gpt_ocr
+        ocr = gpt_ocr.extract_doc_fields(doc_type, [img_bytes])
+    except Exception as e:
+        logging.exception("kyuyu OCR failed")
+        return _json_response({"error": "ocr_failed", "detail": str(e)}, 500)
+    return _json_response({"ok": True, "kind": kind, "ocr": ocr})
+
+
+@app.route(route="kyuyu/apply", methods=["POST", "OPTIONS"])
+def kyuyu_apply(req: func.HttpRequest) -> func.HttpResponse:
+    """給油申請を List54 に登録。写真を SP に保存しURLを格納。既存フローが計算/Teams通知。
+    Body: {vehicle, amount, liters, odometer, payType, purposes:[...],
+           receiptImage:<dataURL>, odometerImage:<dataURL>(任意)}"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    emp = find_active_employee_by_shain(shain_no)
+    if not emp or not _kyuyu_eligible(emp):
+        return _json_response({"error": "not_eligible"}, 403)
+    wait = check_rate_limit(shain_no, "kyuyu")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait}, 429,
+                              extra_headers={"Retry-After": str(wait)})
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    vehicle = (body.get("vehicle") or "").strip()
+    if vehicle not in GAS_VEHICLES:
+        return _json_response({"error": "invalid_vehicle"}, 400)
+    receipt_data = body.get("receiptImage")
+    if not receipt_data:
+        return _json_response({"error": "missing_receipt"}, 400)
+    pay_type = (body.get("payType") or "").strip()
+    if pay_type and pay_type not in GAS_PAYTYPES:
+        pay_type = "その他"
+    purposes = [p for p in (body.get("purposes") or []) if p in GAS_PURPOSES] or ["ガソリン給油"]
+    amount = _kyuyu_num(body.get("amount"))
+    liters = _kyuyu_num(body.get("liters"))
+    odometer = _kyuyu_num(body.get("odometer"))
+    odo_data = body.get("odometerImage")
+    name = emp.get(F_SHAIN_NAME) or ""
+    today = _today_jst()
+    # 写真を SP に保存
+    try:
+        receipt_bytes = base64.b64decode(_strip_data_url(receipt_data))
+        odo_bytes = base64.b64decode(_strip_data_url(odo_data)) if odo_data else None
+    except Exception as e:
+        return _json_response({"error": "invalid_base64", "detail": str(e)}, 400)
+    if len(receipt_bytes) > 10 * 1024 * 1024 or (odo_bytes and len(odo_bytes) > 10 * 1024 * 1024):
+        return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
+    try:
+        year_folder = f"{KYUYU_FOLDER_BASE}/{today.year}"
+        sp_create_folder_if_not_exists(KYUYU_FOLDER_BASE)
+        sp_create_folder_if_not_exists(year_folder)
+        ts = _now_jst().strftime("%Y%m%d_%H%M%S")
+        url_base = f"{SITE_TEAMSTEPUP}/Shared Documents/給油申請レシート/{today.year}"
+        receipt_name = _safe_filename(f"{shain_no}_{today.isoformat()}_領収書_{ts}.jpg")
+        sp_upload_file(year_folder, receipt_name, receipt_bytes)
+        receipt_url = f"{url_base}/{receipt_name}"
+        odo_url = ""
+        if odo_bytes:
+            odo_name = _safe_filename(f"{shain_no}_{today.isoformat()}_メーター_{ts}.jpg")
+            sp_upload_file(year_folder, odo_name, odo_bytes)
+            odo_url = f"{url_base}/{odo_name}"
+    except Exception as e:
+        logging.exception("kyuyu upload failed")
+        return _json_response({"error": "upload_failed", "detail": str(e)}, 500)
+    # List54 へ INSERT (既存フローが給油間距離/燃費/間隔の計算 + Teams通知)
+    # 申請者(User型)は運転手のM365アカウントが無い前提のため設定せず、Title で識別する。
+    fields: Dict[str, Any] = {
+        "Title": f"{shain_no} {name} ({today.isoformat()})",
+        GAS_F_VEHICLE: vehicle,
+        GAS_F_RECEIPT: receipt_url,
+        GAS_F_PURPOSE: ",".join(purposes),
+    }
+    if amount:
+        fields[GAS_F_AMOUNT] = amount
+    if liters:
+        fields[GAS_F_LITERS] = liters
+    if odometer:
+        fields[GAS_F_ODO] = odometer
+    if odo_url:
+        fields[GAS_F_ODOIMG] = odo_url
+    if pay_type:
+        fields[GAS_F_PAYTYPE] = pay_type
+    try:
+        new_id = sp_post_item(LIST_GASORIN, fields)
+    except Exception as e:
+        logging.exception("kyuyu apply (List54 insert) failed")
+        return _json_response({"error": "insert_failed", "detail": str(e)}, 500)
+    return _json_response({"ok": True, "id": new_id})
 
 
 # ====== 運転免許証 OCR ======
@@ -3237,6 +3430,58 @@ def push_test(req: func.HttpRequest) -> func.HttpResponse:
     return _json_response({"ok": n_ok > 0, "devices": len(subs), "sent": n_ok,
                            "maebari": "ok" if n_ok > 0 else "error",
                            "bento": "ok" if n_ok > 0 else "error"})
+
+
+@app.route(route="nippou/notify", methods=["POST", "OPTIONS"])
+def nippou_notify(req: func.HttpRequest) -> func.HttpResponse:
+    """PC(nippou_auto)が日報同期(役員アプリ用)の完了後に呼ぶ。
+    認証ユーザー(=山下)自身の登録端末へ『業務日報を更新しました』Push＋アプリアイコンのバッジを送る。
+    Body(任意): { title, body, badge }"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json() or {}
+    except Exception:
+        body = {}
+    title = body.get("title") or "📋 業務日報を更新しました"
+    msg = body.get("body") or ""
+    try:
+        badge = int(body.get("badge", 1))
+    except Exception:
+        badge = 1
+    n = _push_to_admins([email], {"title": title, "body": msg, "url": YUKYU_APP_URL,
+                                  "tag": "nikkou-sync", "badge": badge})
+    return _json_response({"ok": n > 0, "sent": n})
+
+
+@app.route(route="nippou/summarize", methods=["POST", "OPTIONS"])
+def nippou_summarize(req: func.HttpRequest) -> func.HttpResponse:
+    """PC(nippou_auto)が本日の業務日報(整形テキスト)を渡し、Claudeで役員向け要約を返す。
+    Body: { text }  ->  { ok, summary }"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json() or {}
+    except Exception:
+        body = {}
+    text = (body.get("text") or "").strip()
+    if not text:
+        return _json_response({"error": "empty_text"}, 400)
+    try:
+        import gpt_ocr
+        summary = gpt_ocr.summarize_nippou(text)
+        return _json_response({"ok": True, "summary": summary})
+    except Exception as e:
+        logging.exception("nippou_summarize failed")
+        return _json_response({"ok": False, "error": str(e)[:200]}, 500)
 
 
 # ===== 産休育休「注(申請遅れ)」の朝の通知 (毎朝8:30 JST・稼働日のみ・スマホ+PC両方) =====

@@ -62,6 +62,27 @@ def translate_renraku(title: str, body: str) -> Dict[str, Any]:
     return out
 
 
+def summarize_nippou(reports_text: str) -> str:
+    """本日提出の業務日報(整形テキスト)を役員向けに簡潔要約。ANTHROPIC_API_KEY 必須。"""
+    client = _claude_client()
+    if client is None:
+        raise RuntimeError("ANTHROPIC_API_KEY not set")
+    system = (
+        "あなたは人材派遣会社の総務で、現場担当者の業務日報を役員向けに要約するアシスタントです。"
+        "役員が短時間で把握できるよう、簡潔で読みやすい日本語にまとめてください。\n"
+        "規則:\n"
+        "- 担当者ごとに要点を1〜3行。重要な相談・依頼・トラブルを優先し、訪問/送迎などのルーチンは件数程度に留める。\n"
+        "- 対応が必要な事項(退職・退社・事故・けが・トラブル・クレーム・休業・通院・単価変更・募集・面接・異動など)は行頭に⚠を付けて強調。\n"
+        "- 事実のみ。誇張・推測・創作をしない。固有名詞・日付・金額はそのまま保持。\n"
+        "- 出力は要約本文のみ(『要約:』等の見出しや前置きは不要)。"
+    )
+    resp = client.messages.create(
+        model=CLAUDE_MODEL, max_tokens=1500, temperature=0, system=system,
+        messages=[{"role": "user", "content": [{"type": "text", "text": reports_text}]}],
+    )
+    return "".join(getattr(b, "text", "") for b in resp.content).strip()
+
+
 def _extract_via_claude(system: str, user_prompt: str, images: list, max_tokens: int = 1000) -> Dict[str, Any]:
     """Claude ビジョンで画像→JSON抽出。ANTHROPIC_API_KEY 必須(無ければ RuntimeError)。"""
     client = _claude_client()
