@@ -2178,34 +2178,54 @@ def _kyuyu_calc(vehicle: str, odometer: str, liters: str):
 def _kyuyu_notify_teams(shain_no, name, vehicle, day, amount, liters, odometer,
                         dist_s, nenpi_s, kankaku_s, pay_type, purposes,
                         receipt_urls, odo_url) -> None:
-    """Teams「送迎関係」チャネルへ給油申請を通知(チャネルメール宛 sendMail・best-effort)。
-    旧 Forms フローの通知を代替。投稿者は送信元(h.yamashita)になるため『誰が』は本文に明記。"""
+    """Teams「送迎関係」チャネルへ給油申請を通知(チャネルメール宛 sendMail・HTML・best-effort)。
+    旧 Forms フロー「⛽給油のお知らせ」カードの体裁に寄せ、URLは名前付きリンクに。
+    投稿者は送信元(h.yamashita)になるため『誰が』は本文(申請者)に明記。"""
+    def _h(s):
+        return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
     veh_short = re.sub(r"[\s　]+", " ", vehicle or "").strip()
     try:
         amt_disp = f"¥{int(float(amount)):,}" if amount else "（未入力）"
     except Exception:
         amt_disp = f"¥{amount}" if amount else "（未入力）"
-    subject = f"⛽ 給油申請 {shain_no} {name}（{veh_short}）{amt_disp}"
-    lines = [
-        f"運転手: {shain_no} {name}",
-        f"日付: {day.isoformat()}",
-        f"車両: {veh_short}",
-        f"払戻金額: {amt_disp}",
-        f"支払い: {pay_type or '（未選択）'}",
-        f"給油量: {liters or '―'} ℓ",
-        f"現在走行距離: {odometer or '―'} km",
-        f"給油間距離: {dist_s or '―'} km",
-        f"燃費: {nenpi_s or '―'} km/ℓ",
-        f"空白期間: {kankaku_s or '―'}",
-        f"利用目的: {'・'.join(purposes)}",
+    # 距離 = 給油間距離（現在走行距離）。代車/メーター逆行で距離が無い時は走行距離のみ。
+    if dist_s:
+        dist_disp = f"{dist_s} km" + (f"（{_h(odometer)} km）" if odometer else "")
+    else:
+        dist_disp = (f"{_h(odometer)} km" if odometer else "―")
+    rows = [
+        ("申請者", f"{shain_no} {_h(name)}"),
+        ("車両", _h(veh_short)),
+        ("区分", _h("・".join(purposes))),
+        ("前給油", f"{_h(kankaku_s)}前" if kankaku_s else "―"),
+        ("距離", dist_disp),
+        ("燃費", f"{nenpi_s} km/ℓ" if nenpi_s else "―"),
+        ("給油量", f"{_h(liters) if liters else '―'} ℓ"),
+        ("払戻金額", amt_disp),
+        ("支払い", _h(pay_type) if pay_type else "（未選択）"),
+        ("日付", day.isoformat()),
     ]
-    for i, u in enumerate(receipt_urls):
-        lines.append(f"レシート{i + 1}: {u}")
+    tr = "".join(
+        f'<tr><td style="padding:1px 14px 1px 0;color:#666;white-space:nowrap">{k}</td>'
+        f'<td style="padding:1px 0;font-weight:600">{v}</td></tr>'
+        for k, v in rows
+    )
+    links = []
     if odo_url:
-        lines.append(f"メーター: {odo_url}")
-    lines.append("")
-    lines.append("※ 従業員ポータルからの申請（精算は領収書を確認のうえ随時）")
-    _send_notification_mail(subject, "\n".join(lines), to_addr=KYUYU_TEAMS_EMAIL)
+        links.append(f'<a href="{_h(odo_url)}">🚗 走行距離メーターを開く</a>')
+    for i, u in enumerate(receipt_urls):
+        links.append(f'<a href="{_h(u)}">🧾 領収書{i + 1}を開く</a>')
+    links.append(f'<a href="{SITE_URL}/Lists/List54/AllItems.aspx">📊 リストで全体を確認する</a>')
+    html = (
+        '<div style="font-family:Segoe UI,Meiryo,sans-serif;font-size:14px;color:#222">'
+        '<div style="font-size:16px;font-weight:700;margin-bottom:8px">⛽ 給油のお知らせ</div>'
+        f'<table style="border-collapse:collapse">{tr}</table>'
+        f'<div style="margin-top:12px;line-height:2">{"<br>".join(links)}</div>'
+        '<div style="margin-top:10px;color:#999;font-size:12px">'
+        '※ 従業員ポータルからの申請（精算は領収書を確認のうえ随時）</div></div>'
+    )
+    subject = f"⛽ 給油のお知らせ {shain_no} {name}（{veh_short}）{amt_disp}"
+    _send_notification_mail(subject, html, to_addr=KYUYU_TEAMS_EMAIL, html=True)
 
 
 @app.route(route="kyuyu/status", methods=["GET", "OPTIONS"])
@@ -3400,10 +3420,11 @@ def _get_graph_token() -> str:
     return tok.token
 
 
-def _send_notification_mail(subject: str, text: str, to_addr: Optional[str] = None) -> None:
+def _send_notification_mail(subject: str, text: str, to_addr: Optional[str] = None,
+                            html: bool = False) -> None:
     """Teams チャネルのメールアドレス宛に Graph sendMail で通知。
     送信元 = SHORUI_MAIL_SENDER (h.yamashita)、宛先 = to_addr or SHORUI_NOTIFY_EMAIL (チャネルメール)。
-    環境変数未設定なら何もしない (申請自体は成功扱い)。"""
+    html=True なら contentType=HTML (名前付きリンク等)。環境変数未設定なら何もしない (申請自体は成功扱い)。"""
     to_addr = (to_addr or os.environ.get("SHORUI_NOTIFY_EMAIL", "")).strip()
     sender = os.environ.get("SHORUI_MAIL_SENDER", "").strip()
     if not to_addr or not sender:
@@ -3413,7 +3434,7 @@ def _send_notification_mail(subject: str, text: str, to_addr: Optional[str] = No
         body = {
             "message": {
                 "subject": subject,
-                "body": {"contentType": "Text", "content": text},
+                "body": {"contentType": "HTML" if html else "Text", "content": text},
                 "toRecipients": [{"emailAddress": {"address": to_addr}}],
             },
             "saveToSentItems": False,
