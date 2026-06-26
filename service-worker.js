@@ -3,7 +3,7 @@
 //      API (Azure Functions) は network-only (キャッシュしない)。
 // 更新: 「🔄 更新」ボタンを押すと skipWaiting() で即時切替。
 
-const CACHE_NAME = 'portal-v31';
+const CACHE_NAME = 'portal-v36';   // ★index.html の APP_VERSION / version.json と同じ値に揃える
 const STATIC_ASSETS = ['/', '/index.html', '/manifest.json', '/logo.png', '/emblem.png', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/pdf-lib.min.js', '/zaishoku_jp.png', '/seal_stepup.png'];
 
 self.addEventListener('install', (event) => {
@@ -25,6 +25,8 @@ self.addEventListener('fetch', (event) => {
   // API は SW を介さない (network-only)
   if (url.hostname.includes('azurewebsites.net')) return;
   if (event.request.method !== 'GET') return;
+  // version.json は常にネットワーク直取得(キャッシュしない)=更新判定を確実に
+  if (url.pathname.endsWith('/version.json')) return;
 
   // 静的アセットは network-first
   event.respondWith(

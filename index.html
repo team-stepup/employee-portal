@@ -62,6 +62,10 @@
     background: linear-gradient(135deg, #f9a825, #f57c00);
     border-color: #ef6c00; animation: pulse-update 1.5s ease-in-out infinite;
   }
+  #header-update-btn.ver-latest {   /* 最新: 控えめな緑 */
+    background: rgba(76,175,80,0.22); border-color: rgba(129,199,132,0.6);
+    font-size: 0.8em;
+  }
   .card {
     background: #fff; border-radius: 14px; padding: 20px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 16px;
@@ -219,6 +223,9 @@
     background: linear-gradient(135deg, #f9a825, #f57c00);
     color: #fff; border-color: #ef6c00;
     animation: pulse-update 1.5s ease-in-out infinite;
+  }
+  .check-update-btn.ver-latest {   /* 最新: 控えめな緑 */
+    color: #2e7d32; border-color: #a5d6a7; box-shadow: none;
   }
   @keyframes pulse-update {
     0%, 100% { box-shadow: 0 2px 4px rgba(245,124,0,0.3); }
@@ -616,7 +623,7 @@
   <div class="header">
     <img src="logo.png" alt="" class="header-logo">
     <h1 style="flex:1;"><span data-i18n="appTitle">従業員ポータル</span></h1>
-    <span class="logout-btn" id="header-update-btn" onclick="checkUpdate()" data-i18n="checkUpdateShort">🔄 更新確認</span>
+    <span class="logout-btn" id="header-update-btn" onclick="onUpdateTap()" data-i18n="checkUpdateShort">🔄 更新確認</span>
   </div>
 
   <div class="user-card">
@@ -708,7 +715,7 @@
   </div>
 
   <div style="text-align:center; margin-top:14px;">
-    <button type="button" id="check-update-btn" class="check-update-btn" onclick="checkUpdate()" data-i18n="checkUpdate">🔄 更新を確認</button>
+    <button type="button" id="check-update-btn" class="check-update-btn" onclick="onUpdateTap()" data-i18n="checkUpdate">🔄 更新を確認</button>
     <div id="version-tag" class="version-tag"></div>
     <a href="javascript:void(0)" onclick="logout()" style="display:inline-block; margin-top:10px; font-size:0.8em; color:#999; text-decoration:underline;" data-i18n="switchAccount">別のアカウントでログイン</a>
   </div>
@@ -1572,6 +1579,10 @@ I18N.pt.updateAvailable = "🎉 Nova versão disponível";
 I18N.pt.updateNone = "Atualizado ✓";
 I18N.pt.updating = "Atualizando...";
 I18N.pt.checkUpdateShort = "🔄 Atualizar";
+// 更新ステータス (ヘッダー: 最新/更新あり を一目で)
+I18N.ja.verChecking = "🔄 確認中…"; I18N.ja.verLatest = "🟢 最新 {v}"; I18N.ja.verUpdate = "🟠 更新あり";
+I18N.en.verChecking = "🔄 Checking…"; I18N.en.verLatest = "🟢 Up to date {v}"; I18N.en.verUpdate = "🟠 Update available";
+I18N.pt.verChecking = "🔄 Verificando…"; I18N.pt.verLatest = "🟢 Atualizado {v}"; I18N.pt.verUpdate = "🟠 Atualização disponível";
 // 在留カード提出
 I18N.ja.menuZairyu = "在留カード提出";
 I18N.en.menuZairyu = "Submit Zairyu Card";
@@ -4659,9 +4670,11 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v35';  // commit hash や日付に置き換え可能。バンプすると Service Worker が更新を検知
+const APP_VERSION = 'v36';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
+let _updateState = 'idle';   // idle | checking | latest | available
+let _serverVersion = null;
 
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
@@ -4764,12 +4777,53 @@ async function togglePush() {
   updatePushUI();
 }
 
+// 更新ボタン(ヘッダー小 + ログイン大)の見た目を状態に応じて切替。
+//   checking: 確認中 / latest: 🟢最新(控えめ) / available: 🟠更新あり(目立つ) / idle: 既定
+function setUpdateStatus(state) {
+  _updateState = state;
+  const cfg = ({
+    checking:  { txt: t('verChecking'), cls: '' },
+    latest:    { txt: t('verLatest').replace('{v}', APP_VERSION), cls: 'ver-latest' },
+    available: { txt: t('verUpdate'), cls: 'has-update' },
+    idle:      { txt: t('checkUpdateShort'), cls: '' },
+  })[state] || { txt: t('checkUpdateShort'), cls: '' };
+  _updateBtns().forEach(btn => {
+    btn.classList.remove('has-update', 'ver-latest');
+    if (cfg.cls) btn.classList.add(cfg.cls);
+    btn.textContent = cfg.txt;
+  });
+}
+
+// サーバの version.json と読み込み中の APP_VERSION を照合し、最新/更新あり を受動表示。
+// 起動時とアプリ復帰時(visibilitychange)に自動実行。リロードはしない(タップで適用)。
+async function checkVersion() {
+  if (_updateState === 'available') return;   // 既に更新あり表示なら維持
+  setUpdateStatus('checking');
+  try {
+    const r = await fetch('version.json?_=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('http ' + r.status);
+    const j = await r.json();
+    const latest = String(j.version || '').trim();
+    if (latest && latest !== APP_VERSION) {
+      _serverVersion = latest;
+      setUpdateStatus('available');
+    } else {
+      setUpdateStatus('latest');
+    }
+  } catch (e) {
+    setUpdateStatus('idle');   // 取得失敗時は中立表示(邪魔しない)
+  }
+}
+
+// 更新ボタンのタップ: 更新あり→適用(リロード) / それ以外→再チェック
+function onUpdateTap() {
+  if (_updateState === 'available') checkUpdate();
+  else checkVersion();
+}
+
 function markUpdateAvailable() {
   _swUpdateAvailable = true;
-  _updateBtns().forEach(btn => {
-    btn.classList.add('has-update');
-    btn.textContent = t('updateAvailable');
-  });
+  setUpdateStatus('available');
 }
 
 async function checkUpdate() {
@@ -4826,6 +4880,9 @@ async function bootstrap() {
   const verEl = document.getElementById('version-tag');
   if (verEl) verEl.textContent = 'Build: ' + APP_VERSION;
   registerServiceWorker();
+  checkVersion();   // 起動時に最新/更新あり を照合
+  // アプリに戻ってきた時にも自動で再照合(運転手が開くたび一目で分かる)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
   if (state.token) {
     showLoading(true);
     try {
