@@ -2056,9 +2056,15 @@ def _kyuyu_default_vehicle(shain_no: int, vehicles: List[str]) -> str:
             digits = re.sub(r"\D", "", num)
             if not digits:
                 continue
+            # ①完全一致(車両先頭の数字==ナンバー)を最優先。短い番号(例26)が別車
+            #   (2862ノア)に startswith 誤一致するのを防ぐため、先に全車を完全一致で走査。
             for v in vehicles:
                 vfirst = (v.split() or [""])[0]
-                if re.sub(r"\D", "", vfirst) == digits or v.replace("　", "").replace(" ", "").startswith(digits):
+                if re.sub(r"\D", "", vfirst) == digits:
+                    return v
+            # ②完全一致が無いときだけ前方一致でフォールバック
+            for v in vehicles:
+                if v.replace("　", "").replace(" ", "").startswith(digits):
                     return v
         return ""
     except Exception:
