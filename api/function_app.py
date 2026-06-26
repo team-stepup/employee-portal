@@ -1982,12 +1982,16 @@ def zairyu_ocr(req: func.HttpRequest) -> func.HttpResponse:
 
 
 # ====== 給油申請 (送迎運転手のみ・レシート/メーターOCR自動入力・List54へ書込) ======
-# ポータルは SP List「ガソリン代払い戻し」(List54) への INSERT までを担当。
-# 既存の Power Automate フローが新規アイテムを拾い、給油間距離/燃費/間隔の自動計算 +
-# Teams「送迎関係」チャネルへの通知を行う(フローは作り直し不要)。精算は浩俊が随時。
+# ポータルが SP List「ガソリン代払い戻し」(List54) への INSERT に加え、
+# 給油間距離/燃費/間隔(空白期間)の自動計算と Teams「送迎関係」チャネルへの通知も自前で行う。
+# (旧 Forms 用 Power Automate フローは Forms 応答トリガーでポータル投入には発火しないため。
+#  F1/Forms 廃止後も止まらないようバックエンドに集約。)精算は浩俊が随時。
 LIST_GASORIN = "ac84ec0e-6853-463a-9469-d94b52940485"   # SP「ガソリン代払い戻し」(List54)
 KYUYU_DRIVERS = {50466, 50565, 50692, 50709, 50736, 50743, 50750, 60057, 111113, 111356}
 KYUYU_FOLDER_BASE = "/sites/TeamStepup/Shared Documents/給油申請レシート"
+# Teams「送迎関係」チャネルのメールアドレス(チャネルへメール投稿=Forms フロー廃止後も通知継続)。
+# 既定値はメモ由来。実際のチャネルメール(Teams→チャネル→メールアドレスを取得)で上書き可。
+KYUYU_TEAMS_EMAIL = os.environ.get("KYUYU_TEAMS_EMAIL", "80ade604.team-stepup.com@jp.teams.ms")
 # List54 業務フィールド (AddValidateUpdateItemUsingPath は InternalName を要求=OData_ プレフィックス無し)
 GAS_F_VEHICLE = "_x30ca__x30f3__x30d0__x30fc__x30"   # ナンバー、車両
 GAS_F_AMOUNT  = "_x6255__x623b__x91d1__x984d_"        # 払戻金額
@@ -1999,6 +2003,9 @@ GAS_F_ODOIMG  = "_x8d70__x884c__x8ddd__x96e2__x75"    # 走行距離画像
 GAS_F_ODO     = "_x73fe__x5728__x8d70__x884c__x8d"    # 現在走行距離
 GAS_F_LITERS  = "_x7d66__x6cb9__x91cf__x2113_"        # 給油量ℓ
 GAS_F_PURPOSE = "_x5229__x7528__x76ee__x7684_"        # 利用目的
+GAS_F_DIST    = "_x7d66__x6cb9__x9593__x8ddd__x96"    # 給油間距離 (Note・前回給油からの距離)
+GAS_F_NENPI   = "_x71c3__x8cbb_"                       # 燃費 (Note・給油間距離/給油量)
+GAS_F_KANKAKU = "_x7a7a__x767d__x671f__x9593_"        # 間隔=空白期間 (Note・前回給油からの経過)
 GAS_VEHICLES = ["997　エスクァイア HV", "1967　ハイエース", "3011  ノア", "8504　ハイエース",
                 "1724  ノア", "363    ハイエース", "5344  ノア　HV", "5179　ノア HV",
                 "4222　ハイエース", "6441  プリウスα　HV", "6803　ノア", "2862　ノア",
@@ -2076,6 +2083,125 @@ def _kyuyu_num(v) -> str:
         return ""
 
 
+def _kyuyu_plate_key(vehicle: str) -> str:
+    """車両文字列から同一車両判定キー(先頭のナンバー数字)。数字が無ければ空白除去した全体。"""
+    m = re.match(r"\s*(\d+)", vehicle or "")
+    if m:
+        return m.group(1)
+    return re.sub(r"[\s　]", "", vehicle or "")
+
+
+def _kyuyu_parse_created(s: str):
+    """SP Created(ISO8601 UTC)を aware datetime に。失敗時 None。"""
+    if not s:
+        return None
+    try:
+        t = s.strip().replace("Z", "")
+        if "." in t:
+            t = t.split(".")[0]
+        return _dt.datetime.strptime(t, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=_dt.timezone.utc)
+    except Exception:
+        return None
+
+
+def _kyuyu_fmt_kankaku(delta: "_dt.timedelta") -> str:
+    """timedelta → 既存フローと同じ「X日Y時間Z分間」。"""
+    total = max(0, int(delta.total_seconds()))
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    mins = rem // 60
+    return f"{days}日{hours}時間{mins}分間"
+
+
+def _kyuyu_prev_same_vehicle(vehicle: str):
+    """同一車両(ナンバー一致)の直近の過去エントリから (前回走行距離float|None, Created datetime|None)。"""
+    key = _kyuyu_plate_key(vehicle)
+    try:
+        items = sp_get_items(LIST_GASORIN, top=5000)
+    except Exception:
+        logging.exception("kyuyu prev fetch failed")
+        return (None, None)
+    best = None  # (created_dt, odo_float_or_None)
+    for it in items:
+        v = str(it.get("OData_" + GAS_F_VEHICLE) or it.get(GAS_F_VEHICLE) or "").strip()
+        if not v or _kyuyu_plate_key(v) != key:
+            continue
+        cdt = _kyuyu_parse_created(it.get("Created"))
+        if not cdt:
+            continue
+        odo_raw = it.get("OData_" + GAS_F_ODO) or it.get(GAS_F_ODO)
+        odo = None
+        try:
+            num = re.sub(r"[^\d.]", "", str(odo_raw if odo_raw is not None else "")).strip(".")
+            odo = float(num) if num else None
+        except Exception:
+            odo = None
+        if best is None or cdt > best[0]:
+            best = (cdt, odo)
+    if best is None:
+        return (None, None)
+    return (best[1], best[0])
+
+
+def _kyuyu_calc(vehicle: str, odometer: str, liters: str):
+    """同一車両の前回給油から 給油間距離/燃費/間隔(空白期間) を計算。各々文字列(無ければ '')。"""
+    dist_s = nenpi_s = kankaku_s = ""
+    try:
+        prev_odo, prev_created = _kyuyu_prev_same_vehicle(vehicle)
+        cur_odo = None
+        if odometer:
+            n = re.sub(r"[^\d.]", "", odometer).strip(".")
+            cur_odo = float(n) if n else None
+        if prev_created is not None:
+            kankaku_s = _kyuyu_fmt_kankaku(_dt.datetime.now(_dt.timezone.utc) - prev_created)
+        # 代車(Carro reserva=ナンバー数字なし)は共用で走行距離が別車のもの→距離/燃費は出さない
+        plate_is_num = _kyuyu_plate_key(vehicle).isdigit()
+        if plate_is_num and cur_odo is not None and prev_odo is not None and cur_odo > prev_odo:
+            dist = cur_odo - prev_odo
+            if dist < 100000:   # 桁ミス/車両入替の異常値を除外
+                dist_s = str(int(round(dist)))
+                n = re.sub(r"[^\d.]", "", liters).strip(".") if liters else ""
+                lit = float(n) if n else 0.0
+                if lit > 0:
+                    nenpi_s = str(round(dist / lit, 1))
+    except Exception:
+        logging.exception("kyuyu calc failed")
+    return dist_s, nenpi_s, kankaku_s
+
+
+def _kyuyu_notify_teams(shain_no, name, vehicle, day, amount, liters, odometer,
+                        dist_s, nenpi_s, kankaku_s, pay_type, purposes,
+                        receipt_urls, odo_url) -> None:
+    """Teams「送迎関係」チャネルへ給油申請を通知(チャネルメール宛 sendMail・best-effort)。
+    旧 Forms フローの通知を代替。投稿者は送信元(h.yamashita)になるため『誰が』は本文に明記。"""
+    veh_short = re.sub(r"[\s　]+", " ", vehicle or "").strip()
+    try:
+        amt_disp = f"¥{int(float(amount)):,}" if amount else "（未入力）"
+    except Exception:
+        amt_disp = f"¥{amount}" if amount else "（未入力）"
+    subject = f"⛽ 給油申請 {shain_no} {name}（{veh_short}）{amt_disp}"
+    lines = [
+        f"運転手: {shain_no} {name}",
+        f"日付: {day.isoformat()}",
+        f"車両: {veh_short}",
+        f"払戻金額: {amt_disp}",
+        f"支払い: {pay_type or '（未選択）'}",
+        f"給油量: {liters or '―'} ℓ",
+        f"現在走行距離: {odometer or '―'} km",
+        f"給油間距離: {dist_s or '―'} km",
+        f"燃費: {nenpi_s or '―'} km/ℓ",
+        f"空白期間: {kankaku_s or '―'}",
+        f"利用目的: {'・'.join(purposes)}",
+    ]
+    for i, u in enumerate(receipt_urls):
+        lines.append(f"レシート{i + 1}: {u}")
+    if odo_url:
+        lines.append(f"メーター: {odo_url}")
+    lines.append("")
+    lines.append("※ 従業員ポータルからの申請（精算は領収書を確認のうえ随時）")
+    _send_notification_mail(subject, "\n".join(lines), to_addr=KYUYU_TEAMS_EMAIL)
+
+
 @app.route(route="kyuyu/status", methods=["GET", "OPTIONS"])
 def kyuyu_status(req: func.HttpRequest) -> func.HttpResponse:
     """給油画面の初期データ: 対象可否・車両/利用目的/支払いの選択肢。"""
@@ -2140,9 +2266,10 @@ def kyuyu_ocr(req: func.HttpRequest) -> func.HttpResponse:
 
 @app.route(route="kyuyu/apply", methods=["POST", "OPTIONS"])
 def kyuyu_apply(req: func.HttpRequest) -> func.HttpResponse:
-    """給油申請を List54 に登録。写真を SP に保存しURLを格納。既存フローが計算/Teams通知。
+    """給油申請を List54 に登録。写真を SP に保存しURLを格納。
+    給油間距離/燃費/間隔を計算して書込み、Teams「送迎関係」へ通知(いずれも自前)。
     Body: {vehicle, amount, liters, odometer, payType, purposes:[...],
-           receiptImage:<dataURL>, odometerImage:<dataURL>(任意)}"""
+           receiptImages:[<dataURL>...](最大3) | receiptImage:<dataURL>, odometerImage:<dataURL>(任意)}"""
     pf = _handle_preflight(req)
     if pf:
         return pf
@@ -2230,11 +2357,26 @@ def kyuyu_apply(req: func.HttpRequest) -> func.HttpResponse:
         fields[GAS_F_ODOIMG] = odo_url
     if pay_type:
         fields[GAS_F_PAYTYPE] = pay_type
+    # 同一車両の前回給油から 給油間距離/燃費/間隔 を計算(旧 Forms フローの自動計算を代替)
+    dist_s, nenpi_s, kankaku_s = _kyuyu_calc(vehicle, odometer, liters)
+    if dist_s:
+        fields[GAS_F_DIST] = dist_s
+    if nenpi_s:
+        fields[GAS_F_NENPI] = nenpi_s
+    if kankaku_s:
+        fields[GAS_F_KANKAKU] = kankaku_s
     try:
         new_id = sp_post_item(LIST_GASORIN, fields)
     except Exception as e:
         logging.exception("kyuyu apply (List54 insert) failed")
         return _json_response({"error": "insert_failed", "detail": str(e)}, 500)
+    # Teams「送迎関係」へ通知(旧 Forms フローの通知を代替・best-effort=失敗しても申請は成功)
+    try:
+        _kyuyu_notify_teams(shain_no, name, vehicle, today, amount, liters, odometer,
+                            dist_s, nenpi_s, kankaku_s, pay_type, purposes,
+                            receipt_urls, odo_url)
+    except Exception:
+        logging.exception("kyuyu teams notify failed")
     return _json_response({"ok": True, "id": new_id})
 
 
