@@ -1992,6 +1992,10 @@ KYUYU_FOLDER_BASE = "/sites/TeamStepup/Shared Documents/給油申請レシート
 # Teams「送迎関係」チャネルのメールアドレス(チャネルへメール投稿=Forms フロー廃止後も通知継続)。
 # 既定値はメモ由来。実際のチャネルメール(Teams→チャネル→メールアドレスを取得)で上書き可。
 KYUYU_TEAMS_EMAIL = os.environ.get("KYUYU_TEAMS_EMAIL", "80ade604.team-stepup.com@jp.teams.ms")
+# 給油申請のロック画面Push宛(浩俊)。自分メモ(48:notes)は自己発言扱いで通知が出ないため、
+# yukyu-app の既存Push基盤(_push_to_admins)で浩俊端末へ別途お知らせを出す。
+KYUYU_PUSH_EMAILS = [e.strip() for e in os.environ.get(
+    "KYUYU_PUSH_EMAILS", "h.yamashita@team-stepup.com").split(",") if e.strip()]
 # List54 業務フィールド (AddValidateUpdateItemUsingPath は InternalName を要求=OData_ プレフィックス無し)
 GAS_F_VEHICLE = "_x30ca__x30f3__x30d0__x30fc__x30"   # ナンバー、車両
 GAS_F_AMOUNT  = "_x6255__x623b__x91d1__x984d_"        # 払戻金額
@@ -2188,13 +2192,15 @@ def _kyuyu_notify_teams(shain_no, name, vehicle, day, amount, liters, odometer,
         amt_disp = f"¥{int(float(amount)):,}" if amount else "（未入力）"
     except Exception:
         amt_disp = f"¥{amount}" if amount else "（未入力）"
-    # 距離 = 給油間距離（現在走行距離）。代車/メーター逆行で距離が無い時は走行距離のみ。
+    # 距離 = 給油間距離（現在走行距離）。代車/メーター逆行で距離が無い時は走行距離のみ明示。
     if dist_s:
         dist_disp = f"{dist_s} km" + (f"（{_h(odometer)} km）" if odometer else "")
+    elif odometer:
+        dist_disp = f"—（走行 {_h(odometer)} km）"
     else:
-        dist_disp = (f"{_h(odometer)} km" if odometer else "―")
+        dist_disp = "―"
     rows = [
-        ("申請者", f"{shain_no} {_h(name)}"),
+        ("申請者", _h(name)),   # 社員番号・日付はチャットに出るため省く(メモと統一)
         ("車両", _h(veh_short)),
         ("区分", _h("・".join(purposes))),
         ("前給油", f"{_h(kankaku_s)}前" if kankaku_s else "―"),
@@ -2203,7 +2209,6 @@ def _kyuyu_notify_teams(shain_no, name, vehicle, day, amount, liters, odometer,
         ("給油量", f"{_h(liters) if liters else '―'} ℓ"),
         ("払戻金額", amt_disp),
         ("支払い", _h(pay_type) if pay_type else "（未選択）"),
-        ("日付", day.isoformat()),
     ]
     tr = "".join(
         f'<tr><td style="padding:1px 14px 1px 0;color:#666;white-space:nowrap">{k}</td>'
@@ -2220,11 +2225,9 @@ def _kyuyu_notify_teams(shain_no, name, vehicle, day, amount, liters, odometer,
         '<div style="font-family:Segoe UI,Meiryo,sans-serif;font-size:14px;color:#222">'
         '<div style="font-size:16px;font-weight:700;margin-bottom:8px">⛽ 給油のお知らせ</div>'
         f'<table style="border-collapse:collapse">{tr}</table>'
-        f'<div style="margin-top:12px;line-height:2">{"<br>".join(links)}</div>'
-        '<div style="margin-top:10px;color:#999;font-size:12px">'
-        '※ 従業員ポータルからの申請（精算は領収書を確認のうえ随時）</div></div>'
+        f'<div style="margin-top:12px;line-height:2">{"<br>".join(links)}</div></div>'
     )
-    subject = f"⛽ 給油のお知らせ {shain_no} {name}（{veh_short}）{amt_disp}"
+    subject = f"⛽ 給油のお知らせ {name}（{veh_short}）{amt_disp}"
     _send_notification_mail(subject, html, to_addr=KYUYU_TEAMS_EMAIL, html=True)
 
 
@@ -2403,6 +2406,18 @@ def kyuyu_apply(req: func.HttpRequest) -> func.HttpResponse:
                             receipt_urls, odo_url)
     except Exception:
         logging.exception("kyuyu teams notify failed")
+    # 浩俊へロック画面Push (メモ投稿は自己発言で通知が出ないため、Pushで気付けるように・best-effort)
+    try:
+        veh_short = re.sub(r"[\s　]+", " ", vehicle).strip()
+        amt = f"¥{int(float(amount)):,}" if amount else ""
+        _push_to_admins(KYUYU_PUSH_EMAILS, {
+            "title": "⛽ 給油申請",
+            "body": f"{name}（{veh_short}）{amt}".strip(),
+            "url": f"{SITE_URL}/Lists/List54/AllItems.aspx",
+            "tag": "kyuyu-apply", "badge": 1,
+        })
+    except Exception:
+        logging.exception("kyuyu push failed")
     return _json_response({"ok": True, "id": new_id})
 
 
