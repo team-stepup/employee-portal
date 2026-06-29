@@ -2218,33 +2218,30 @@ def _resize_image_jpeg(raw: bytes, max_dim: int = 1500, quality: int = 78):
 
 def _kyuyu_build_inline_images(receipt_urls, odo_url, receipt_bytes=None, odo_bytes_raw=None,
                                total_budget: int = 3_200_000):
-    """レシート/メーター画像を縮小して Graph inline 添付 + <img cid> HTML を作る。
-    receipt_bytes/odo_bytes_raw が在れば再DLせず使用(applyの即時パス用)。
-    戻り (attachments:list, img_html:str)。"""
-    sources = []   # (url, raw_or_None, cid, label)
+    """レシート/メーター画像を縮小して Graph 添付(非インライン)を作る。
+    Teams のチャネル投稿は inline CID 画像を「本文」と「添付一覧」の両方に出して重複させるため、
+    添付のみ(本文には埋め込まない)にして各画像を1回だけ表示させる。
+    receipt_bytes/odo_bytes_raw が在れば再DLせず使用(applyの即時パス用)。戻り (attachments, '')。"""
+    sources = []   # (url, raw_or_None, filename)
     for i, u in enumerate(receipt_urls or []):
         raw = receipt_bytes[i] if (receipt_bytes and i < len(receipt_bytes)) else None
-        sources.append((u, raw, f"receipt{i + 1}", f"領収書{i + 1}"))
+        sources.append((u, raw, f"領収書{i + 1}.jpg"))
     if odo_url:
-        sources.append((odo_url, odo_bytes_raw, "meter", "走行距離メーター"))
-    attachments, html_parts, used = [], [], 0
-    for url, raw, cid, label in sources:
+        sources.append((odo_url, odo_bytes_raw, "走行メーター.jpg"))
+    attachments, used = [], 0
+    for url, raw, fname in sources:
         if raw is None:
             raw = _sp_download_bytes(url)
         small = _resize_image_jpeg(raw) if raw else None
         if not small or (used + len(small) > total_budget):
-            continue   # 取得失敗/予算超は埋め込まず(リンクは別途残る)
+            continue   # 取得失敗/予算超は付けず(リンクは別途残る)
         used += len(small)
         attachments.append({
             "@odata.type": "#microsoft.graph.fileAttachment",
-            "name": f"{cid}.jpg", "contentType": "image/jpeg",
-            "contentId": cid, "isInline": True,
+            "name": fname, "contentType": "image/jpeg",
             "contentBytes": base64.b64encode(small).decode("ascii"),
         })
-        html_parts.append(
-            f'<div style="margin-top:10px"><div style="font-size:12px;color:#666;margin-bottom:3px">{label}</div>'
-            f'<img src="cid:{cid}" style="max-width:340px;border:1px solid #ddd;border-radius:6px"></div>')
-    return attachments, "".join(html_parts)
+    return attachments, ""
 
 
 def _kyuyu_notify_teams(shain_no, name, vehicle, day, amount, liters, odometer,
