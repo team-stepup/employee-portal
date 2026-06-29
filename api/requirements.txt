@@ -7,3 +7,4 @@ anthropic
 requests
 pyjwt
 pywebpush
+Pillow

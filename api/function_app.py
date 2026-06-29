@@ -2179,9 +2179,77 @@ def _kyuyu_calc(vehicle: str, odometer: str, liters: str):
     return dist_s, nenpi_s, kankaku_s
 
 
+def _sp_download_bytes(abs_url: str, timeout: int = 60):
+    """SP の絶対URLからファイル bytes を取得(MIトークン)。失敗時 None。
+    REST はファイルが属するサイトWeb(/sites/X)配下で呼ぶ必要がある。"""
+    try:
+        from urllib.parse import urlparse, unquote, quote
+        p = urlparse(abs_url)
+        if not p.path:
+            return None
+        sru = unquote(p.path)   # /sites/TeamStepup/Shared Documents/.../x.jpg
+        m = re.match(r"(/(?:sites|teams)/[^/]+)", sru)
+        web = m.group(1) if m else ""   # /sites/TeamStepup
+        api = f"{p.scheme}://{p.netloc}{web}/_api/web/GetFileByServerRelativeUrl('{quote(sru)}')/$value"
+        r = requests.get(api, headers={"Authorization": f"Bearer {_get_sp_token()}"}, timeout=timeout)
+        r.raise_for_status()
+        return r.content
+    except Exception:
+        logging.exception("sp download failed: %s", abs_url)
+        return None
+
+
+def _resize_image_jpeg(raw: bytes, max_dim: int = 1500, quality: int = 78):
+    """画像bytesを縮小JPEGに(インライン埋め込み用にメール軽量化)。失敗時は十分小さければ原本、大きすぎれば None。"""
+    try:
+        from PIL import Image, ImageOps
+        import io as _io
+        im = Image.open(_io.BytesIO(raw))
+        im = ImageOps.exif_transpose(im)   # スマホ写真の向きを補正
+        im = im.convert("RGB")
+        im.thumbnail((max_dim, max_dim))
+        buf = _io.BytesIO()
+        im.save(buf, format="JPEG", quality=quality, optimize=True)
+        return buf.getvalue()
+    except Exception:
+        logging.exception("image resize failed")
+        return raw if raw and len(raw) <= 1_200_000 else None
+
+
+def _kyuyu_build_inline_images(receipt_urls, odo_url, receipt_bytes=None, odo_bytes_raw=None,
+                               total_budget: int = 3_200_000):
+    """レシート/メーター画像を縮小して Graph inline 添付 + <img cid> HTML を作る。
+    receipt_bytes/odo_bytes_raw が在れば再DLせず使用(applyの即時パス用)。
+    戻り (attachments:list, img_html:str)。"""
+    sources = []   # (url, raw_or_None, cid, label)
+    for i, u in enumerate(receipt_urls or []):
+        raw = receipt_bytes[i] if (receipt_bytes and i < len(receipt_bytes)) else None
+        sources.append((u, raw, f"receipt{i + 1}", f"領収書{i + 1}"))
+    if odo_url:
+        sources.append((odo_url, odo_bytes_raw, "meter", "走行距離メーター"))
+    attachments, html_parts, used = [], [], 0
+    for url, raw, cid, label in sources:
+        if raw is None:
+            raw = _sp_download_bytes(url)
+        small = _resize_image_jpeg(raw) if raw else None
+        if not small or (used + len(small) > total_budget):
+            continue   # 取得失敗/予算超は埋め込まず(リンクは別途残る)
+        used += len(small)
+        attachments.append({
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": f"{cid}.jpg", "contentType": "image/jpeg",
+            "contentId": cid, "isInline": True,
+            "contentBytes": base64.b64encode(small).decode("ascii"),
+        })
+        html_parts.append(
+            f'<div style="margin-top:10px"><div style="font-size:12px;color:#666;margin-bottom:3px">{label}</div>'
+            f'<img src="cid:{cid}" style="max-width:340px;border:1px solid #ddd;border-radius:6px"></div>')
+    return attachments, "".join(html_parts)
+
+
 def _kyuyu_notify_teams(shain_no, name, vehicle, day, amount, liters, odometer,
                         dist_s, nenpi_s, kankaku_s, pay_type, purposes,
-                        receipt_urls, odo_url) -> None:
+                        receipt_urls, odo_url, receipt_bytes=None, odo_bytes_raw=None) -> None:
     """Teams「送迎関係」チャネルへ給油申請を通知(チャネルメール宛 sendMail・HTML・best-effort)。
     旧 Forms フロー「⛽給油のお知らせ」カードの体裁に寄せ、URLは名前付きリンクに。
     投稿者は送信元(h.yamashita)になるため『誰が』は本文(申請者)に明記。"""
@@ -2221,14 +2289,17 @@ def _kyuyu_notify_teams(shain_no, name, vehicle, day, amount, liters, odometer,
     for i, u in enumerate(receipt_urls):
         links.append(f'<a href="{_h(u)}">🧾 領収書{i + 1}を開く</a>')
     links.append(f'<a href="{SITE_URL}/Lists/List54/AllItems.aspx">📊 リストで全体を確認する</a>')
+    # レシート/メーター画像を縮小してインライン埋め込み(リンク自動展開は不安定なため確実に表示)
+    attachments, img_html = _kyuyu_build_inline_images(receipt_urls, odo_url, receipt_bytes, odo_bytes_raw)
     html = (
         '<div style="font-family:Segoe UI,Meiryo,sans-serif;font-size:14px;color:#222">'
         '<div style="font-size:16px;font-weight:700;margin-bottom:8px">⛽ 給油のお知らせ</div>'
         f'<table style="border-collapse:collapse">{tr}</table>'
-        f'<div style="margin-top:12px;line-height:2">{"<br>".join(links)}</div></div>'
+        f'<div style="margin-top:12px;line-height:2">{"<br>".join(links)}</div>'
+        f'{img_html}</div>'
     )
     subject = f"⛽ 給油のお知らせ {name}（{veh_short}）{amt_disp}"
-    _send_notification_mail(subject, html, to_addr=KYUYU_TEAMS_EMAIL, html=True)
+    _send_notification_mail(subject, html, to_addr=KYUYU_TEAMS_EMAIL, html=True, attachments=attachments)
 
 
 @app.route(route="kyuyu/status", methods=["GET", "OPTIONS"])
@@ -2403,7 +2474,8 @@ def kyuyu_apply(req: func.HttpRequest) -> func.HttpResponse:
     try:
         _kyuyu_notify_teams(shain_no, name, vehicle, today, amount, liters, odometer,
                             dist_s, nenpi_s, kankaku_s, pay_type, purposes,
-                            receipt_urls, odo_url)
+                            receipt_urls, odo_url,
+                            receipt_bytes=receipt_bytes_list, odo_bytes_raw=odo_bytes)
     except Exception:
         logging.exception("kyuyu teams notify failed")
     # 浩俊へロック画面Push (メモ投稿は自己発言で通知が出ないため、Pushで気付けるように・best-effort)
@@ -3485,28 +3557,28 @@ def _get_graph_token() -> str:
 
 
 def _send_notification_mail(subject: str, text: str, to_addr: Optional[str] = None,
-                            html: bool = False) -> None:
+                            html: bool = False, attachments: Optional[list] = None) -> None:
     """Teams チャネルのメールアドレス宛に Graph sendMail で通知。
     送信元 = SHORUI_MAIL_SENDER (h.yamashita)、宛先 = to_addr or SHORUI_NOTIFY_EMAIL (チャネルメール)。
-    html=True なら contentType=HTML (名前付きリンク等)。環境変数未設定なら何もしない (申請自体は成功扱い)。"""
+    html=True なら contentType=HTML。attachments=Graph fileAttachment 配列(インライン画像等)。
+    環境変数未設定なら何もしない (申請自体は成功扱い)。"""
     to_addr = (to_addr or os.environ.get("SHORUI_NOTIFY_EMAIL", "")).strip()
     sender = os.environ.get("SHORUI_MAIL_SENDER", "").strip()
     if not to_addr or not sender:
         return
     try:
         token = _get_graph_token()
-        body = {
-            "message": {
-                "subject": subject,
-                "body": {"contentType": "HTML" if html else "Text", "content": text},
-                "toRecipients": [{"emailAddress": {"address": to_addr}}],
-            },
-            "saveToSentItems": False,
+        message = {
+            "subject": subject,
+            "body": {"contentType": "HTML" if html else "Text", "content": text},
+            "toRecipients": [{"emailAddress": {"address": to_addr}}],
         }
+        if attachments:
+            message["attachments"] = attachments
         r = requests.post(
             f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail",
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json=body, timeout=30,
+            json={"message": message, "saveToSentItems": False}, timeout=60,
         )
         if not r.ok:
             logging.warning(f"sendMail failed: {r.status_code} {r.text[:300]}")
