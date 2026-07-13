@@ -47,6 +47,7 @@ LIST_SOUGEI = "60569629-38e0-4dcb-9a73-c5f2904e3036"  # 送迎連絡 (派遣先�
 LIST_KYUJIN = "3b062cf9-73a0-4539-b10c-fd3edcc0e8b3"  # 求人 (HP採用情報・役員がyukyu-appから掲載。公開APIで匿名配信)
 LIST_OUBO = "7784b615-c0e1-4587-a10e-3551a2bd47cf"   # 応募 (HP採用ページの応募フォーム→POST /apply で保存。総務へ通知)
 LIST_SOUGEI_KIROKU = "ec0a16dc-6bba-49cf-a901-d5b3907553ca"  # 送迎記録 (運転手が1タップで実績記録→月次集計して総務へ)
+LIST_JIKO = "56dcb3c2-472b-4472-9d32-904f67cc3afa"           # 事故報告 (運転手の交通事故報告→送迎関係チャネル+Push即時通知)
 
 # 送迎記録 List フィールド (ASCII名なので read/write とも OData_ プレフィックス無し)
 SK_SHAINNO = "ShainNo"       # 社員番号 (Number)
@@ -224,6 +225,7 @@ RATE_LIMITS = {
     "zairyu": 5,       # 在留カード提出 5/min (画像アップロード重め)
     "kyuyu": 12,       # 給油申請 OCR/送信 12/min (写真2枚×OCR+送信)
     "sougei": 20,      # 送迎記録 20/min (1タップ記録・連続記録あり)
+    "jiko": 6,         # 事故報告 6/min (写真3枚アップロードあり)
 }
 _storage_conn = os.environ.get("AzureWebJobsStorage", "")
 _table_client_cache = None
@@ -3195,8 +3197,8 @@ def sougei_records(req: func.HttpRequest) -> func.HttpResponse:
 
 @app.route(route="sougei/cancel", methods=["POST", "OPTIONS"])
 def sougei_cancel(req: func.HttpRequest) -> func.HttpResponse:
-    """自分の送迎記録を取消 (Status=cancelled)。当月分 または 7日以内のみ可
-    (前月分は月初の集計後に変わると困るため締切)。Body: {id}"""
+    """自分の送迎記録を取消 (Status=cancelled)。当月分のみ可
+    (月を跨いだ分は月次集計対象のため本人は削除不可)。Body: {id}"""
     pf = _handle_preflight(req)
     if pf:
         return pf
@@ -3238,9 +3240,9 @@ def sougei_cancel(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"ok": True, "already": True})
     d = _utc_to_jst_date(it.get(SK_DATE))
     today = _today_jst()
+    # 当月分のみ取消可 (月を跨いだら集計対象なので本人は削除不可・修正は総務のExcel「不足・追加」列で)
     same_month = d is not None and d.year == today.year and d.month == today.month
-    within_days = d is not None and 0 <= (today - d).days <= SOUGEI_BACKDATE_DAYS
-    if not (same_month or within_days):
+    if not same_month:
         return _json_response({"error": "too_old_to_cancel"}, 400)
     try:
         sp_patch_item(LIST_SOUGEI_KIROKU, rec_id, {SK_STATUS: "cancelled"})
@@ -3248,6 +3250,233 @@ def sougei_cancel(req: func.HttpRequest) -> func.HttpResponse:
         logging.exception("sougei cancel patch failed")
         return _json_response({"error": "cancel_failed", "detail": str(e)}, 500)
     return _json_response({"ok": True, "id": rec_id})
+
+
+# ====== 事故報告 (運転手の交通事故報告・部課=094:本社（送迎者）) ======
+JIKO_FOLDER_BASE = "/sites/TeamStepup/Shared Documents/事故報告"
+JIKO_TEAMS_EMAIL = os.environ.get("JIKO_TEAMS_EMAIL", "80ade604.team-stepup.com@jp.teams.ms")  # 送迎関係チャネル
+JIKO_PUSH_EMAILS = [e.strip() for e in os.environ.get(
+    "JIKO_PUSH_EMAILS", "h.yamashita@team-stepup.com,a.yamashita@team-stepup.com").split(",") if e.strip()]
+JIKO_INJURY = ["なし", "あり"]
+JIKO_POLICE = ["届出済", "未届"]
+
+
+@app.route(route="jiko/config", methods=["GET", "OPTIONS"])
+def jiko_config(req: func.HttpRequest) -> func.HttpResponse:
+    """事故報告フォームのマスタ (車両リスト・担当車両・選択肢)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    emp = find_active_employee_by_shain(payload["shainNo"])
+    if not emp:
+        return _json_response({"error": "not_active"}, 403)
+    vehicles = _kyuyu_vehicles()
+    return _json_response({
+        "ok": True, "eligible": _sougei_kiroku_eligible(emp),
+        "vehicles": vehicles,
+        "defaultVehicle": _kyuyu_default_vehicle(int(payload["shainNo"]), vehicles),
+        "injuryOptions": JIKO_INJURY, "policeOptions": JIKO_POLICE,
+        "today": _today_jst().isoformat(),
+    })
+
+
+@app.route(route="jiko/report", methods=["POST", "OPTIONS"])
+def jiko_report(req: func.HttpRequest) -> func.HttpResponse:
+    """交通事故報告を提出。写真(最大3枚)をSP保存→List INSERT→送迎関係チャネル+役員Push即時通知。
+    Body: {date, time, location, vehicle, otherParty?, injury, injuryDetail?,
+           police, description, photos:[<dataURL>...](最大3・任意)}"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    emp = find_active_employee_by_shain(shain_no)
+    if not emp or not _sougei_kiroku_eligible(emp):
+        return _json_response({"error": "not_eligible"}, 403)
+    wait = check_rate_limit(shain_no, "jiko")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait}, 429,
+                              extra_headers={"Retry-After": str(wait)})
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    today = _today_jst()
+    try:
+        acc_date = _dt.date.fromisoformat((body.get("date") or "").strip())
+    except Exception:
+        return _json_response({"error": "invalid_date"}, 400)
+    if acc_date > today or (today - acc_date).days > 30:
+        return _json_response({"error": "date_out_of_range"}, 400)
+    acc_time = str(body.get("time") or "").strip()[:10]
+    location = str(body.get("location") or "").strip()[:120]
+    vehicle = str(body.get("vehicle") or "").strip()[:60]
+    description = str(body.get("description") or "").strip()[:2000]
+    if not location or not description:
+        return _json_response({"error": "missing_fields"}, 400)
+    other_party = str(body.get("otherParty") or "").strip()[:1000]
+    injury = (body.get("injury") or "なし").strip()
+    if injury not in JIKO_INJURY:
+        injury = "なし"
+    injury_detail = str(body.get("injuryDetail") or "").strip()[:1000]
+    police = (body.get("police") or "未届").strip()
+    if police not in JIKO_POLICE:
+        police = "未届"
+    photos = [p for p in (body.get("photos") or []) if p][:3]
+    try:
+        photo_bytes = [base64.b64decode(_strip_data_url(p)) for p in photos]
+    except Exception as e:
+        return _json_response({"error": "invalid_base64", "detail": str(e)}, 400)
+    if any(len(b) > 10 * 1024 * 1024 for b in photo_bytes):
+        return _json_response({"error": "image_too_large", "maxMB": 10}, 400)
+    name = emp.get(F_SHAIN_NAME) or ""
+    # 写真を SP に保存
+    photo_urls: List[str] = []
+    try:
+        year_folder = f"{JIKO_FOLDER_BASE}/{today.year}"
+        sp_create_folder_if_not_exists(JIKO_FOLDER_BASE)
+        sp_create_folder_if_not_exists(year_folder)
+        ts = _now_jst().strftime("%Y%m%d_%H%M%S")
+        url_base = f"{SITE_TEAMSTEPUP}/Shared Documents/事故報告/{today.year}"
+        for i, pb in enumerate(photo_bytes):
+            fname = _safe_filename(f"{shain_no}_{acc_date.isoformat()}_事故{i+1}_{ts}.jpg")
+            sp_upload_file(year_folder, fname, pb)
+            photo_urls.append(f"{url_base}/{fname}")
+    except Exception as e:
+        logging.exception("jiko photo upload failed")
+        return _json_response({"error": "upload_failed", "detail": str(e)}, 500)
+    fields: Dict[str, Any] = {
+        "Title": f"{shain_no} {name} ({acc_date.isoformat()} {acc_time})".strip(),
+        "ShainNo": str(shain_no),
+        "DriverName": name,
+        "AccidentDate": acc_date.strftime("%Y/%m/%d"),
+        "AccidentTime": acc_time,
+        "Location": location,
+        "Vehicle": vehicle,
+        "Injury": injury,
+        "Police": police,
+        "Description": description,
+        "Status": "submitted",
+    }
+    if other_party:
+        fields["OtherParty"] = other_party
+    if injury_detail:
+        fields["InjuryDetail"] = injury_detail
+    for i, u in enumerate(photo_urls):
+        fields[f"Photo{i+1}"] = u
+    try:
+        new_id = sp_post_item(LIST_JIKO, fields)
+    except Exception as e:
+        logging.exception("jiko insert failed")
+        return _json_response({"error": "insert_failed", "detail": str(e)}, 500)
+    # 通知 (best-effort・失敗しても報告は成功)
+    try:
+        _jiko_notify(shain_no, name, acc_date, acc_time, location, vehicle,
+                     other_party, injury, injury_detail, police, description,
+                     photo_urls, photo_bytes)
+    except Exception:
+        logging.exception("jiko notify failed")
+    try:
+        _push_to_admins(JIKO_PUSH_EMAILS, {
+            "title": "🚨 交通事故報告",
+            "body": f"{name}（{vehicle}）{location}".strip(),
+            "url": f"{SITE_URL}/Lists/事故報告/AllItems.aspx",
+            "tag": "jiko-report", "badge": 1,
+        })
+    except Exception:
+        logging.exception("jiko push failed")
+    return _json_response({"ok": True, "id": new_id})
+
+
+def _jiko_notify(shain_no, name, acc_date, acc_time, location, vehicle,
+                 other_party, injury, injury_detail, police, description,
+                 photo_urls, photo_bytes) -> None:
+    """事故報告を送迎関係チャネルへ HTMLカード + 写真添付で通知。"""
+    esc = lambda s: (str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    injury_s = injury + (f"（{injury_detail}）" if injury == "あり" and injury_detail else "")
+    rows = [
+        ("運転手", f"{esc(name)}（{shain_no}）"),
+        ("発生日時", f"{acc_date.year}/{acc_date.month}/{acc_date.day} {esc(acc_time)}"),
+        ("場所", esc(location)),
+        ("車両", esc(vehicle)),
+        ("相手", esc(other_party) or "なし"),
+        ("けが人", esc(injury_s)),
+        ("警察届出", esc(police)),
+        ("状況", esc(description).replace("\n", "<br>")),
+    ]
+    tr = "".join(
+        f'<tr><td style="padding:5px 12px;background:#fdf0ef;font-weight:600;white-space:nowrap;">{k}</td>'
+        f'<td style="padding:5px 12px;">{v}</td></tr>' for k, v in rows)
+    links = "".join(
+        f'<p style="margin:4px 0;"><a href="{u}">📷 事故写真{i+1}を開く</a></p>'
+        for i, u in enumerate(photo_urls))
+    html = (
+        '<div style="font-family:sans-serif;color:#1a2b3c;">'
+        '<h3 style="margin:0 0 4px;color:#c0392b;">🚨 交通事故報告が届きました</h3>'
+        f'<table style="border-collapse:collapse;font-size:14px;">{tr}</table>'
+        f'{links}'
+        f'<p style="margin:10px 0 0;"><a href="{SITE_URL}/Lists/%E4%BA%8B%E6%95%85%E5%A0%B1%E5%91%8A/AllItems.aspx">📊 リストで全体を確認する</a></p>'
+        '</div>')
+    # 写真は縮小して添付 (kyuyu と同じ非インライン方式・重複表示を防ぐ)
+    attachments = []
+    used = 0
+    for i, pb in enumerate(photo_bytes or []):
+        small = _resize_image_jpeg(pb)
+        if not small or used + len(small) > 3_200_000:
+            continue
+        used += len(small)
+        attachments.append({
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": f"事故写真{i+1}.jpg",
+            "contentType": "image/jpeg",
+            "contentBytes": base64.b64encode(small).decode("ascii"),
+        })
+    _send_notification_mail(f"🚨 交通事故報告 {name}", html, to_addr=JIKO_TEAMS_EMAIL,
+                            html=True, attachments=attachments or None)
+
+
+@app.route(route="jiko/reports", methods=["GET", "OPTIONS"])
+def jiko_reports(req: func.HttpRequest) -> func.HttpResponse:
+    """本人の事故報告一覧 (新しい順・最大50件)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    emp = find_active_employee_by_shain(shain_no)
+    if not emp or not _sougei_kiroku_eligible(emp):
+        return _json_response({"error": "not_eligible"}, 403)
+    try:
+        items = sp_get_items(
+            LIST_JIKO,
+            select=",".join(["Id", "ShainNo", "AccidentDate", "AccidentTime",
+                             "Location", "Vehicle", "Injury", "Police", "Status"]),
+            filter_=f"ShainNo eq {shain_no}",
+            orderby="Id desc", top=50,
+        )
+    except Exception as e:
+        logging.exception("jiko reports fetch failed")
+        return _json_response({"error": "fetch_failed", "detail": str(e)}, 500)
+    out = []
+    for it in items:
+        d = _utc_to_jst_date(it.get("AccidentDate"))
+        out.append({
+            "id": it.get("Id"),
+            "date": d.isoformat() if d else "",
+            "time": it.get("AccidentTime") or "",
+            "location": it.get("Location") or "",
+            "vehicle": it.get("Vehicle") or "",
+            "injury": it.get("Injury") or "",
+            "police": it.get("Police") or "",
+        })
+    return _json_response({"ok": True, "reports": out})
 
 
 # ====== 運転免許証 OCR ======

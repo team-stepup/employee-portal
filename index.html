@@ -636,10 +636,15 @@
   <div id="home-notices"></div>
 
   <div class="menu-grid">
-    <div class="menu-card" onclick="openRequestWithRules()">
-      <span class="card-num">①</span>
-      <span class="icon">💴</span>
-      <span class="label" data-i18n="menuApply">前払い申請</span>
+    <div class="menu-card" id="menu-card-sougei" onclick="openSougeiKiroku()" style="display:none;">
+      <span class="card-num">🚌</span>
+      <span class="icon">🚌</span>
+      <span class="label" data-i18n="menuSougeiKiroku">送迎記録</span>
+    </div>
+    <div class="menu-card" id="menu-card-jiko" onclick="openJiko()" style="display:none;">
+      <span class="card-num">📝</span>
+      <span class="icon">📝</span>
+      <span class="label" data-i18n="menuJiko">報告書</span>
     </div>
     <div class="menu-card" id="menu-card-bento" onclick="showScreen('bento')" style="display:none; position:relative;">
       <span class="card-num">⑧</span>
@@ -658,10 +663,10 @@
       <span class="icon">🚗</span>
       <span class="label" data-i18n="menuKyuyu">給油申請</span>
     </div>
-    <div class="menu-card" id="menu-card-sougei" onclick="openSougeiKiroku()" style="display:none;">
-      <span class="card-num">🚌</span>
-      <span class="icon">🚌</span>
-      <span class="label" data-i18n="menuSougeiKiroku">送迎記録</span>
+    <div class="menu-card" onclick="openRequestWithRules()">
+      <span class="card-num">①</span>
+      <span class="icon">💴</span>
+      <span class="label" data-i18n="menuApply">前払い申請</span>
     </div>
     <div class="menu-card" onclick="showScreen('history')" style="position:relative;">
       <span class="card-num">②</span>
@@ -859,6 +864,80 @@
   </div>
   <div id="sougei-history-list"></div>
   <button class="btn btn-secondary" onclick="showScreen('sougei-kiroku')" data-i18n="back">戻る</button>
+</div>
+
+<!-- ====== Screen: 報告書 (交通事故報告・送迎運転手) ====== -->
+<div id="screen-jiko" class="container hidden">
+  <div class="header">
+    <h1>📝 <span data-i18n="menuJiko">報告書</span></h1>
+    <span class="logout-btn" onclick="showScreen('home')">✕</span>
+  </div>
+  <div class="info-banner" style="background:#fdf0ef;border-color:#e5b5b0;color:#8a2f26;" data-i18n="jikoInfo">🚨 事故が起きたら、まず安全を確保して警察(110)へ連絡。その後できるだけ早くこの報告を送ってください。</div>
+  <div id="jiko-error" class="error-banner hidden"></div>
+
+  <div class="card">
+    <h2 style="color:#c0392b;">🚨 <span data-i18n="jikoTitle">交通事故報告</span></h2>
+  </div>
+
+  <div class="card">
+    <h2>① <span data-i18n="jikoWhen">発生日時</span></h2>
+    <div style="display:flex;gap:8px;">
+      <input type="date" id="jiko-date" style="flex:1.4;padding:11px;border:1px solid #cdd5df;border-radius:8px;font-size:1em;box-sizing:border-box;margin-top:4px;">
+      <input type="time" id="jiko-time" style="flex:1;padding:11px;border:1px solid #cdd5df;border-radius:8px;font-size:1em;box-sizing:border-box;margin-top:4px;">
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>② <span data-i18n="jikoWhere">場所</span></h2>
+    <input type="text" id="jiko-location" maxlength="120" data-i18n-ph="jikoWherePh" placeholder="例: 磐田市〇〇 交差点"
+           style="width:100%;padding:11px;border:1px solid #cdd5df;border-radius:8px;font-size:1em;box-sizing:border-box;margin-top:4px;">
+  </div>
+
+  <div class="card">
+    <h2>③ <span data-i18n="jikoVehicle">車両</span></h2>
+    <select id="jiko-vehicle" style="width:100%;padding:11px;border:1px solid #cdd5df;border-radius:8px;font-size:1em;box-sizing:border-box;margin-top:4px;">
+      <option value="" data-i18n="kyuyuSelectVehicle">選択してください</option>
+    </select>
+  </div>
+
+  <div class="card">
+    <h2>④ <span data-i18n="jikoOther">相手（いる場合）</span></h2>
+    <textarea id="jiko-other" maxlength="1000" data-i18n-ph="jikoOtherPh" placeholder="相手の名前・車のナンバー・連絡先など。いなければ空欄" style="min-height:64px;"></textarea>
+  </div>
+
+  <div class="card">
+    <h2>⑤ <span data-i18n="jikoInjury">けが人</span></h2>
+    <div id="jiko-injury-btns" style="display:flex;gap:8px;margin-top:6px;"></div>
+    <textarea id="jiko-injury-detail" maxlength="1000" class="hidden" data-i18n-ph="jikoInjuryPh" placeholder="誰が・どんなけがか" style="min-height:56px;margin-top:8px;"></textarea>
+  </div>
+
+  <div class="card">
+    <h2>⑥ <span data-i18n="jikoPolice">警察への届出</span></h2>
+    <div id="jiko-police-btns" style="display:flex;gap:8px;margin-top:6px;"></div>
+  </div>
+
+  <div class="card">
+    <h2>⑦ <span data-i18n="jikoDesc">状況の説明</span></h2>
+    <textarea id="jiko-desc" maxlength="2000" data-i18n-ph="jikoDescPh" placeholder="どのように事故が起きたか、車の傷の場所など" style="min-height:96px;"></textarea>
+  </div>
+
+  <div class="card">
+    <h2>⑧ <span data-i18n="jikoPhotos">写真（任意・最大3枚）</span></h2>
+    <div style="font-size:0.82em;color:#888;margin-bottom:6px;" data-i18n="jikoPhotosHint">現場・車の傷・相手の車などを撮影してください。</div>
+    <input type="file" accept="image/*" capture="environment" id="jiko-photo-input" onchange="onJikoPhoto(event)" style="display:none;">
+    <button type="button" class="btn-camera" id="jiko-photo-btn" onclick="document.getElementById('jiko-photo-input').click()">
+      <span class="cam-icon">📷</span> <span id="jiko-photo-btn-label" data-i18n="kyuyuTakePhoto">撮影する</span>
+    </button>
+    <div id="jiko-photo-preview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;"></div>
+  </div>
+
+  <button class="btn btn-primary" id="jiko-submit-btn" onclick="submitJiko()" data-i18n="jikoSubmit">この内容で報告する</button>
+  <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="cancel">キャンセル</button>
+
+  <div class="card" style="margin-top:14px;">
+    <h2>🗒 <span data-i18n="jikoPast">過去の報告</span></h2>
+    <div id="jiko-past-list" style="margin-top:6px;"></div>
+  </div>
 </div>
 
 <!-- ====== Screen: 前払い申請 ====== -->
@@ -1340,6 +1419,19 @@
     <div class="modal-title" id="modal-title"></div>
     <div class="modal-message" id="modal-message"></div>
     <button type="button" class="modal-btn" id="modal-ok-btn" onclick="closeAlert()">OK</button>
+  </div>
+</div>
+
+<!-- 確認モーダル (はい/いいえ) -->
+<div id="modal-confirm" class="modal-backdrop hidden">
+  <div class="modal-box info">
+    <div class="modal-icon">❓</div>
+    <div class="modal-title" id="confirm-title"></div>
+    <div class="modal-message" id="confirm-message" style="white-space:pre-line;"></div>
+    <div style="display:flex;gap:10px;margin-top:6px;">
+      <button type="button" class="modal-btn modal-btn-secondary" id="confirm-no" style="flex:1;"></button>
+      <button type="button" class="modal-btn" id="confirm-yes" style="flex:1;"></button>
+    </div>
   </div>
 </div>
 
@@ -2019,6 +2111,10 @@ function applyI18n() {
   document.querySelectorAll('[data-i18n-key]').forEach(el => {
     if (!el.classList.contains('hidden')) el.textContent = t(el.getAttribute('data-i18n-key'));
   });
+  // placeholder の翻訳 (data-i18n-ph)
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+    el.placeholder = t(el.getAttribute('data-i18n-ph'));
+  });
   document.documentElement.lang = currentLang;
   // 全 lang-btn に active クラスを付け直し
   document.querySelectorAll('.lang-btn').forEach(btn => {
@@ -2115,6 +2211,23 @@ function showAlert(message, type, title) {
 
 function closeAlert() {
   document.getElementById('modal-alert').classList.add('hidden');
+}
+
+// 確認モーダル (はい/いいえ)。Promise<boolean> を返す
+function showConfirm(message, title, yesLabel, noLabel) {
+  return new Promise(resolve => {
+    const m = document.getElementById('modal-confirm');
+    document.getElementById('confirm-title').textContent = title || t('confirmTitle');
+    document.getElementById('confirm-message').textContent = message || '';
+    const yes = document.getElementById('confirm-yes');
+    const no = document.getElementById('confirm-no');
+    yes.textContent = yesLabel || t('confirmYes');
+    no.textContent = noLabel || t('confirmNo');
+    const done = v => { m.classList.add('hidden'); yes.onclick = no.onclick = null; resolve(v); };
+    yes.onclick = () => done(true);
+    no.onclick = () => done(false);
+    m.classList.remove('hidden');
+  });
 }
 
 function onAlertBackdropClick(e) {
@@ -3397,7 +3510,7 @@ function acceptRules() {
 function showScreen(name) {
   ['login','home','request','history','zairyu','zairyu-confirm','license','license-confirm',
    'shaken','shaken-confirm','hoken','hoken-confirm','shorui','shorui-history','bento','bento-approve','renraku','kyuyu',
-   'sougei-kiroku','sougei-history'].forEach(s => {
+   'sougei-kiroku','sougei-history','jiko'].forEach(s => {
     const el = document.getElementById('screen-' + s);
     if (el) el.classList.add('hidden');
   });
@@ -3655,9 +3768,11 @@ function renderHome() {
   // 給油申請: 送迎運転手(社員番号セット)のみ
   const kyuyuCard = document.getElementById('menu-card-kyuyu');
   if (kyuyuCard) kyuyuCard.style.display = state.profile.kyuyuEligible ? '' : 'none';
-  // 送迎記録: 部課=094:本社（送迎者）のみ
+  // 送迎記録・報告書(事故報告): 部課=094:本社（送迎者）のみ
   const sougeiCard = document.getElementById('menu-card-sougei');
   if (sougeiCard) sougeiCard.style.display = state.profile.sougeiKirokuEligible ? '' : 'none';
+  const jikoCard = document.getElementById('menu-card-jiko');
+  if (jikoCard) jikoCard.style.display = state.profile.sougeiKirokuEligible ? '' : 'none';
   // 期限お知らせを即時表示 (履歴取得を待たず profile から)
   renderHomeNotices(state.historyCache ? state.historyCache.items : null);
   // プッシュ通知の設定UI
@@ -4035,6 +4150,12 @@ function renderSougeiSlots() {
 
 async function recordSougei(category, slot) {
   if (sougeiState.busy) return;
+  // 確認画面 (日付・送迎先・区分・時刻)
+  const dparts = (sougeiState.date || '').split('-');
+  const dateLabel = dparts.length === 3 ? (Number(dparts[1]) + '/' + Number(dparts[2])) : sougeiState.date;
+  const msg = '📅 ' + dateLabel + '\n' + (SOUGEI_CAT_ICON[category] || '') + ' ' +
+    _sgLabel(sougeiState.dest) + '　' + _sgLabel(category) + (slot ? ' ' + slot : '');
+  if (!await showConfirm(msg, t('sougeiConfirmTitle'))) return;
   sougeiState.busy = true;
   showLoading(true);
   try {
@@ -4076,7 +4197,7 @@ function renderSougeiDayRecords() {
 }
 
 async function cancelSougei(id) {
-  if (!window.confirm(t('sougeiCancelConfirm'))) return;
+  if (!await showConfirm(t('sougeiCancelConfirm'), t('confirmTitle'))) return;
   showLoading(true);
   try {
     await callApi('POST', '/sougei/cancel', { id: id });
@@ -4148,6 +4269,215 @@ async function loadSougeiHistory() {
     });
   } catch (e) {
     listEl.innerHTML = '<div class="card" style="color:#c00;text-align:center;">' + t('networkError') + '</div>';
+  }
+}
+
+// ====== 報告書 / 交通事故報告 (送迎運転手) ======
+Object.assign(I18N.ja, {
+  confirmTitle: '確認', confirmYes: 'はい', confirmNo: 'いいえ',
+  sougeiConfirmTitle: 'この内容で記録しますか？',
+  menuJiko: '報告書', jikoTitle: '交通事故報告',
+  jikoInfo: '🚨 事故が起きたら、まず安全を確保して警察(110)へ連絡。その後できるだけ早くこの報告を送ってください。',
+  jikoWhen: '発生日時', jikoWhere: '場所', jikoWherePh: '例: 磐田市〇〇 交差点',
+  jikoVehicle: '車両', jikoOther: '相手（いる場合）',
+  jikoOtherPh: '相手の名前・車のナンバー・連絡先など。いなければ空欄',
+  jikoInjury: 'けが人', jikoInjuryPh: '誰が・どんなけがか',
+  jikoPolice: '警察への届出', jikoDesc: '状況の説明',
+  jikoDescPh: 'どのように事故が起きたか、車の傷の場所など',
+  jikoPhotos: '写真（任意・最大3枚）', jikoPhotosHint: '現場・車の傷・相手の車などを撮影してください。',
+  jikoSubmit: 'この内容で報告する', jikoPast: '過去の報告',
+  jikoConfirmMsg: '交通事故報告を送信しますか？\n送信すると会社に通知されます。',
+  jikoNeedFields: '発生日時・場所・状況を入力してください。',
+  jikoDone: '報告を送信しました。会社から連絡がある場合があります。',
+  jikoFail: '送信に失敗しました。もう一度お試しください。',
+  jikoNoPast: '過去の報告はありません。', jikoAddPhoto: '＋写真を追加',
+});
+Object.assign(I18N.en, {
+  confirmTitle: 'Confirm', confirmYes: 'Yes', confirmNo: 'No',
+  sougeiConfirmTitle: 'Log this run?',
+  menuJiko: 'Report', jikoTitle: 'Traffic Accident Report',
+  jikoInfo: '🚨 If an accident happens: first make sure everyone is safe and call the police (110). Then send this report as soon as possible.',
+  jikoWhen: 'Date & time', jikoWhere: 'Location', jikoWherePh: 'e.g. Iwata, XX intersection',
+  jikoVehicle: 'Vehicle', jikoOther: 'Other party (if any)',
+  jikoOtherPh: 'Name, plate number, contact of the other party. Leave blank if none',
+  jikoInjury: 'Injuries', jikoInjuryPh: 'Who was injured and how',
+  jikoPolice: 'Police report', jikoDesc: 'What happened',
+  jikoDescPh: 'How the accident happened, where the car is damaged, etc.',
+  jikoPhotos: 'Photos (optional, up to 3)', jikoPhotosHint: 'Take photos of the scene, damage, the other car, etc.',
+  jikoSubmit: 'Send report', jikoPast: 'Past reports',
+  jikoConfirmMsg: 'Send this accident report?\nThe company will be notified.',
+  jikoNeedFields: 'Please fill in date/time, location and description.',
+  jikoDone: 'Report sent. The company may contact you.',
+  jikoFail: 'Failed to send. Please try again.',
+  jikoNoPast: 'No past reports.', jikoAddPhoto: 'Add photo',
+});
+Object.assign(I18N.pt, {
+  confirmTitle: 'Confirmação', confirmYes: 'Sim', confirmNo: 'Não',
+  sougeiConfirmTitle: 'Registrar esta viagem?',
+  menuJiko: 'Relatório', jikoTitle: 'Relatório de Acidente de Trânsito',
+  jikoInfo: '🚨 Em caso de acidente: primeiro garanta a segurança e chame a polícia (110). Depois envie este relatório o mais rápido possível.',
+  jikoWhen: 'Data e hora', jikoWhere: 'Local', jikoWherePh: 'ex: Iwata, cruzamento XX',
+  jikoVehicle: 'Veículo', jikoOther: 'Outra parte (se houver)',
+  jikoOtherPh: 'Nome, placa e contato da outra parte. Deixe em branco se não houver',
+  jikoInjury: 'Feridos', jikoInjuryPh: 'Quem se feriu e como',
+  jikoPolice: 'Registro na polícia', jikoDesc: 'O que aconteceu',
+  jikoDescPh: 'Como o acidente aconteceu, onde o carro foi danificado, etc.',
+  jikoPhotos: 'Fotos (opcional, até 3)', jikoPhotosHint: 'Fotografe o local, os danos, o outro carro, etc.',
+  jikoSubmit: 'Enviar relatório', jikoPast: 'Relatórios anteriores',
+  jikoConfirmMsg: 'Enviar este relatório de acidente?\nA empresa será notificada.',
+  jikoNeedFields: 'Preencha data/hora, local e descrição.',
+  jikoDone: 'Relatório enviado. A empresa poderá entrar em contato.',
+  jikoFail: 'Falha no envio. Tente novamente.',
+  jikoNoPast: 'Nenhum relatório anterior.', jikoAddPhoto: 'Adicionar foto',
+});
+
+// 選択肢の表示翻訳 (値は日本語で保存)
+var JIKO_OPT_LABEL = {
+  ja: { 'なし': 'なし', 'あり': 'あり', '届出済': '届出済', '未届': 'まだ' },
+  en: { 'なし': 'None', 'あり': 'Yes', '届出済': 'Reported', '未届': 'Not yet' },
+  pt: { 'なし': 'Não', 'あり': 'Sim', '届出済': 'Registrado', '未届': 'Ainda não' },
+};
+function _jkLabel(v) { return (JIKO_OPT_LABEL[currentLang] || JIKO_OPT_LABEL.ja)[v] || v; }
+
+var jikoState = { photos: [], injury: 'なし', police: '未届', busy: false };
+
+async function openJiko() {
+  showScreen('jiko');
+  jikoState = { photos: [], injury: 'なし', police: '未届', busy: false };
+  document.getElementById('jiko-error').classList.add('hidden');
+  const now = new Date();
+  const today = _sgToday();
+  document.getElementById('jiko-date').value = today;
+  document.getElementById('jiko-date').max = today;
+  document.getElementById('jiko-time').value = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  ['jiko-location', 'jiko-other', 'jiko-injury-detail', 'jiko-desc'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('jiko-injury-detail').classList.add('hidden');
+  document.getElementById('jiko-photo-preview').innerHTML = '';
+  _jikoUpdatePhotoBtn();
+  _jikoRenderChoiceBtns();
+  loadJikoPast();
+  try {
+    const data = await callApi('GET', '/jiko/config');
+    const vsel = document.getElementById('jiko-vehicle');
+    vsel.innerHTML = '<option value="">' + t('kyuyuSelectVehicle') + '</option>';
+    (data.vehicles || []).forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; vsel.appendChild(o); });
+    if (data.defaultVehicle && [...vsel.options].some(o => o.value === data.defaultVehicle)) vsel.value = data.defaultVehicle;
+  } catch (e) { /* 車両リスト取得失敗でも手入力継続可 */ }
+}
+
+function _jikoChoiceBtn(value, selected, onclick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.style.cssText = 'flex:1;padding:12px 6px;border-radius:10px;font-size:1em;font-weight:700;cursor:pointer;' +
+    (selected ? 'border:2px solid #c0392b;background:#fdf0ef;color:#8a2f26;' : 'border:1px solid #cdd5df;background:#fff;color:#333;');
+  b.textContent = _jkLabel(value);
+  b.onclick = onclick;
+  return b;
+}
+
+function _jikoRenderChoiceBtns() {
+  const iw = document.getElementById('jiko-injury-btns');
+  iw.innerHTML = '';
+  ['なし', 'あり'].forEach(v => iw.appendChild(_jikoChoiceBtn(v, jikoState.injury === v, () => {
+    jikoState.injury = v;
+    document.getElementById('jiko-injury-detail').classList.toggle('hidden', v !== 'あり');
+    _jikoRenderChoiceBtns();
+  })));
+  const pw = document.getElementById('jiko-police-btns');
+  pw.innerHTML = '';
+  ['届出済', '未届'].forEach(v => pw.appendChild(_jikoChoiceBtn(v, jikoState.police === v, () => {
+    jikoState.police = v;
+    _jikoRenderChoiceBtns();
+  })));
+}
+
+function _jikoUpdatePhotoBtn() {
+  const btn = document.getElementById('jiko-photo-btn');
+  const n = jikoState.photos.length;
+  btn.style.display = (n >= 3) ? 'none' : '';
+  const lbl = document.getElementById('jiko-photo-btn-label');
+  if (lbl) lbl.textContent = (n === 0) ? t('kyuyuTakePhoto') : (t('jikoAddPhoto') + ' (' + n + '/3)');
+}
+
+function _jikoRenderPhotos() {
+  const wrap = document.getElementById('jiko-photo-preview');
+  wrap.innerHTML = '';
+  jikoState.photos.forEach((url, i) => {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:relative;display:inline-block;';
+    const img = document.createElement('img');
+    img.src = url;
+    img.style.cssText = 'width:84px;height:84px;object-fit:cover;border-radius:6px;border:1px solid #ccc;';
+    d.appendChild(img);
+    const x = document.createElement('span');
+    x.textContent = '✕';
+    x.style.cssText = 'position:absolute;top:-7px;right:-7px;background:#f85149;color:#fff;border-radius:50%;width:22px;height:22px;line-height:22px;text-align:center;font-size:13px;cursor:pointer;';
+    x.onclick = () => { jikoState.photos.splice(i, 1); _jikoRenderPhotos(); };
+    d.appendChild(x);
+    wrap.appendChild(d);
+  });
+  _jikoUpdatePhotoBtn();
+}
+
+function onJikoPhoto(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file || !file.type.startsWith('image/') || jikoState.photos.length >= 3) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => { jikoState.photos.push(ev.target.result); _jikoRenderPhotos(); };
+  reader.readAsDataURL(file);
+}
+
+async function submitJiko() {
+  if (jikoState.busy) return;
+  const date = document.getElementById('jiko-date').value;
+  const time = document.getElementById('jiko-time').value;
+  const location = document.getElementById('jiko-location').value.trim();
+  const desc = document.getElementById('jiko-desc').value.trim();
+  if (!date || !time || !location || !desc) {
+    showAlert(t('jikoNeedFields'), 'warning');
+    return;
+  }
+  if (!await showConfirm(t('jikoConfirmMsg'), t('confirmTitle'))) return;
+  jikoState.busy = true;
+  showLoading(true);
+  try {
+    await callApi('POST', '/jiko/report', {
+      date: date, time: time, location: location,
+      vehicle: document.getElementById('jiko-vehicle').value,
+      otherParty: document.getElementById('jiko-other').value.trim(),
+      injury: jikoState.injury,
+      injuryDetail: document.getElementById('jiko-injury-detail').value.trim(),
+      police: jikoState.police,
+      description: desc,
+      photos: jikoState.photos,
+    });
+    showAlert(t('jikoDone'), 'success');
+    showScreen('home');
+  } catch (e) {
+    showAlert(t('jikoFail'), 'error');
+  } finally { showLoading(false); jikoState.busy = false; }
+}
+
+async function loadJikoPast() {
+  const wrap = document.getElementById('jiko-past-list');
+  wrap.innerHTML = '<div style="text-align:center;padding:10px;"><div class="spinner"></div></div>';
+  try {
+    const data = await callApi('GET', '/jiko/reports');
+    const reps = data.reports || [];
+    if (!reps.length) {
+      wrap.innerHTML = '<div style="color:#999;font-size:0.9em;">' + t('jikoNoPast') + '</div>';
+      return;
+    }
+    wrap.innerHTML = '';
+    reps.forEach(r => {
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:8px 4px;border-bottom:1px solid #eee;font-size:0.92em;color:#444;';
+      row.textContent = '🚨 ' + r.date + (r.time ? ' ' + r.time : '') + '　' + r.location + (r.vehicle ? '（' + r.vehicle + '）' : '');
+      wrap.appendChild(row);
+    });
+  } catch (e) {
+    wrap.innerHTML = '<div style="color:#999;font-size:0.9em;">―</div>';
   }
 }
 
@@ -5008,7 +5338,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v37';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v38';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available
