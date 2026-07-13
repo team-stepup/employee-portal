@@ -1429,6 +1429,10 @@
     <div class="modal-icon">❓</div>
     <div class="modal-title" id="confirm-title"></div>
     <div class="modal-message" id="confirm-message" style="white-space:pre-line;"></div>
+    <div id="confirm-time-wrap" class="hidden" style="margin:4px 0 10px;">
+      <div style="font-size:0.85em;color:#555;font-weight:600;margin-bottom:4px;" data-i18n="confirmTimeLabel">時刻</div>
+      <input type="time" id="confirm-time" style="width:100%;padding:10px;border:1px solid #cdd5df;border-radius:8px;font-size:1.05em;box-sizing:border-box;">
+    </div>
     <div style="display:flex;gap:10px;margin-top:6px;">
       <button type="button" class="modal-btn modal-btn-secondary" id="confirm-no" style="flex:1;"></button>
       <button type="button" class="modal-btn" id="confirm-yes" style="flex:1;"></button>
@@ -2214,17 +2218,26 @@ function closeAlert() {
   document.getElementById('modal-alert').classList.add('hidden');
 }
 
-// 確認モーダル (はい/いいえ)。Promise<boolean> を返す
-function showConfirm(message, title, yesLabel, noLabel) {
+// 確認モーダル (はい/いいえ)。Promise<boolean> を返す。
+// withTime に "HH:MM" を渡すと時刻入力欄付きになり、{ok:boolean, time:string} を返す。
+function showConfirm(message, title, yesLabel, noLabel, withTime) {
   return new Promise(resolve => {
     const m = document.getElementById('modal-confirm');
     document.getElementById('confirm-title').textContent = title || t('confirmTitle');
     document.getElementById('confirm-message').textContent = message || '';
+    const tw = document.getElementById('confirm-time-wrap');
+    const ti = document.getElementById('confirm-time');
+    const useTime = (withTime !== undefined && withTime !== null);
+    tw.classList.toggle('hidden', !useTime);
+    if (useTime) ti.value = withTime;
     const yes = document.getElementById('confirm-yes');
     const no = document.getElementById('confirm-no');
     yes.textContent = yesLabel || t('confirmYes');
     no.textContent = noLabel || t('confirmNo');
-    const done = v => { m.classList.add('hidden'); yes.onclick = no.onclick = null; resolve(v); };
+    const done = v => {
+      m.classList.add('hidden'); yes.onclick = no.onclick = null;
+      resolve(useTime ? { ok: v, time: ti.value || '' } : v);
+    };
     yes.onclick = () => done(true);
     no.onclick = () => done(false);
     m.classList.remove('hidden');
@@ -4167,7 +4180,16 @@ async function recordSougei(category, slot) {
   const dateLabel = dparts.length === 3 ? (Number(dparts[1]) + '/' + Number(dparts[2])) : sougeiState.date;
   const msg = '📅 ' + dateLabel + '\n' + (SOUGEI_CAT_ICON[category] || '') + ' ' +
     _sgLabel(sougeiState.dest) + '　' + _sgLabel(category) + (slot ? ' ' + slot : '');
-  if (!await showConfirm(msg, t('sougeiConfirmTitle'))) return;
+  if (category === 'その他（休業）') {
+    // その他（休業）は時刻を入力できる (初期値=現在時刻・編集可)
+    const now = new Date();
+    const def = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    const res = await showConfirm(msg, t('sougeiConfirmTitle'), null, null, def);
+    if (!res.ok) return;
+    slot = res.time || '';
+  } else {
+    if (!await showConfirm(msg, t('sougeiConfirmTitle'))) return;
+  }
   sougeiState.busy = true;
   showLoading(true);
   try {
@@ -4286,7 +4308,7 @@ async function loadSougeiHistory() {
 
 // ====== 報告書 / 交通事故報告 (送迎運転手) ======
 Object.assign(I18N.ja, {
-  confirmTitle: '確認', confirmYes: 'はい', confirmNo: 'いいえ',
+  confirmTitle: '確認', confirmYes: 'はい', confirmNo: 'いいえ', confirmTimeLabel: '時刻',
   sougeiConfirmTitle: 'この内容で記録しますか？',
   menuJiko: '報告書', jikoTitle: '交通事故報告',
   jikoInfo: '🚨 事故が起きたら、まず安全を確保して警察(110)へ連絡。その後できるだけ早くこの報告を送ってください。',
@@ -4305,7 +4327,7 @@ Object.assign(I18N.ja, {
   jikoNoPast: '過去の報告はありません。', jikoAddPhoto: '＋写真を追加',
 });
 Object.assign(I18N.en, {
-  confirmTitle: 'Confirm', confirmYes: 'Yes', confirmNo: 'No',
+  confirmTitle: 'Confirm', confirmYes: 'Yes', confirmNo: 'No', confirmTimeLabel: 'Time',
   sougeiConfirmTitle: 'Log this run?',
   menuJiko: 'Report', jikoTitle: 'Traffic Accident Report',
   jikoInfo: '🚨 If an accident happens: first make sure everyone is safe and call the police (110). Then send this report as soon as possible.',
@@ -4324,7 +4346,7 @@ Object.assign(I18N.en, {
   jikoNoPast: 'No past reports.', jikoAddPhoto: 'Add photo',
 });
 Object.assign(I18N.pt, {
-  confirmTitle: 'Confirmação', confirmYes: 'Sim', confirmNo: 'Não',
+  confirmTitle: 'Confirmação', confirmYes: 'Sim', confirmNo: 'Não', confirmTimeLabel: 'Horário',
   sougeiConfirmTitle: 'Registrar esta viagem?',
   menuJiko: 'Relatório', jikoTitle: 'Relatório de Acidente de Trânsito',
   jikoInfo: '🚨 Em caso de acidente: primeiro garanta a segurança e chame a polícia (110). Depois envie este relatório o mais rápido possível.',
@@ -5350,7 +5372,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v40';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v41';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available

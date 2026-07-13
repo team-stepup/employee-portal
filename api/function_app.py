@@ -3132,7 +3132,8 @@ def sougei_record(req: func.HttpRequest) -> func.HttpResponse:
         if slot not in valid_slots:
             return _json_response({"error": "invalid_timeslot"}, 400)
     elif category in SOUGEI_SPECIALS:
-        slot = ""
+        # 特別区分は時刻を任意入力できる (HH:MM 形式のみ受理・不正は空扱い)
+        slot = slot if re.match(r"^\d{1,2}:\d{2}$", slot) else ""
     else:
         return _json_response({"error": "invalid_category"}, 400)
     memo = str(body.get("memo") or "").strip()[:200]
