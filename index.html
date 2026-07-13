@@ -630,6 +630,7 @@
     <p class="name" id="home-name">―</p>
     <p class="zairyu-name" id="home-zairyu-name"></p>
     <p class="meta"><span id="home-shainno">―</span> ｜ <span id="home-hakensaki">―</span></p>
+    <p class="meta" id="home-vehicle" style="display:none; font-weight:600;"></p>
   </div>
 
   <!-- お知らせバナー (却下 / 期限) -->
@@ -3749,6 +3750,17 @@ function renderHome() {
   else { znEl.textContent = ''; znEl.style.display = 'none'; }
   document.getElementById('home-shainno').textContent = 'No. ' + (state.profile.shainNo || '―');
   document.getElementById('home-hakensaki').textContent = state.profile.hakensaki || '―';
+  // 担当車両 (運転手のみ): 車種 + ナンバー
+  const vehEl = document.getElementById('home-vehicle');
+  if (vehEl) {
+    const mv = state.profile.myVehicle;
+    if (mv && (mv.carName || mv.plate)) {
+      vehEl.textContent = '🚗 ' + [mv.carName, mv.plate].filter(Boolean).join('　');
+      vehEl.style.display = '';
+    } else {
+      vehEl.style.display = 'none';
+    }
+  }
   // 在留カード提出ボタン: 日本国籍の方には不要なので非表示
   const isJapanese = String(state.profile.kokuseki || '').includes('日本');
   const zairyuCard = document.getElementById('menu-card-zairyu');
@@ -5338,7 +5350,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v39';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v40';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available

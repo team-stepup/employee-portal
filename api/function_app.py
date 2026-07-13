@@ -991,6 +991,30 @@ def _fetch_today_sougei(shain_no: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _driver_vehicle_card(shain_no: int) -> Optional[Dict[str, str]]:
+    """車両管理List(DriverShainNo==社員番号)から担当車両の 車名+ナンバープレート を返す。
+    名前カード表示用。該当なし/失敗時は None (best-effort)。"""
+    try:
+        h = {"Authorization": f"Bearer {_get_sp_token()}", "Accept": "application/json;odata=nometadata"}
+        url = f"{SITE_URL}/_api/web/GetList('/sites/PowerApps/Lists/List')/items?$top=500"
+        items = requests.get(url, headers=h, timeout=30).json().get("value", [])
+        for it in items:
+            ds = it.get("DriverShainNo")
+            try:
+                if ds is None or int(float(ds)) != int(shain_no):
+                    continue
+            except Exception:
+                continue
+            car_name = str(it.get("syamei_x0020_") or "").strip()
+            plate = re.sub(r"[\s　]+", " ",
+                           f"{it.get('Title') or ''} {it.get('OData__x004e_O2') or ''}").strip()
+            if car_name or plate:
+                return {"carName": car_name, "plate": plate}
+    except Exception:
+        logging.exception("driver vehicle lookup failed")
+    return None
+
+
 def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
     buka_text = emp.get(F_BUKA) or ""
     kokuseki = emp.get(F_KOKUSEKI) or ""
@@ -1021,6 +1045,9 @@ def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
         "kyuyuEligible": _kyuyu_eligible(emp),
         # 送迎記録: 部課=094:本社（送迎者）の運転手のみボタン表示
         "sougeiKirokuEligible": _sougei_kiroku_eligible(emp),
+        # 担当車両 (車両管理List・運転手のみ)。名前カードに 車種+ナンバー を表示
+        "myVehicle": (_driver_vehicle_card(emp.get(F_SHAIN_NO))
+                      if (_sougei_kiroku_eligible(emp) or _kyuyu_eligible(emp)) else None),
         # 送迎の帰り便連絡 (当日・本人宛のみ。無ければ null)
         "todaySougei": _fetch_today_sougei(emp.get(F_SHAIN_NO)) if is_sougei else None,
         # 期限お知らせ用 (在留カード/免許証/車検/自賠責/任意保険)
