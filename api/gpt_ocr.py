@@ -62,6 +62,78 @@ def translate_renraku(title: str, body: str) -> Dict[str, Any]:
     return out
 
 
+def translate_job(fields: Dict[str, str]) -> Dict[str, Any]:
+    """求人の日本語項目を ポルトガル語/英語 に翻訳。
+    入力: {title, location, hours, off, description, remarks}
+    返り値: {"pt":{...同キー...}, "en":{...}}。ANTHROPIC_API_KEY 必須。"""
+    client = _claude_client()
+    if client is None:
+        raise RuntimeError("ANTHROPIC_API_KEY not set")
+    keys = ["title", "location", "hours", "off", "description", "remarks"]
+    src = json.dumps({k: (fields.get(k) or "") for k in keys}, ensure_ascii=False)
+    system = (
+        "あなたは日本の人材派遣会社の求人票を外国人求職者向けに多言語化する専門翻訳者です。"
+        "入力JSON {title, location, hours, off, description, remarks} を pt と en に翻訳し、JSONのみで返してください。\n"
+        "- pt: ブラジルのポルトガル語。\n- en: 自然で丁寧な英語。\n"
+        "規則: 意味を変えない。時給・金額・時刻・数字・日付・固有名詞・地名(市名)・社名はそのまま保持(必要なら原語併記)。"
+        "改行は維持。空文字の項目は空文字のまま。"
+        "出力は {\"pt\":{\"title\":\"..\",\"location\":\"..\",\"hours\":\"..\",\"off\":\"..\",\"description\":\"..\",\"remarks\":\"..\"},"
+        "\"en\":{...同キー...}} のJSONのみ。前後に説明やコードフェンスを付けない。"
+    )
+    resp = client.messages.create(
+        model=CLAUDE_MODEL, max_tokens=2000, temperature=0, system=system,
+        messages=[{"role": "user", "content": [{"type": "text", "text": src}]}],
+    )
+    txt = "".join(getattr(b, "text", "") for b in resp.content).strip()
+    m = re.search(r"\{.*\}", txt, re.S)
+    return json.loads(m.group(0) if m else txt)
+
+
+def generate_indeed_copy(fields: Dict[str, str]) -> Dict[str, Any]:
+    """求人データから Indeed 直接投稿用の原稿(タイトル+仕事内容本文)を生成。
+    入力: {title, location, wage, hours, off, description, remarks, target}
+    返り値: {"title": "...", "body": "..."}。ANTHROPIC_API_KEY 必須。"""
+    client = _claude_client()
+    if client is None:
+        raise RuntimeError("ANTHROPIC_API_KEY not set")
+    keys = ["title", "location", "wage", "hours", "off", "description", "remarks", "target"]
+    src = json.dumps({k: (fields.get(k) or "") for k in keys}, ensure_ascii=False)
+    system = (
+        "あなたは日本の人材派遣会社『有限会社ステップ・アップ』(静岡県磐田市)のIndeed求人原稿を書くプロのコピーライターです。"
+        "入力JSON(title=職種, location=勤務地, wage=時給, hours=勤務時間, off=休日, description=仕事内容, remarks=備考, target=対象)から、"
+        "Indeedの求人投稿画面にそのまま貼れる原稿を作り、JSONのみで返してください。\n"
+        "出力形式: {\"title\":\"求人タイトル\",\"body\":\"仕事内容欄に貼る本文\"}\n"
+        "\n【titleの規則】\n"
+        "- 30〜40字。【地名】＋仕事内容＋一番の魅力 の構成(例:【磐田市】座り作業◎電子部品の組立・検査｜未経験OK)\n"
+        "- 地名はlocationの市区名。魅力はremarks/descriptionから最も訴求力のある1つを選ぶ\n"
+        "\n【bodyの規則】\n"
+        "- 構成: リード文(2〜3文。仕事の内容と魅力を未経験者に分かりやすく)→『◆ここがポイント』(・の箇条書き5〜7個)→"
+        "『◆応募資格』→『◆応募後の流れ』→『【会社情報】』\n"
+        "- ここがポイントには remarks にある事実(空調完備・交通費・座り作業・残業量・車通勤など)を活かし、"
+        "さらに会社共通の強み『前払い制度OK（給料日前の急な出費も安心）』『有給申請・給与明細はスマホアプリで完結』を必ず入れる\n"
+        "- target が『外国人もOK』なら『日本語に不安がある方もポルトガル語でサポートOK』も入れる。"
+        "『日本人向け』の場合は国籍に一切言及しない\n"
+        "- ◆応募資格 には応募条件のみ書く(未経験歓迎・学歴不問・人柄など)。時給・勤務時間・休日を応募資格に書かない\n"
+        "- 応募後の流れは固定文: 『応募 → お電話またはメールでご連絡 → 職場見学・面談 → 勤務スタート\n"
+        "「まずは話だけ」「見学だけ」も大歓迎です。お気軽にご応募ください。』\n"
+        "- 会社情報は固定文: 『有限会社ステップ・アップ（静岡県磐田市上本郷1006番地7／TEL 0538-36-6968）\n"
+        "一般労働者派遣事業（派22-300880）』\n"
+        "\n【厳守】\n"
+        "- 入力にない事実(月収例・手当・寮・駅名・駐車場など)を創作しない。『車通勤歓迎』から『駐車場あり』を推測して書かない。"
+        "時給・時間・休日は入力の値をそのまま使う\n"
+        "- 『日本人限定』『外国人不可』など国籍・性別・年齢で除外する表現は絶対に書かない(職業安定法違反)\n"
+        "- 平易な日本語。絵文字は使わない\n"
+        "- 前後に説明やコードフェンスを付けずJSONのみ返す"
+    )
+    resp = client.messages.create(
+        model=CLAUDE_MODEL, max_tokens=2000, temperature=0.3, system=system,
+        messages=[{"role": "user", "content": [{"type": "text", "text": src}]}],
+    )
+    txt = "".join(getattr(b, "text", "") for b in resp.content).strip()
+    m = re.search(r"\{.*\}", txt, re.S)
+    return json.loads(m.group(0) if m else txt)
+
+
 def summarize_nippou(reports_text: str) -> str:
     """本日提出の業務日報(整形テキスト)を役員向けに簡潔要約。ANTHROPIC_API_KEY 必須。"""
     client = _claude_client()

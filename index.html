@@ -658,6 +658,11 @@
       <span class="icon">🚗</span>
       <span class="label" data-i18n="menuKyuyu">給油申請</span>
     </div>
+    <div class="menu-card" id="menu-card-sougei" onclick="openSougeiKiroku()" style="display:none;">
+      <span class="card-num">🚌</span>
+      <span class="icon">🚌</span>
+      <span class="label" data-i18n="menuSougeiKiroku">送迎記録</span>
+    </div>
     <div class="menu-card" onclick="showScreen('history')" style="position:relative;">
       <span class="card-num">②</span>
       <span class="icon">📋</span>
@@ -802,6 +807,58 @@
 
   <button class="btn btn-primary" id="kyuyu-submit-btn" onclick="submitKyuyu()" data-i18n="kyuyuSubmit">この内容で申請する</button>
   <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="cancel">キャンセル</button>
+</div>
+
+<!-- ====== Screen: 送迎記録 (送迎運転手) ====== -->
+<div id="screen-sougei-kiroku" class="container hidden">
+  <div class="header">
+    <h1>🚌 <span data-i18n="menuSougeiKiroku">送迎記録</span></h1>
+    <span class="logout-btn" onclick="showScreen('home')">✕</span>
+  </div>
+  <div class="info-banner" data-i18n="sougeiKirokuInfo">📌 送迎をしたら、その都度タップして記録してください。間違えたら ✕ で取り消せます。</div>
+  <div id="sougei-error" class="error-banner hidden"></div>
+
+  <div class="card">
+    <h2>① <span data-i18n="sougeiDate">日付</span></h2>
+    <input type="date" id="sougei-date" onchange="onSougeiDateChange()"
+           style="width:100%;padding:11px;border:1px solid #cdd5df;border-radius:8px;font-size:1em;box-sizing:border-box;margin-top:4px;">
+  </div>
+
+  <div class="card">
+    <h2>② <span data-i18n="sougeiDest">送迎先</span></h2>
+    <div id="sougei-dests" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;"></div>
+  </div>
+
+  <div class="card">
+    <h2>③ <span data-i18n="sougeiTap">記録する（タップ）</span></h2>
+    <div id="sougei-slots"></div>
+  </div>
+
+  <div class="card">
+    <h2>🗒 <span data-i18n="sougeiDayList">この日の記録</span></h2>
+    <div id="sougei-day-records" style="margin-top:6px;"></div>
+  </div>
+
+  <button class="btn btn-primary" onclick="showScreen('sougei-history')" data-i18n="sougeiViewMonth">📋 今月の記録を見る</button>
+  <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="backHome">ホームへ戻る</button>
+</div>
+
+<!-- ====== Screen: 送迎記録 一覧 (本人月別) ====== -->
+<div id="screen-sougei-history" class="container hidden">
+  <div class="header">
+    <h1>📋 <span data-i18n="sougeiHistTitle">送迎記録 一覧</span></h1>
+    <span class="logout-btn" onclick="showScreen('sougei-kiroku')">✕</span>
+  </div>
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <button type="button" class="btn-month-nav" onclick="sougeiHistMonth(-1)" style="padding:8px 16px;border:1px solid #cdd5df;border-radius:8px;background:#fff;font-size:1.1em;">◀</button>
+      <div id="sougei-month-label" style="font-weight:700;font-size:1.1em;">―</div>
+      <button type="button" class="btn-month-nav" id="sougei-month-next" onclick="sougeiHistMonth(1)" style="padding:8px 16px;border:1px solid #cdd5df;border-radius:8px;background:#fff;font-size:1.1em;">▶</button>
+    </div>
+    <div id="sougei-summary" style="margin-top:10px;"></div>
+  </div>
+  <div id="sougei-history-list"></div>
+  <button class="btn btn-secondary" onclick="showScreen('sougei-kiroku')" data-i18n="back">戻る</button>
 </div>
 
 <!-- ====== Screen: 前払い申請 ====== -->
@@ -3339,7 +3396,8 @@ function acceptRules() {
 // ====== 画面遷移 ======
 function showScreen(name) {
   ['login','home','request','history','zairyu','zairyu-confirm','license','license-confirm',
-   'shaken','shaken-confirm','hoken','hoken-confirm','shorui','shorui-history','bento','bento-approve','renraku','kyuyu'].forEach(s => {
+   'shaken','shaken-confirm','hoken','hoken-confirm','shorui','shorui-history','bento','bento-approve','renraku','kyuyu',
+   'sougei-kiroku','sougei-history'].forEach(s => {
     const el = document.getElementById('screen-' + s);
     if (el) el.classList.add('hidden');
   });
@@ -3358,6 +3416,7 @@ function showScreen(name) {
   if (name === 'bento') initBentoScreen();
   if (name === 'bento-approve') initBentoApproveScreen();
   if (name === 'renraku') initRenrakuScreen();
+  if (name === 'sougei-history') initSougeiHistoryScreen();
 }
 
 // ====== ログイン ======
@@ -3596,6 +3655,9 @@ function renderHome() {
   // 給油申請: 送迎運転手(社員番号セット)のみ
   const kyuyuCard = document.getElementById('menu-card-kyuyu');
   if (kyuyuCard) kyuyuCard.style.display = state.profile.kyuyuEligible ? '' : 'none';
+  // 送迎記録: 部課=094:本社（送迎者）のみ
+  const sougeiCard = document.getElementById('menu-card-sougei');
+  if (sougeiCard) sougeiCard.style.display = state.profile.sougeiKirokuEligible ? '' : 'none';
   // 期限お知らせを即時表示 (履歴取得を待たず profile から)
   renderHomeNotices(state.historyCache ? state.historyCache.items : null);
   // プッシュ通知の設定UI
@@ -3811,6 +3873,282 @@ async function ensureProfile() {
   if (state.profile) return;
   const data = await callApi('GET', '/profile');
   state.profile = data.profile;
+}
+
+// ====== 送迎記録 (送迎運転手・1タップ記録) ======
+Object.assign(I18N.ja, {
+  menuSougeiKiroku: '送迎記録',
+  sougeiKirokuInfo: '📌 送迎をしたら、その都度タップして記録してください。間違えたら ✕ で取り消せます。',
+  sougeiDate: '日付', sougeiDest: '送迎先', sougeiTap: '記録する（タップ）',
+  sougeiGo: '行き', sougeiBack: '帰り', sougeiSpecial: '特別対応',
+  sougeiDayList: 'この日の記録', sougeiViewMonth: '📋 今月の記録を見る', backHome: 'ホームへ戻る', back: '戻る',
+  sougeiNoRecords: 'まだ記録がありません。', sougeiRecorded: '記録しました。',
+  sougeiDup: 'この時刻はすでに記録済みです。', sougeiCancelDone: '取り消しました。',
+  sougeiCancelFail: '取り消せませんでした。', sougeiRecordFail: '記録に失敗しました。もう一度お試しください。',
+  sougeiCancelConfirm: 'この記録を取り消しますか？', sougeiTotal: '合計 {n} 回',
+  sougeiHistTitle: '送迎記録 一覧', sougeiTooOld: '古い記録のため取り消せません（総務へ連絡してください）。',
+  sougeiSpecialHint: '遅刻・早退・病院対応は同じ日に複数回記録できます。',
+});
+Object.assign(I18N.en, {
+  menuSougeiKiroku: 'Shuttle Log',
+  sougeiKirokuInfo: '📌 Tap to log each shuttle run right after you drive. Tap ✕ to undo a mistake.',
+  sougeiDate: 'Date', sougeiDest: 'Destination', sougeiTap: 'Log a run (tap)',
+  sougeiGo: 'Outbound', sougeiBack: 'Return', sougeiSpecial: 'Special',
+  sougeiDayList: 'Runs on this day', sougeiViewMonth: '📋 View this month', backHome: 'Back to Home', back: 'Back',
+  sougeiNoRecords: 'No records yet.', sougeiRecorded: 'Logged.',
+  sougeiDup: 'This time slot is already logged.', sougeiCancelDone: 'Removed.',
+  sougeiCancelFail: 'Could not remove.', sougeiRecordFail: 'Failed to log. Please try again.',
+  sougeiCancelConfirm: 'Remove this record?', sougeiTotal: 'Total: {n} runs',
+  sougeiHistTitle: 'Shuttle Log List', sougeiTooOld: 'Too old to remove (please contact the office).',
+  sougeiSpecialHint: 'Late / early-leave / hospital runs can be logged multiple times per day.',
+});
+Object.assign(I18N.pt, {
+  menuSougeiKiroku: 'Registro de Transporte',
+  sougeiKirokuInfo: '📌 Toque para registrar cada viagem logo após dirigir. Toque em ✕ para desfazer.',
+  sougeiDate: 'Data', sougeiDest: 'Destino', sougeiTap: 'Registrar (toque)',
+  sougeiGo: 'Ida', sougeiBack: 'Volta', sougeiSpecial: 'Especial',
+  sougeiDayList: 'Registros deste dia', sougeiViewMonth: '📋 Ver este mês', backHome: 'Voltar ao início', back: 'Voltar',
+  sougeiNoRecords: 'Nenhum registro ainda.', sougeiRecorded: 'Registrado.',
+  sougeiDup: 'Este horário já foi registrado.', sougeiCancelDone: 'Removido.',
+  sougeiCancelFail: 'Não foi possível remover.', sougeiRecordFail: 'Falha ao registrar. Tente novamente.',
+  sougeiCancelConfirm: 'Remover este registro?', sougeiTotal: 'Total: {n} viagens',
+  sougeiHistTitle: 'Lista de Registros', sougeiTooOld: 'Registro antigo, não pode ser removido (contate o escritório).',
+  sougeiSpecialHint: 'Atraso / saída antecipada / hospital podem ser registrados várias vezes por dia.',
+});
+
+// 送迎先・区分の表示翻訳 (値は日本語で保存・表示は各言語)
+var SOUGEI_LABEL = {
+  ja: { 'ASTI浜松': 'ASTI浜松', 'ユーシン': 'ユーシン', 'ASTI掛川': 'ASTI掛川', '行き': '行き', '帰り': '帰り', '遅刻': '遅刻', '早退': '早退', '病院対応': '病院対応' },
+  en: { 'ASTI浜松': 'ASTI Hamamatsu', 'ユーシン': 'Yushin', 'ASTI掛川': 'ASTI Kakegawa', '行き': 'Outbound', '帰り': 'Return', '遅刻': 'Late pickup', '早退': 'Early leave', '病院対応': 'Hospital' },
+  pt: { 'ASTI浜松': 'ASTI Hamamatsu', 'ユーシン': 'Yushin', 'ASTI掛川': 'ASTI Kakegawa', '行き': 'Ida', '帰り': 'Volta', '遅刻': 'Atraso', '早退': 'Saída antecipada', '病院対応': 'Hospital' },
+};
+function _sgLabel(v) { return (SOUGEI_LABEL[currentLang] || SOUGEI_LABEL.ja)[v] || v; }
+var SOUGEI_CAT_ICON = { '行き': '🌅', '帰り': '🌇', '遅刻': '⏰', '早退': '🏃', '病院対応': '🏥' };
+
+var sougeiState = { config: null, dest: null, date: null, dayRecords: [], histMonth: null, busy: false };
+
+function _sgToday() {
+  const now = new Date();
+  return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+}
+
+async function openSougeiKiroku() {
+  showScreen('sougei-kiroku');
+  document.getElementById('sougei-error').classList.add('hidden');
+  const today = _sgToday();
+  sougeiState.date = today;
+  const dateEl = document.getElementById('sougei-date');
+  dateEl.value = today;
+  dateEl.max = today;
+  showLoading(true);
+  try {
+    const data = await callApi('GET', '/sougei/config');
+    sougeiState.config = data;
+    // 遡り可能日数
+    const min = new Date(); min.setDate(min.getDate() - (data.backdateDays || 7));
+    dateEl.min = min.getFullYear() + '-' + String(min.getMonth() + 1).padStart(2, '0') + '-' + String(min.getDate()).padStart(2, '0');
+    // 送迎先: 前回選択を復元 (無ければ先頭)
+    const names = (data.destinations || []).map(d => d.name);
+    const last = localStorage.getItem('sougeiLastDest');
+    sougeiState.dest = names.includes(last) ? last : names[0];
+    sougeiState.dayRecords = data.todayRecords || [];
+    renderSougeiDests();
+    renderSougeiSlots();
+    renderSougeiDayRecords();
+  } catch (e) {
+    showAlert(t('networkError'), 'error');
+  } finally { showLoading(false); }
+}
+
+function onSougeiDateChange() {
+  const v = document.getElementById('sougei-date').value;
+  if (!v) return;
+  sougeiState.date = v;
+  loadSougeiDayRecords();
+}
+
+async function loadSougeiDayRecords() {
+  // 選択日の記録を月一覧APIから抽出して表示
+  try {
+    const month = sougeiState.date.slice(0, 7);
+    const data = await callApi('GET', '/sougei/records?month=' + month);
+    sougeiState.dayRecords = (data.records || []).filter(r => r.date === sougeiState.date);
+    renderSougeiDayRecords();
+  } catch (e) { /* 表示のみなので静かに */ }
+}
+
+function renderSougeiDests() {
+  const wrap = document.getElementById('sougei-dests');
+  wrap.innerHTML = '';
+  ((sougeiState.config || {}).destinations || []).forEach(d => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    const sel = d.name === sougeiState.dest;
+    b.style.cssText = 'flex:1;min-width:90px;padding:13px 6px;border-radius:10px;font-size:1em;font-weight:700;cursor:pointer;' +
+      (sel ? 'border:2px solid #4b56c9;background:#eef0ff;color:#2d37a0;' : 'border:1px solid #cdd5df;background:#fff;color:#333;');
+    b.textContent = _sgLabel(d.name);
+    b.onclick = () => { sougeiState.dest = d.name; localStorage.setItem('sougeiLastDest', d.name); renderSougeiDests(); renderSougeiSlots(); };
+    wrap.appendChild(b);
+  });
+}
+
+function _sgSlotBtn(label, icon, onclick, color) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.style.cssText = 'padding:13px 10px;border-radius:10px;font-size:1.02em;font-weight:700;cursor:pointer;border:1px solid ' +
+    (color || '#cdd5df') + ';background:#fff;color:#222;display:flex;align-items:center;justify-content:center;gap:6px;';
+  b.innerHTML = icon + ' ' + label;
+  b.onclick = onclick;
+  return b;
+}
+
+function renderSougeiSlots() {
+  const wrap = document.getElementById('sougei-slots');
+  wrap.innerHTML = '';
+  const conf = ((sougeiState.config || {}).destinations || []).find(d => d.name === sougeiState.dest);
+  if (!conf) { wrap.innerHTML = '<div style="color:#999;">―</div>'; return; }
+  const mkSection = (titleKey, emoji) => {
+    const h = document.createElement('div');
+    h.style.cssText = 'font-weight:700;font-size:0.92em;color:#555;margin:10px 0 6px;';
+    h.textContent = emoji + ' ' + t(titleKey);
+    wrap.appendChild(h);
+    const g = document.createElement('div');
+    g.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;';
+    wrap.appendChild(g);
+    return g;
+  };
+  // 行き
+  const gGo = mkSection('sougeiGo', '🌅');
+  (conf.go || []).forEach(s => gGo.appendChild(_sgSlotBtn(s, '🌅', () => recordSougei('行き', s))));
+  // 帰り
+  const gBack = mkSection('sougeiBack', '🌇');
+  (conf.back || []).forEach(s => gBack.appendChild(_sgSlotBtn(s, '🌇', () => recordSougei('帰り', s))));
+  // 特別対応 (遅刻/早退/病院対応)
+  const gSp = mkSection('sougeiSpecial', '⭐');
+  (((sougeiState.config || {}).specials) || []).forEach(sp =>
+    gSp.appendChild(_sgSlotBtn(_sgLabel(sp), SOUGEI_CAT_ICON[sp] || '⭐', () => recordSougei(sp, ''), '#e8b04b')));
+  const hint = document.createElement('div');
+  hint.style.cssText = 'font-size:0.8em;color:#888;margin-top:8px;';
+  hint.textContent = '※ ' + t('sougeiSpecialHint');
+  wrap.appendChild(hint);
+}
+
+async function recordSougei(category, slot) {
+  if (sougeiState.busy) return;
+  sougeiState.busy = true;
+  showLoading(true);
+  try {
+    const data = await callApi('POST', '/sougei/record', {
+      date: sougeiState.date, destination: sougeiState.dest,
+      category: category, timeSlot: slot,
+    });
+    sougeiState.dayRecords.unshift(data.record);
+    renderSougeiDayRecords();
+    showAlert(t('sougeiRecorded') + '\n' + _sgLabel(sougeiState.dest) + ' ' + _sgLabel(category) + (slot ? ' ' + slot : ''), 'success');
+  } catch (e) {
+    if (e && e.status === 409) showAlert(t('sougeiDup'), 'warning');
+    else showAlert(t('sougeiRecordFail'), 'error');
+  } finally { showLoading(false); sougeiState.busy = false; }
+}
+
+function renderSougeiDayRecords() {
+  const wrap = document.getElementById('sougei-day-records');
+  wrap.innerHTML = '';
+  const recs = sougeiState.dayRecords || [];
+  if (!recs.length) {
+    wrap.innerHTML = '<div style="color:#999;font-size:0.92em;">' + t('sougeiNoRecords') + '</div>';
+    return;
+  }
+  recs.forEach(r => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:9px 4px;border-bottom:1px solid #eee;font-size:0.98em;';
+    const left = document.createElement('span');
+    left.textContent = (SOUGEI_CAT_ICON[r.category] || '') + ' ' + _sgLabel(r.destination) + '　' + _sgLabel(r.category) + (r.timeSlot ? ' ' + r.timeSlot : '');
+    row.appendChild(left);
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.textContent = '✕';
+    x.style.cssText = 'border:none;background:#fde8e8;color:#c0392b;border-radius:50%;width:28px;height:28px;font-size:14px;cursor:pointer;';
+    x.onclick = () => cancelSougei(r.id);
+    row.appendChild(x);
+    wrap.appendChild(row);
+  });
+}
+
+async function cancelSougei(id) {
+  if (!window.confirm(t('sougeiCancelConfirm'))) return;
+  showLoading(true);
+  try {
+    await callApi('POST', '/sougei/cancel', { id: id });
+    sougeiState.dayRecords = sougeiState.dayRecords.filter(r => r.id !== id);
+    renderSougeiDayRecords();
+    showAlert(t('sougeiCancelDone'), 'success');
+  } catch (e) {
+    if (e && e.status === 400) showAlert(t('sougeiTooOld'), 'warning');
+    else showAlert(t('sougeiCancelFail'), 'error');
+  } finally { showLoading(false); }
+}
+
+// ---- 月別一覧 ----
+function initSougeiHistoryScreen() {
+  sougeiState.histMonth = _sgToday().slice(0, 7);
+  loadSougeiHistory();
+}
+
+function sougeiHistMonth(delta) {
+  const [y, m] = sougeiState.histMonth.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  const nm = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  if (nm > _sgToday().slice(0, 7)) return;   // 未来月は不可
+  sougeiState.histMonth = nm;
+  loadSougeiHistory();
+}
+
+async function loadSougeiHistory() {
+  const label = document.getElementById('sougei-month-label');
+  const [y, m] = sougeiState.histMonth.split('-');
+  label.textContent = (currentLang === 'ja') ? (y + '年' + Number(m) + '月') : (sougeiState.histMonth);
+  document.getElementById('sougei-month-next').style.visibility =
+    (sougeiState.histMonth >= _sgToday().slice(0, 7)) ? 'hidden' : 'visible';
+  const listEl = document.getElementById('sougei-history-list');
+  const sumEl = document.getElementById('sougei-summary');
+  listEl.innerHTML = '<div style="text-align:center;padding:20px;"><div class="spinner"></div></div>';
+  sumEl.innerHTML = '';
+  try {
+    const data = await callApi('GET', '/sougei/records?month=' + sougeiState.histMonth);
+    const recs = data.records || [];
+    // サマリ: 合計 + 送迎先別
+    let sumHtml = '<div style="font-weight:800;font-size:1.15em;color:#2d37a0;">' + t('sougeiTotal').replace('{n}', String(data.total || 0)) + '</div>';
+    const byDest = data.byDestination || {};
+    const parts = Object.keys(byDest).map(k => _sgLabel(k) + ' ' + byDest[k]);
+    if (parts.length) sumHtml += '<div style="font-size:0.9em;color:#666;margin-top:4px;">' + parts.join('　/　') + '</div>';
+    sumEl.innerHTML = sumHtml;
+    if (!recs.length) {
+      listEl.innerHTML = '<div class="card" style="color:#999;text-align:center;">' + t('sougeiNoRecords') + '</div>';
+      return;
+    }
+    // 日付ごとにグループ
+    const byDate = {};
+    recs.forEach(r => { (byDate[r.date] = byDate[r.date] || []).push(r); });
+    const dates = Object.keys(byDate).sort().reverse();
+    const wk = { ja: ['日', '月', '火', '水', '木', '金', '土'], en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], pt: ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'] };
+    listEl.innerHTML = '';
+    dates.forEach(d => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      const dt = new Date(d + 'T00:00:00');
+      const w = (wk[currentLang] || wk.ja)[dt.getDay()];
+      let html = '<div style="font-weight:700;margin-bottom:6px;">' + Number(d.slice(5, 7)) + '/' + Number(d.slice(8, 10)) + ' (' + w + ')　<span style="color:#4b56c9;">' + byDate[d].length + '</span></div>';
+      byDate[d].forEach(r => {
+        html += '<div style="padding:4px 0;font-size:0.95em;color:#444;">' + (SOUGEI_CAT_ICON[r.category] || '') + ' ' +
+          escNotice(_sgLabel(r.destination)) + '　' + escNotice(_sgLabel(r.category)) + (r.timeSlot ? ' ' + escNotice(r.timeSlot) : '') + '</div>';
+      });
+      card.innerHTML = html;
+      listEl.appendChild(card);
+    });
+  } catch (e) {
+    listEl.innerHTML = '<div class="card" style="color:#c00;text-align:center;">' + t('networkError') + '</div>';
+  }
 }
 
 // ====== 前払い申請 ======
@@ -4670,7 +5008,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v36';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v37';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available

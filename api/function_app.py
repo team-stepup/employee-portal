@@ -44,6 +44,19 @@ LIST_MAEBARAI_SHINSEI = "9e84553c-73ec-405b-862f-6caaae65900f"
 LIST_MAEBARAI_OLD = "d34be315-365a-460f-976e-fb8da6977cec"
 LIST_SHORUI = "772de2a2-79b2-4ead-9361-f57a969b8002"  # 必要書類申請 (Teams List監視通知)
 LIST_SOUGEI = "60569629-38e0-4dcb-9a73-c5f2904e3036"  # 送迎連絡 (派遣先別・帰り便/終業時間。当日表示+恒久記録)
+LIST_KYUJIN = "3b062cf9-73a0-4539-b10c-fd3edcc0e8b3"  # 求人 (HP採用情報・役員がyukyu-appから掲載。公開APIで匿名配信)
+LIST_OUBO = "7784b615-c0e1-4587-a10e-3551a2bd47cf"   # 応募 (HP採用ページの応募フォーム→POST /apply で保存。総務へ通知)
+LIST_SOUGEI_KIROKU = "ec0a16dc-6bba-49cf-a901-d5b3907553ca"  # 送迎記録 (運転手が1タップで実績記録→月次集計して総務へ)
+
+# 送迎記録 List フィールド (ASCII名なので read/write とも OData_ プレフィックス無し)
+SK_SHAINNO = "ShainNo"       # 社員番号 (Number)
+SK_NAME = "DriverName"       # 氏名カナ
+SK_DATE = "RecordDate"       # 送迎日 (DateOnly)
+SK_DEST = "Destination"      # 送迎先 (ASTI浜松/ユーシン/ASTI掛川)
+SK_CAT = "Category"          # 区分 (行き/帰り/遅刻/早退/病院対応)
+SK_SLOT = "TimeSlot"         # 時刻 (行き/帰りのみ。例 "17:00")
+SK_MEMO = "Memo"             # 補足メモ (任意)
+SK_STATUS = "Status"         # active / cancelled
 # 送迎連絡 List フィールド (ASCII名なので read/write とも OData_ プレフィックス無し)
 SG_DATE = "TargetDate"      # 対象日 (DateOnly)
 SG_SHAINNO = "ShainNo"      # 社員番号 (人単位配信用)
@@ -210,6 +223,7 @@ RATE_LIMITS = {
     "cancel": 10,      # 取消 10/min
     "zairyu": 5,       # 在留カード提出 5/min (画像アップロード重め)
     "kyuyu": 12,       # 給油申請 OCR/送信 12/min (写真2枚×OCR+送信)
+    "sougei": 20,      # 送迎記録 20/min (1タップ記録・連続記録あり)
 }
 _storage_conn = os.environ.get("AzureWebJobsStorage", "")
 _table_client_cache = None
@@ -1003,6 +1017,8 @@ def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
         "isBentoApprover": False,
         # 給油申請: 送迎運転手(社員番号セット)のみボタン表示
         "kyuyuEligible": _kyuyu_eligible(emp),
+        # 送迎記録: 部課=094:本社（送迎者）の運転手のみボタン表示
+        "sougeiKirokuEligible": _sougei_kiroku_eligible(emp),
         # 送迎の帰り便連絡 (当日・本人宛のみ。無ければ null)
         "todaySougei": _fetch_today_sougei(emp.get(F_SHAIN_NO)) if is_sougei else None,
         # 期限お知らせ用 (在留カード/免許証/車検/自賠責/任意保険)
@@ -1052,6 +1068,469 @@ def find_active_employee_by_shain(shain_no: int) -> Optional[Dict[str, Any]]:
         if taisha is None or taisha >= today:
             return it
     return None
+
+
+@app.route(route="jobs", methods=["GET", "OPTIONS"])
+def jobs_public(req: func.HttpRequest) -> func.HttpResponse:
+    """公開求人をホームページ採用情報へ配信（匿名・誰でも閲覧可）。
+    GET /jobs?lang=ja|pt|en
+    表示ルール: 対象「日本人向け」は ja のみ、「外国人もOK」は全言語。
+    pt/en の訳は yakuJSON から、無ければ日本語列にフォールバック。
+    """
+    # 公開データなのでオリジンは全許可
+    public_cors = {
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "public, max-age=120",
+    }
+    if req.method == "OPTIONS":
+        return _json_response({}, 204, extra_headers=public_cors)
+    lang = (req.params.get("lang") or "ja").lower()
+    if lang not in ("ja", "pt", "en"):
+        lang = "ja"
+    try:
+        items = sp_get_items(
+            LIST_KYUJIN,
+            select="Id,Title,basho,jikyu,jikan,yasumi,naiyo,bikou,taisho,joutai,koushinbi,yakuJSON,Modified",
+            filter_="joutai eq '公開'",
+            orderby="Modified desc",
+            top=200,
+        )
+    except Exception as e:
+        logging.exception("jobs fetch failed")
+        return _json_response({"error": "fetch_failed", "detail": str(e)}, 500, extra_headers=public_cors)
+
+    jobs: List[Dict[str, Any]] = []
+    for it in items:
+        target = it.get("taisho") or "外国人もOK"
+        # 日本人向けは日本語ページのみ
+        if lang != "ja" and target == "日本人向け":
+            continue
+        base = {
+            "title": it.get("Title") or "",
+            "location": it.get("basho") or "",
+            "hours": it.get("jikan") or "",
+            "off": it.get("yasumi") or "",
+            "description": it.get("naiyo") or "",
+            "remarks": it.get("bikou") or "",
+        }
+        if lang in ("pt", "en"):
+            try:
+                tr = json.loads(it.get("yakuJSON") or "{}").get(lang, {})
+            except Exception:
+                tr = {}
+            for k in ("title", "location", "hours", "off", "description", "remarks"):
+                # 訳キーは basho/jikan 等の内部名でも title/location でも拾えるように両対応
+                v = tr.get(k) or tr.get({"location": "basho", "hours": "jikan", "off": "yasumi", "description": "naiyo", "remarks": "bikou"}.get(k, k))
+                if v:
+                    base[k] = v
+        updated = it.get("koushinbi") or it.get("Modified") or ""
+        jobs.append({
+            "id": it.get("Id"),                # 求人ごとの固有ID(Indeed固有URL・ディープリンク用)
+            **base,
+            "wage": it.get("jikyu") or "",   # 時給は全言語共通
+            "target": target,
+            "updated": str(updated)[:10],
+        })
+    return _json_response({"jobs": jobs, "lang": lang}, 200, extra_headers=public_cors)
+
+
+@app.route(route="jobs/indeed", methods=["GET", "OPTIONS"])
+def jobs_indeed_feed(req: func.HttpRequest) -> func.HttpResponse:
+    """Indeed求人フィード(XML)。Indeedが定期巡回して自動掲載する。
+    GET /jobs/indeed?target=jp|global|all  (既定 jp)
+      jp     = 対象「日本人向け」の求人
+      global = 対象「外国人もOK」の求人
+      all    = 全公開求人
+    ※広告文面はSP「求人」の内容をそのまま出力。国籍除外の表現は入れないこと(法令/Indeedポリシー)。"""
+    public_cors = {"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=300"}
+    if req.method == "OPTIONS":
+        return _json_response({}, 204, extra_headers=public_cors)
+    target = (req.params.get("target") or "jp").lower()
+    if target not in ("jp", "global", "all"):
+        target = "jp"
+
+    def xml_esc(s: str) -> str:
+        # CDATA内なので基本エスケープ不要。終端記号のみ無害化。
+        return str(s or "").replace("]]>", "]]&gt;")
+
+    try:
+        items = sp_get_items(
+            LIST_KYUJIN,
+            select="Id,Title,basho,jikyu,jikan,yasumi,naiyo,bikou,taisho,joutai,koushinbi,Modified",
+            filter_="joutai eq '公開'", orderby="Modified desc", top=200)
+    except Exception as e:
+        logging.exception("indeed feed fetch failed")
+        return func.HttpResponse(f"<error>{e}</error>", status_code=500,
+                                 mimetype="application/xml", headers=public_cors)
+
+    jobs_xml = []
+    for it in items:
+        tgt = it.get("taisho") or "外国人もOK"
+        if target == "jp" and tgt != "日本人向け":
+            continue
+        if target == "global" and tgt != "外国人もOK":
+            continue
+        jid = it.get("Id")
+        basho = it.get("basho") or ""
+        m_pref = re.search(r"([^\s　]{2,4}?[都道府県])", basho)
+        state = m_pref.group(1) if m_pref else "静岡県"
+        # 県名を除いた残りから市区町村を抽出(「静岡県磐田市」→ city=磐田市)
+        rest = basho[m_pref.end():] if m_pref else basho
+        m_city = re.search(r"([^\s　都道府県]{1,6}?[市区町村])", rest)
+        city = m_city.group(1) if m_city else ""
+        updated = str(it.get("koushinbi") or it.get("Modified") or "")[:10]
+        desc_parts = [it.get("naiyo") or ""]
+        if it.get("jikyu"):
+            desc_parts.append(f"【時給】{it.get('jikyu')}")
+        if it.get("jikan"):
+            desc_parts.append(f"【勤務時間】{it.get('jikan')}")
+        if it.get("yasumi"):
+            desc_parts.append(f"【休日】{it.get('yasumi')}")
+        if it.get("bikou"):
+            desc_parts.append(it.get("bikou"))
+        desc_html = "<br>".join(xml_esc(p) for p in desc_parts if p)
+        jobs_xml.append(
+            "<job>"
+            f"<title><![CDATA[{xml_esc(it.get('Title'))}]]></title>"
+            f"<date><![CDATA[{updated}]]></date>"
+            f"<referencenumber><![CDATA[{jid}]]></referencenumber>"
+            f"<url><![CDATA[https://www.team-stepup.com/?job={jid}]]></url>"
+            "<company><![CDATA[有限会社ステップ・アップ]]></company>"
+            f"<city><![CDATA[{xml_esc(city)}]]></city>"
+            f"<state><![CDATA[{xml_esc(state)}]]></state>"
+            "<country><![CDATA[JP]]></country>"
+            f"<description><![CDATA[{desc_html}]]></description>"
+            f"<salary><![CDATA[{xml_esc(it.get('jikyu'))}]]></salary>"
+            "<jobtype><![CDATA[temporary]]></jobtype>"
+            "<category><![CDATA[製造・軽作業]]></category>"
+            "</job>")
+
+    xml = ('<?xml version="1.0" encoding="utf-8"?>\n<source>\n'
+           '<publisher>有限会社ステップ・アップ</publisher>\n'
+           '<publisherurl>https://www.team-stepup.com</publisherurl>\n'
+           + "\n".join(jobs_xml) + "\n</source>\n")
+    return func.HttpResponse(xml, status_code=200, mimetype="application/xml", headers=public_cors)
+
+
+# ====== 応募 (HP採用ページ 公開フォーム) ======
+# メール宛先: Teamsチャネル「一般」の投稿用メール + 役員個人(スマホ/PCのOutlook通知用)
+APPLY_NOTIFY_EMAILS = [e.strip() for e in os.environ.get(
+    "APPLY_NOTIFY_EMAILS",
+    "oubosyamennsetu@team-stepup.com,h.yamashita@team-stepup.com").split(",") if e.strip()]
+# Web Push宛先(yukyu-app portal 購読端末へロック画面通知)
+APPLY_PUSH_EMAILS = [e.strip() for e in os.environ.get(
+    "APPLY_PUSH_EMAILS",
+    "h.yamashita@team-stepup.com,a.yamashita@team-stepup.com").split(",") if e.strip()]
+
+
+def _apply_notify(rec: Dict[str, str]) -> None:
+    """応募をメール通知(総務/採用担当)。Graph sendMail。best-effort。
+    送信元 = SHORUI_MAIL_SENDER (他通知と共用)、宛先 = APPLY_NOTIFY_EMAILS。"""
+    sender = os.environ.get("SHORUI_MAIL_SENDER", "").strip()
+    if not sender or not APPLY_NOTIFY_EMAILS:
+        return
+    esc = lambda s: (str(s or "")
+                     .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    tel = esc(rec.get("tel"))
+    rows = [
+        ("お名前", esc(rec.get("name"))),
+        ("電話", f'<a href="tel:{tel}">{tel}</a>'),
+        ("メール", esc(rec.get("mail")) or "―"),
+        ("応募求人", esc(rec.get("kyujin")) or "（一般応募）"),
+        ("希望勤務地", esc(rec.get("area")) or "―"),
+        ("連絡可能時間帯", esc(rec.get("time")) or "―"),
+        ("メッセージ", esc(rec.get("message")).replace("\n", "<br>") or "―"),
+        ("言語", esc(rec.get("lang"))),
+    ]
+    tr = "".join(
+        f'<tr><td style="padding:6px 12px;background:#f4f6f8;font-weight:600;white-space:nowrap;">{k}</td>'
+        f'<td style="padding:6px 12px;">{v}</td></tr>' for k, v in rows)
+    html = (
+        '<div style="font-family:sans-serif;color:#1a2b3c;">'
+        '<h3 style="margin:0 0 4px;">🆕 ホームページから新しい応募が届きました</h3>'
+        '<p style="margin:0 0 12px;color:#c0392b;font-weight:600;">'
+        '応募者は返信の速さで他社と比較します。できるだけ早くお電話ください。</p>'
+        f'<table style="border-collapse:collapse;font-size:14px;">{tr}</table>'
+        '<p style="margin:14px 0 0;font-size:12px;color:#888;">'
+        'SharePoint「応募」リストにも保存されています。</p></div>')
+    subject = f'【HP応募】{rec.get("name","")} 様' + (f'／{rec.get("kyujin")}' if rec.get("kyujin") else "")
+    try:
+        token = _get_graph_token()
+        message = {
+            "subject": subject,
+            "body": {"contentType": "HTML", "content": html},
+            "toRecipients": [{"emailAddress": {"address": a}} for a in APPLY_NOTIFY_EMAILS],
+        }
+        r = requests.post(
+            f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"message": message, "saveToSentItems": False}, timeout=60)
+        if not r.ok:
+            logging.warning(f"apply notify mail failed: {r.status_code} {r.text[:300]}")
+    except Exception as e:
+        logging.warning(f"apply notify failed: {e}")
+
+
+@app.route(route="apply", methods=["POST", "OPTIONS"])
+def apply_public(req: func.HttpRequest) -> func.HttpResponse:
+    """HP採用ページからの応募を受け付け(匿名・誰でも送信可)。
+    body: {name, tel, mail?, kyujin?, area?, time?, message?, lang?, company?(honeypot)}
+    → SharePoint「応募」に保存 → 総務/採用担当へメール通知。"""
+    public_cors = {"Access-Control-Allow-Origin": "*"}
+    if req.method == "OPTIONS":
+        return _json_response({}, 204, extra_headers=public_cors)
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400, extra_headers=public_cors)
+
+    # スパム対策: honeypot("company")に値が入っていればボットとみなし静かに成功扱い
+    if (body.get("company") or "").strip():
+        return _json_response({"ok": True}, 200, extra_headers=public_cors)
+
+    clip = lambda s, n: (str(s or "").strip())[:n]
+    name = clip(body.get("name"), 100)
+    tel = clip(body.get("tel"), 40)
+    if not name or not tel:
+        return _json_response({"error": "missing_required", "detail": "name and tel required"},
+                              400, extra_headers=public_cors)
+    lang = (body.get("lang") or "ja").lower()
+    if lang not in ("ja", "pt", "en"):
+        lang = "ja"
+    rec = {
+        "name": name,
+        "tel": tel,
+        "mail": clip(body.get("mail"), 120),
+        "kyujin": clip(body.get("kyujin"), 200),
+        "area": clip(body.get("area"), 120),
+        "time": clip(body.get("time"), 120),
+        "message": clip(body.get("message"), 2000),
+        "lang": lang,
+    }
+    try:
+        new_id = sp_post_item(LIST_OUBO, {
+            "Title": rec["name"],
+            "Denwa": rec["tel"],
+            "Mail": rec["mail"],
+            "Kyujin": rec["kyujin"],
+            "KibouArea": rec["area"],
+            "RenrakuTime": rec["time"],
+            "Message": rec["message"],
+            "Lang": rec["lang"],
+            "Source": "HP",
+            "Joutai": "未対応",
+        })
+    except Exception as e:
+        logging.exception("apply save failed")
+        return _json_response({"error": "save_failed", "detail": str(e)}, 500, extra_headers=public_cors)
+
+    # 通知(メール)。失敗しても応募は成功扱い。
+    _apply_notify(rec)
+    # 承認者(役員)へロック画面Pushも best-effort
+    try:
+        _push_to_admins(APPLY_PUSH_EMAILS, {
+            "title": "🆕 HPから応募が届きました",
+            "body": f'{rec["name"]} 様／{rec["kyujin"] or "一般応募"}',
+            "url": YUKYU_APP_URL,
+        })
+    except Exception:
+        logging.warning("apply push failed")
+
+    return _json_response({"ok": True, "id": new_id}, 200, extra_headers=public_cors)
+
+
+@app.route(route="jobs/admin", methods=["GET", "OPTIONS"])
+def jobs_admin_list(req: func.HttpRequest) -> func.HttpResponse:
+    """役員専用: 全求人(非公開含む)を管理用に返す。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        items = sp_get_items(
+            LIST_KYUJIN,
+            select="Id,Title,basho,jikyu,jikan,yasumi,naiyo,bikou,taisho,joutai,yakuJSON,Modified",
+            orderby="Modified desc", top=500)
+    except Exception as e:
+        logging.exception("jobs admin list failed")
+        return _json_response({"error": "fetch_failed", "detail": str(e)}, 500)
+    jobs = [{
+        "id": it.get("Id"),
+        "title": it.get("Title") or "",
+        "location": it.get("basho") or "",
+        "wage": it.get("jikyu") or "",
+        "hours": it.get("jikan") or "",
+        "off": it.get("yasumi") or "",
+        "description": it.get("naiyo") or "",
+        "remarks": it.get("bikou") or "",
+        "target": it.get("taisho") or "外国人もOK",
+        "status": it.get("joutai") or "非公開",
+        "updated": str(it.get("Modified") or "")[:10],
+        "hasTranslation": bool(it.get("yakuJSON")),
+    } for it in items]
+    return _json_response({"jobs": jobs})
+
+
+@app.route(route="jobs/translate", methods=["POST", "OPTIONS"])
+def jobs_translate(req: func.HttpRequest) -> func.HttpResponse:
+    """役員専用: 日本語項目を pt/en に翻訳して返す(保存前のプレビュー用)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    ja = {k: (body.get(k) or "") for k in ("title", "location", "hours", "off", "description", "remarks")}
+    try:
+        import gpt_ocr
+        yaku = gpt_ocr.translate_job(ja)
+    except Exception as e:
+        logging.exception("translate_job failed")
+        return _json_response({"error": "translate_failed", "detail": str(e)}, 500)
+    return _json_response({"translations": yaku})
+
+
+@app.route(route="jobs/indeed-copy", methods=["POST", "OPTIONS"])
+def jobs_indeed_copy(req: func.HttpRequest) -> func.HttpResponse:
+    """役員専用: 求人データからIndeed直接投稿用の原稿(タイトル+本文)をAI生成。
+    id があれば求人Listの indeedgenko 列にも保存する(失敗しても生成結果は返す)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    fields = {k: (body.get(k) or "") for k in ("title", "location", "wage", "hours", "off", "description", "remarks", "target")}
+    if not fields["title"]:
+        return _json_response({"error": "title_required"}, 400)
+    try:
+        import gpt_ocr
+        copy = gpt_ocr.generate_indeed_copy(fields)
+    except Exception as e:
+        logging.exception("generate_indeed_copy failed")
+        return _json_response({"error": "generate_failed", "detail": str(e)}, 500)
+    jid = body.get("id")
+    if jid:
+        try:
+            sp_patch_item(LIST_KYUJIN, int(jid), {"indeedgenko": json.dumps(copy, ensure_ascii=False)})
+        except Exception:
+            logging.exception("indeedgenko save failed (continue)")
+    return _json_response({"ok": True, "copy": copy})
+
+
+@app.route(route="jobs/save", methods=["POST", "OPTIONS"])
+def jobs_save(req: func.HttpRequest) -> func.HttpResponse:
+    """役員専用: 求人の新規作成/更新。日本語項目を保存し pt/en 訳を yakuJSON に格納。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    title = (body.get("title") or "").strip()
+    if not title:
+        return _json_response({"error": "title_required"}, 400)
+    ja = {
+        "title": title,
+        "location": (body.get("location") or "").strip(),
+        "hours": (body.get("hours") or "").strip(),
+        "off": (body.get("off") or "").strip(),
+        "description": (body.get("description") or "").strip(),
+        "remarks": (body.get("remarks") or "").strip(),
+    }
+    wage = (body.get("wage") or "").strip()
+    target = body.get("target") if body.get("target") in ("日本人向け", "外国人もOK") else "外国人もOK"
+    status = body.get("status") if body.get("status") in ("公開", "非公開") else "非公開"
+    # 訳: クライアントが確認修正済みの訳を渡せばそれを使う。無ければ翻訳。
+    yaku = body.get("translations")
+    if not yaku:
+        try:
+            import gpt_ocr
+            yaku = gpt_ocr.translate_job(ja)
+        except Exception:
+            logging.exception("translate_job failed (continue ja-only)")
+            yaku = {}
+    fields = {
+        "Title": ja["title"], "basho": ja["location"], "jikyu": wage,
+        "jikan": ja["hours"], "yasumi": ja["off"], "naiyo": ja["description"],
+        "bikou": ja["remarks"], "taisho": target, "joutai": status,
+        "yakuJSON": json.dumps(yaku, ensure_ascii=False),
+    }
+    try:
+        jid = body.get("id")
+        if jid:
+            sp_patch_item(LIST_KYUJIN, int(jid), fields)
+            new_id = int(jid)
+        else:
+            new_id = sp_post_item(LIST_KYUJIN, fields)
+    except Exception as e:
+        logging.exception("jobs save failed")
+        return _json_response({"error": "save_failed", "detail": str(e)}, 500)
+    return _json_response({"ok": True, "id": new_id, "translations": yaku})
+
+
+@app.route(route="jobs/delete", methods=["POST", "OPTIONS"])
+def jobs_delete(req: func.HttpRequest) -> func.HttpResponse:
+    """役員専用: 求人を削除。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json()
+        jid = int(body.get("id"))
+    except Exception:
+        return _json_response({"error": "invalid_id"}, 400)
+    try:
+        url = f"{SITE_URL}/_api/web/lists(guid'{LIST_KYUJIN}')/items({jid})"
+        r = requests.post(url, headers={**_sp_headers(verbose=True), "IF-MATCH": "*", "X-HTTP-Method": "DELETE"}, timeout=30)
+        if not r.ok:
+            raise RuntimeError(f"{r.status_code} {r.text[:200]}")
+    except Exception as e:
+        logging.exception("jobs delete failed")
+        return _json_response({"error": "delete_failed", "detail": str(e)}, 500)
+    return _json_response({"ok": True})
+
+
+@app.route(route="jobs/toggle", methods=["POST", "OPTIONS"])
+def jobs_toggle(req: func.HttpRequest) -> func.HttpResponse:
+    """役員専用: 公開状態のみ切替(翻訳は再実行しない)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json()
+        jid = int(body.get("id"))
+        status = body.get("status")
+    except Exception:
+        return _json_response({"error": "invalid_request"}, 400)
+    if status not in ("公開", "非公開"):
+        return _json_response({"error": "invalid_status"}, 400)
+    try:
+        sp_patch_item(LIST_KYUJIN, jid, {"joutai": status})
+    except Exception as e:
+        logging.exception("jobs toggle failed")
+        return _json_response({"error": "toggle_failed", "detail": str(e)}, 500)
+    return _json_response({"ok": True, "id": jid, "status": status})
 
 
 @app.route(route="maebarai/dates", methods=["GET", "OPTIONS"])
@@ -2517,6 +2996,258 @@ def _kyuyu_item_to_notify(it: Dict[str, Any]) -> None:
         })
     except Exception:
         logging.exception("kyuyu item push failed")
+
+
+# ====== 送迎記録 (運転手の送迎実績・部課=094:本社（送迎者）) ======
+# 送迎先ごとの時刻マスタ。行き/帰りは時刻ボタン、遅刻/早退/病院対応は時刻なしの特別区分。
+SOUGEI_DESTS = [
+    {"name": "ASTI浜松", "go": ["8:00"], "back": ["17:00", "18:00", "19:00", "20:00"]},
+    {"name": "ユーシン", "go": ["9:00"], "back": ["17:40", "19:45"]},
+    {"name": "ASTI掛川", "go": ["8:00"], "back": ["17:00", "18:00", "19:00"]},
+]
+SOUGEI_SPECIALS = ["遅刻", "早退", "病院対応"]
+SOUGEI_BACKDATE_DAYS = 7   # 記録し忘れの遡り許容日数
+
+
+def _sougei_kiroku_eligible(emp: Dict[str, Any]) -> bool:
+    """送迎記録の対象 = 部課「094:本社（送迎者）」の在職者。"""
+    buka = str(emp.get(F_BUKA) or "")
+    return buka.startswith("094:") or "本社（送迎" in buka
+
+
+def _sougei_own_records(shain_no: int, date_from: _dt.date, date_to: _dt.date) -> List[Dict[str, Any]]:
+    """本人の送迎記録 (期間内・取消除く) を日付降順で返す。"""
+    items = sp_get_items(
+        LIST_SOUGEI_KIROKU,
+        select=",".join(["Id", SK_SHAINNO, SK_NAME, SK_DATE, SK_DEST, SK_CAT, SK_SLOT, SK_MEMO, SK_STATUS]),
+        filter_=f"{SK_SHAINNO} eq {shain_no}",
+        orderby="Id desc", top=2000,
+    )
+    out = []
+    for it in items:
+        if (it.get(SK_STATUS) or "active") == "cancelled":
+            continue
+        d = _utc_to_jst_date(it.get(SK_DATE))
+        if d is None or d < date_from or d > date_to:
+            continue
+        out.append({
+            "id": it.get("Id"),
+            "date": d.isoformat(),
+            "destination": it.get(SK_DEST) or "",
+            "category": it.get(SK_CAT) or "",
+            "timeSlot": it.get(SK_SLOT) or "",
+            "memo": it.get(SK_MEMO) or "",
+        })
+    out.sort(key=lambda r: (r["date"], r["id"]), reverse=True)
+    return out
+
+
+@app.route(route="sougei/config", methods=["GET", "OPTIONS"])
+def sougei_config(req: func.HttpRequest) -> func.HttpResponse:
+    """送迎記録の画面マスタ (送迎先/時刻/特別区分) + 本日の自分の記録。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    emp = find_active_employee_by_shain(payload["shainNo"])
+    if not emp:
+        return _json_response({"error": "not_active"}, 403)
+    today = _today_jst()
+    todays = []
+    if _sougei_kiroku_eligible(emp):
+        try:
+            todays = _sougei_own_records(int(payload["shainNo"]), today, today)
+        except Exception:
+            logging.exception("sougei today fetch failed")
+    return _json_response({
+        "ok": True, "eligible": _sougei_kiroku_eligible(emp),
+        "destinations": SOUGEI_DESTS, "specials": SOUGEI_SPECIALS,
+        "backdateDays": SOUGEI_BACKDATE_DAYS,
+        "today": today.isoformat(), "todayRecords": todays,
+    })
+
+
+@app.route(route="sougei/record", methods=["POST", "OPTIONS"])
+def sougei_record(req: func.HttpRequest) -> func.HttpResponse:
+    """送迎実績を1件記録。Body: {date?, destination, category, timeSlot?, memo?}
+    category=行き/帰り は timeSlot 必須(マスタ内)。遅刻/早退/病院対応 は時刻なし。
+    行き/帰りの同一 日付+送迎先+区分+時刻 は重複としてエラー(特別区分は複数回OK)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    emp = find_active_employee_by_shain(shain_no)
+    if not emp or not _sougei_kiroku_eligible(emp):
+        return _json_response({"error": "not_eligible"}, 403)
+    wait = check_rate_limit(shain_no, "sougei")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait}, 429,
+                              extra_headers={"Retry-After": str(wait)})
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    dest = (body.get("destination") or "").strip()
+    dest_conf = next((d for d in SOUGEI_DESTS if d["name"] == dest), None)
+    if not dest_conf:
+        return _json_response({"error": "invalid_destination"}, 400)
+    category = (body.get("category") or "").strip()
+    slot = (body.get("timeSlot") or "").strip()
+    if category in ("行き", "帰り"):
+        valid_slots = dest_conf["go"] if category == "行き" else dest_conf["back"]
+        if slot not in valid_slots:
+            return _json_response({"error": "invalid_timeslot"}, 400)
+    elif category in SOUGEI_SPECIALS:
+        slot = ""
+    else:
+        return _json_response({"error": "invalid_category"}, 400)
+    memo = str(body.get("memo") or "").strip()[:200]
+    # 日付: 既定=今日。遡りは SOUGEI_BACKDATE_DAYS 日まで、未来は不可
+    today = _today_jst()
+    date_s = (body.get("date") or "").strip()
+    if date_s:
+        try:
+            rec_date = _dt.date.fromisoformat(date_s)
+        except Exception:
+            return _json_response({"error": "invalid_date"}, 400)
+    else:
+        rec_date = today
+    if rec_date > today or (today - rec_date).days > SOUGEI_BACKDATE_DAYS:
+        return _json_response({"error": "date_out_of_range", "backdateDays": SOUGEI_BACKDATE_DAYS}, 400)
+    # 重複チェック (行き/帰りのみ。特別区分は同日複数回あり得る)
+    if category in ("行き", "帰り"):
+        try:
+            existing = _sougei_own_records(shain_no, rec_date, rec_date)
+            for r in existing:
+                if r["destination"] == dest and r["category"] == category and r["timeSlot"] == slot:
+                    return _json_response({"error": "duplicate_record", "existingId": r["id"]}, 409)
+        except Exception:
+            logging.exception("sougei duplicate check failed")
+    name = emp.get(F_SHAIN_NAME) or ""
+    fields = {
+        "Title": f"{shain_no} {name} ({rec_date.isoformat()})",
+        SK_SHAINNO: str(shain_no),
+        SK_NAME: name,
+        SK_DATE: rec_date.strftime("%Y/%m/%d"),
+        SK_DEST: dest,
+        SK_CAT: category,
+        SK_STATUS: "active",
+    }
+    if slot:
+        fields[SK_SLOT] = slot
+    if memo:
+        fields[SK_MEMO] = memo
+    try:
+        new_id = sp_post_item(LIST_SOUGEI_KIROKU, fields)
+    except Exception as e:
+        logging.exception("sougei record insert failed")
+        return _json_response({"error": "insert_failed", "detail": str(e)}, 500)
+    return _json_response({"ok": True, "id": new_id, "record": {
+        "id": new_id, "date": rec_date.isoformat(), "destination": dest,
+        "category": category, "timeSlot": slot, "memo": memo,
+    }})
+
+
+@app.route(route="sougei/records", methods=["GET", "OPTIONS"])
+def sougei_records(req: func.HttpRequest) -> func.HttpResponse:
+    """本人の送迎記録一覧。?month=YYYY-MM (既定=当月)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    emp = find_active_employee_by_shain(shain_no)
+    if not emp or not _sougei_kiroku_eligible(emp):
+        return _json_response({"error": "not_eligible"}, 403)
+    month_s = (req.params.get("month") or "").strip()
+    today = _today_jst()
+    try:
+        if month_s:
+            y, m = month_s.split("-")
+            y, m = int(y), int(m)
+        else:
+            y, m = today.year, today.month
+        first = _dt.date(y, m, 1)
+        last = (_dt.date(y + 1, 1, 1) if m == 12 else _dt.date(y, m + 1, 1)) - _dt.timedelta(days=1)
+    except Exception:
+        return _json_response({"error": "invalid_month"}, 400)
+    try:
+        recs = _sougei_own_records(shain_no, first, last)
+    except Exception as e:
+        logging.exception("sougei records fetch failed")
+        return _json_response({"error": "fetch_failed", "detail": str(e)}, 500)
+    # 送迎先別の件数サマリ
+    by_dest: Dict[str, int] = {}
+    for r in recs:
+        by_dest[r["destination"]] = by_dest.get(r["destination"], 0) + 1
+    return _json_response({
+        "ok": True, "month": f"{y:04d}-{m:02d}", "records": recs,
+        "total": len(recs), "byDestination": by_dest,
+    })
+
+
+@app.route(route="sougei/cancel", methods=["POST", "OPTIONS"])
+def sougei_cancel(req: func.HttpRequest) -> func.HttpResponse:
+    """自分の送迎記録を取消 (Status=cancelled)。当月分 または 7日以内のみ可
+    (前月分は月初の集計後に変わると困るため締切)。Body: {id}"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    emp = find_active_employee_by_shain(shain_no)
+    if not emp or not _sougei_kiroku_eligible(emp):
+        return _json_response({"error": "not_eligible"}, 403)
+    wait = check_rate_limit(shain_no, "sougei")
+    if wait is not None:
+        return _json_response({"error": "rate_limited", "retryAfterSeconds": wait}, 429,
+                              extra_headers={"Retry-After": str(wait)})
+    try:
+        body = req.get_json()
+        rec_id = int(body.get("id"))
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    try:
+        items = sp_get_items(
+            LIST_SOUGEI_KIROKU,
+            select=",".join(["Id", SK_SHAINNO, SK_DATE, SK_STATUS]),
+            filter_=f"Id eq {rec_id}", top=1,
+        )
+    except Exception as e:
+        logging.exception("sougei cancel fetch failed")
+        return _json_response({"error": "fetch_failed", "detail": str(e)}, 500)
+    if not items:
+        return _json_response({"error": "not_found"}, 404)
+    it = items[0]
+    try:
+        owner = int(float(it.get(SK_SHAINNO)))
+    except Exception:
+        owner = None
+    if owner != shain_no:
+        return _json_response({"error": "forbidden"}, 403)
+    if (it.get(SK_STATUS) or "active") == "cancelled":
+        return _json_response({"ok": True, "already": True})
+    d = _utc_to_jst_date(it.get(SK_DATE))
+    today = _today_jst()
+    same_month = d is not None and d.year == today.year and d.month == today.month
+    within_days = d is not None and 0 <= (today - d).days <= SOUGEI_BACKDATE_DAYS
+    if not (same_month or within_days):
+        return _json_response({"error": "too_old_to_cancel"}, 400)
+    try:
+        sp_patch_item(LIST_SOUGEI_KIROKU, rec_id, {SK_STATUS: "cancelled"})
+    except Exception as e:
+        logging.exception("sougei cancel patch failed")
+        return _json_response({"error": "cancel_failed", "detail": str(e)}, 500)
+    return _json_response({"ok": True, "id": rec_id})
 
 
 # ====== 運転免許証 OCR ======
