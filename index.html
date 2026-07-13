@@ -547,6 +547,38 @@
     box-shadow: 0 2px 6px rgba(0,0,0,0.06) !important;
   }
   .modal-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  /* 確認モーダルの はい/いいえ (横幅オーバーフロー防止・同一サイズ) */
+  .confirm-buttons { display: flex; gap: 10px; margin-top: 6px; }
+  .confirm-buttons .modal-btn { flex: 1; min-width: 0; padding: 13px 8px; font-size: 1em; margin: 0; }
+  /* iOS Safari の date/time 入力: 既定スタイルだと枠が右にずれる/幅が効かないため無効化 */
+  input[type="date"], input[type="time"] {
+    -webkit-appearance: none; appearance: none;
+    background: #fff; color: #222;
+    min-height: 46px;
+  }
+  input[type="date"]::-webkit-date-and-time-value,
+  input[type="time"]::-webkit-date-and-time-value { text-align: left; margin: 0; }
+  #confirm-time::-webkit-date-and-time-value { text-align: center; }
+  /* 送迎記録 ③記録する: 区分別の色分け大ボタン */
+  .sg-sec {
+    display: flex; align-items: center; gap: 6px;
+    font-weight: 800; font-size: 0.98em;
+    padding: 7px 12px; border-radius: 9px; margin: 12px 0 8px;
+  }
+  .sg-sec.go { background: #e8f1fd; color: #1b4c8c; }
+  .sg-sec.back { background: #fdeee2; color: #a34d0c; }
+  .sg-sec.sp { background: #fdf6dd; color: #7a6206; }
+  .sg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 9px; }
+  .sg-slot {
+    padding: 15px 6px; border-radius: 12px; cursor: pointer;
+    font-weight: 800; font-size: 1.18em;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+  }
+  .sg-slot:active { transform: translateY(1px); }
+  .sg-slot.go { border: 2px solid #8db4e8; background: #f3f8ff; color: #1b4c8c; }
+  .sg-slot.back { border: 2px solid #edb488; background: #fff7f0; color: #a34d0c; }
+  .sg-slot.sp { border: 2px solid #e5cc66; background: #fffbe8; color: #6d5804; font-size: 0.98em; }
   .rules-video-link {
     display: block; text-align: center;
     background: #eef2f7; color: #1f3864;
@@ -1429,13 +1461,13 @@
     <div class="modal-icon">❓</div>
     <div class="modal-title" id="confirm-title"></div>
     <div class="modal-message" id="confirm-message" style="white-space:pre-line;"></div>
-    <div id="confirm-time-wrap" class="hidden" style="margin:4px 0 10px;">
+    <div id="confirm-time-wrap" class="hidden" style="margin:4px 0 12px;">
       <div style="font-size:0.85em;color:#555;font-weight:600;margin-bottom:4px;" data-i18n="confirmTimeLabel">時刻</div>
-      <input type="time" id="confirm-time" style="width:100%;padding:10px;border:1px solid #cdd5df;border-radius:8px;font-size:1.05em;box-sizing:border-box;">
+      <input type="time" id="confirm-time" style="width:100%;padding:10px;border:1.5px solid #cdd5df;border-radius:8px;font-size:1.1em;box-sizing:border-box;">
     </div>
-    <div style="display:flex;gap:10px;margin-top:6px;">
-      <button type="button" class="modal-btn modal-btn-secondary" id="confirm-no" style="flex:1;"></button>
-      <button type="button" class="modal-btn" id="confirm-yes" style="flex:1;"></button>
+    <div class="confirm-buttons">
+      <button type="button" class="modal-btn modal-btn-secondary" id="confirm-no"></button>
+      <button type="button" class="modal-btn" id="confirm-yes"></button>
     </div>
   </div>
 </div>
@@ -4132,11 +4164,10 @@ function renderSougeiDests() {
   });
 }
 
-function _sgSlotBtn(label, icon, onclick, color) {
+function _sgSlotBtn(label, icon, onclick, kind) {
   const b = document.createElement('button');
   b.type = 'button';
-  b.style.cssText = 'padding:13px 10px;border-radius:10px;font-size:1.02em;font-weight:700;cursor:pointer;border:1px solid ' +
-    (color || '#cdd5df') + ';background:#fff;color:#222;display:flex;align-items:center;justify-content:center;gap:6px;';
+  b.className = 'sg-slot ' + kind;
   b.innerHTML = icon + ' ' + label;
   b.onclick = onclick;
   return b;
@@ -4147,26 +4178,26 @@ function renderSougeiSlots() {
   wrap.innerHTML = '';
   const conf = ((sougeiState.config || {}).destinations || []).find(d => d.name === sougeiState.dest);
   if (!conf) { wrap.innerHTML = '<div style="color:#999;">―</div>'; return; }
-  const mkSection = (titleKey, emoji) => {
+  const mkSection = (titleKey, emoji, kind) => {
     const h = document.createElement('div');
-    h.style.cssText = 'font-weight:700;font-size:0.92em;color:#555;margin:10px 0 6px;';
-    h.textContent = emoji + ' ' + t(titleKey);
+    h.className = 'sg-sec ' + kind;
+    h.textContent = emoji + ' ' + t(titleKey) + '　—　' + _sgLabel(sougeiState.dest);
     wrap.appendChild(h);
     const g = document.createElement('div');
-    g.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;';
+    g.className = 'sg-grid';
     wrap.appendChild(g);
     return g;
   };
-  // 行き
-  const gGo = mkSection('sougeiGo', '🌅');
-  (conf.go || []).forEach(s => gGo.appendChild(_sgSlotBtn(s, '🌅', () => recordSougei('行き', s))));
-  // 帰り
-  const gBack = mkSection('sougeiBack', '🌇');
-  (conf.back || []).forEach(s => gBack.appendChild(_sgSlotBtn(s, '🌇', () => recordSougei('帰り', s))));
-  // 特別対応 (遅刻/早退/病院対応)
-  const gSp = mkSection('sougeiSpecial', '⭐');
+  // 行き (青)
+  const gGo = mkSection('sougeiGo', '🌅', 'go');
+  (conf.go || []).forEach(s => gGo.appendChild(_sgSlotBtn(s, '🌅', () => recordSougei('行き', s), 'go')));
+  // 帰り (オレンジ)
+  const gBack = mkSection('sougeiBack', '🌇', 'back');
+  (conf.back || []).forEach(s => gBack.appendChild(_sgSlotBtn(s, '🌇', () => recordSougei('帰り', s), 'back')));
+  // 特別対応 (黄・遅刻/早退/病院対応/その他（休業）)
+  const gSp = mkSection('sougeiSpecial', '⭐', 'sp');
   (((sougeiState.config || {}).specials) || []).forEach(sp =>
-    gSp.appendChild(_sgSlotBtn(_sgLabel(sp), SOUGEI_CAT_ICON[sp] || '⭐', () => recordSougei(sp, ''), '#e8b04b')));
+    gSp.appendChild(_sgSlotBtn(_sgLabel(sp), SOUGEI_CAT_ICON[sp] || '⭐', () => recordSougei(sp, ''), 'sp')));
   const hint = document.createElement('div');
   hint.style.cssText = 'font-size:0.8em;color:#888;margin-top:8px;';
   hint.textContent = '※ ' + t('sougeiSpecialHint');
@@ -5372,7 +5403,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v41';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v42';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available
