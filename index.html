@@ -4033,12 +4033,12 @@ Object.assign(I18N.pt, {
 
 // 送迎先・区分の表示翻訳 (値は日本語で保存・表示は各言語)
 var SOUGEI_LABEL = {
-  ja: { 'ASTI浜松': 'ASTI浜松', 'ユーシン': 'ユーシン', 'ASTI掛川': 'ASTI掛川', '行き': '行き', '帰り': '帰り', '遅刻': '遅刻', '早退': '早退', '病院対応': '病院対応' },
-  en: { 'ASTI浜松': 'ASTI Hamamatsu', 'ユーシン': 'Yushin', 'ASTI掛川': 'ASTI Kakegawa', '行き': 'Outbound', '帰り': 'Return', '遅刻': 'Late pickup', '早退': 'Early leave', '病院対応': 'Hospital' },
-  pt: { 'ASTI浜松': 'ASTI Hamamatsu', 'ユーシン': 'Yushin', 'ASTI掛川': 'ASTI Kakegawa', '行き': 'Ida', '帰り': 'Volta', '遅刻': 'Atraso', '早退': 'Saída antecipada', '病院対応': 'Hospital' },
+  ja: { 'ASTI浜松': 'ASTI浜松', 'ユーシン': 'ユーシン', 'ASTI掛川': 'ASTI掛川', '行き': '行き', '帰り': '帰り', '遅刻': '遅刻', '早退': '早退', '病院対応': '病院対応', 'その他（休業）': 'その他（休業）' },
+  en: { 'ASTI浜松': 'ASTI Hamamatsu', 'ユーシン': 'Yushin', 'ASTI掛川': 'ASTI Kakegawa', '行き': 'Outbound', '帰り': 'Return', '遅刻': 'Late pickup', '早退': 'Early leave', '病院対応': 'Hospital', 'その他（休業）': 'Other (closure day)' },
+  pt: { 'ASTI浜松': 'ASTI Hamamatsu', 'ユーシン': 'Yushin', 'ASTI掛川': 'ASTI Kakegawa', '行き': 'Ida', '帰り': 'Volta', '遅刻': 'Atraso', '早退': 'Saída antecipada', '病院対応': 'Hospital', 'その他（休業）': 'Outros (dia parado)' },
 };
 function _sgLabel(v) { return (SOUGEI_LABEL[currentLang] || SOUGEI_LABEL.ja)[v] || v; }
-var SOUGEI_CAT_ICON = { '行き': '🌅', '帰り': '🌇', '遅刻': '⏰', '早退': '🏃', '病院対応': '🏥' };
+var SOUGEI_CAT_ICON = { '行き': '🌅', '帰り': '🌇', '遅刻': '⏰', '早退': '🏃', '病院対応': '🏥', 'その他（休業）': '📋' };
 
 var sougeiState = { config: null, dest: null, date: null, dayRecords: [], histMonth: null, busy: false };
 
@@ -5338,7 +5338,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v38';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v39';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available

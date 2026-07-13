@@ -3007,7 +3007,7 @@ SOUGEI_DESTS = [
     {"name": "ユーシン", "go": ["9:00"], "back": ["17:40", "19:45"]},
     {"name": "ASTI掛川", "go": ["8:00"], "back": ["17:00", "18:00", "19:00"]},
 ]
-SOUGEI_SPECIALS = ["遅刻", "早退", "病院対応"]
+SOUGEI_SPECIALS = ["遅刻", "早退", "病院対応", "その他（休業）"]
 SOUGEI_BACKDATE_DAYS = 7   # 記録し忘れの遡り許容日数
 
 
