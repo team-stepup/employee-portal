@@ -1217,7 +1217,10 @@ def jobs_indeed_feed(req: func.HttpRequest) -> func.HttpResponse:
             desc_parts.append(f"【休日】{it.get('yasumi')}")
         if it.get("bikou"):
             desc_parts.append(it.get("bikou"))
-        desc_html = "<br>".join(xml_esc(p) for p in desc_parts if p)
+        # フィールド内の改行もIndeed上で改行表示されるよう <br> へ変換
+        desc_html = "<br>".join(
+            xml_esc(p).replace("\r\n", "\n").replace("\n", "<br>")
+            for p in desc_parts if p)
         jobs_xml.append(
             "<job>"
             f"<title><![CDATA[{xml_esc(it.get('Title'))}]]></title>"
