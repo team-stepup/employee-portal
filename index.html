@@ -3948,6 +3948,8 @@ function _kyuyuUpdateReceiptBtn() {
 function _kyuyuRenderReceipts() {
   const wrap = document.getElementById('kyuyu-receipt-preview');
   if (!wrap) return;
+  // openKyuyu で付けた hidden を外す (外し忘れるとサムネイルも削除✕も出ない)
+  wrap.classList.toggle('hidden', kyuyuState.receipts.length === 0);
   wrap.innerHTML = '';
   kyuyuState.receipts.forEach((r, i) => {
     const d = document.createElement('div');
@@ -5421,7 +5423,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v43';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v44';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available
