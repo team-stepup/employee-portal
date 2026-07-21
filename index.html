@@ -122,6 +122,19 @@
     background: #fff3cd; border-left: 4px solid #f0ad4e; color: #8a6d3b;
     padding: 12px 14px; border-radius: 6px; font-size: 0.85em; margin-bottom: 12px;
   }
+  /* 運転手向け安全メッセージ (送迎記録) */
+  .drive-warn {
+    display: inline-block; margin-top: 5px;
+    background: #d32f2f; color: #fff;
+    font-size: 0.74em; font-weight: 700;
+    padding: 3px 10px; border-radius: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  }
+  .safe-drive {
+    margin-top: 9px; padding-top: 8px;
+    border-top: 1px dashed #e3c98f;
+    font-weight: 700; color: #7a5a1e;
+  }
   .error-banner {
     background: #f8d7da; border-left: 4px solid #d9534f; color: #721c24;
     padding: 12px 14px; border-radius: 6px; font-size: 0.9em; margin-bottom: 12px;
@@ -850,10 +863,16 @@
 <!-- ====== Screen: 送迎記録 (送迎運転手) ====== -->
 <div id="screen-sougei-kiroku" class="container hidden">
   <div class="header">
-    <h1>🚌 <span data-i18n="menuSougeiKiroku">送迎記録</span></h1>
+    <div>
+      <h1>🚌 <span data-i18n="menuSougeiKiroku">送迎記録</span></h1>
+      <div class="drive-warn" data-i18n="driveNoOperate">⚠️ 運転中は操作禁止</div>
+    </div>
     <span class="logout-btn" onclick="showScreen('home')">✕</span>
   </div>
-  <div class="info-banner" data-i18n="sougeiKirokuInfo">📌 送迎をしたら、その都度タップして記録してください。間違えたら ✕ で取り消せます。</div>
+  <div class="info-banner">
+    <div data-i18n="sougeiKirokuInfo">📌 送迎をしたら、その都度タップして記録してください。間違えたら ✕ で取り消せます。</div>
+    <div class="safe-drive" data-i18n="sougeiSafeDrive">🚗 今日も安全運転でお願いします。</div>
+  </div>
   <div id="sougei-error" class="error-banner hidden"></div>
 
   <div class="card">
@@ -4064,6 +4083,8 @@ Object.assign(I18N.ja, {
   sougeiSpecialHint: '遅刻・早退・病院対応は同じ日に複数回記録できます。',
   sougeiApprovedMark: '承認済',
   sougeiApprovedLock: '承認済みの記録のため取り消せません（担当者へ連絡してください）。',
+  driveNoOperate: '⚠️ 運転中は操作禁止',
+  sougeiSafeDrive: '🚗 今日も安全運転でお願いします。',
 });
 Object.assign(I18N.en, {
   menuSougeiKiroku: 'Shuttle Log',
@@ -4079,6 +4100,8 @@ Object.assign(I18N.en, {
   sougeiSpecialHint: 'Late / early-leave / hospital runs can be logged multiple times per day.',
   sougeiApprovedMark: 'Approved',
   sougeiApprovedLock: 'This record is already approved and cannot be removed (please contact your supervisor).',
+  driveNoOperate: '⚠️ Do not use while driving',
+  sougeiSafeDrive: '🚗 Have a safe drive today.',
 });
 Object.assign(I18N.pt, {
   menuSougeiKiroku: 'Registro de Transporte',
@@ -4094,6 +4117,8 @@ Object.assign(I18N.pt, {
   sougeiSpecialHint: 'Atraso / saída antecipada / hospital podem ser registrados várias vezes por dia.',
   sougeiApprovedMark: 'Aprovado',
   sougeiApprovedLock: 'Este registro já foi aprovado e não pode ser removido (contate o responsável).',
+  driveNoOperate: '⚠️ Não use enquanto dirige',
+  sougeiSafeDrive: '🚗 Dirija com segurança hoje.',
 });
 
 // 送迎先・区分の表示翻訳 (値は日本語で保存・表示は各言語)
@@ -5423,7 +5448,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v44';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v45';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available
