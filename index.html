@@ -4060,6 +4060,8 @@ Object.assign(I18N.ja, {
   sougeiCancelConfirm: 'この記録を取り消しますか？', sougeiTotal: '合計 {n} 回',
   sougeiHistTitle: '送迎記録 一覧', sougeiTooOld: '古い記録のため取り消せません（総務へ連絡してください）。',
   sougeiSpecialHint: '遅刻・早退・病院対応は同じ日に複数回記録できます。',
+  sougeiApprovedMark: '承認済',
+  sougeiApprovedLock: '承認済みの記録のため取り消せません（担当者へ連絡してください）。',
 });
 Object.assign(I18N.en, {
   menuSougeiKiroku: 'Shuttle Log',
@@ -4073,6 +4075,8 @@ Object.assign(I18N.en, {
   sougeiCancelConfirm: 'Remove this record?', sougeiTotal: 'Total: {n} runs',
   sougeiHistTitle: 'Shuttle Log List', sougeiTooOld: 'Too old to remove (please contact the office).',
   sougeiSpecialHint: 'Late / early-leave / hospital runs can be logged multiple times per day.',
+  sougeiApprovedMark: 'Approved',
+  sougeiApprovedLock: 'This record is already approved and cannot be removed (please contact your supervisor).',
 });
 Object.assign(I18N.pt, {
   menuSougeiKiroku: 'Registro de Transporte',
@@ -4086,6 +4090,8 @@ Object.assign(I18N.pt, {
   sougeiCancelConfirm: 'Remover este registro?', sougeiTotal: 'Total: {n} viagens',
   sougeiHistTitle: 'Lista de Registros', sougeiTooOld: 'Registro antigo, não pode ser removido (contate o escritório).',
   sougeiSpecialHint: 'Atraso / saída antecipada / hospital podem ser registrados várias vezes por dia.',
+  sougeiApprovedMark: 'Aprovado',
+  sougeiApprovedLock: 'Este registro já foi aprovado e não pode ser removido (contate o responsável).',
 });
 
 // 送迎先・区分の表示翻訳 (値は日本語で保存・表示は各言語)
@@ -4251,12 +4257,20 @@ function renderSougeiDayRecords() {
     const left = document.createElement('span');
     left.textContent = (SOUGEI_CAT_ICON[r.category] || '') + ' ' + _sgLabel(r.destination) + '　' + _sgLabel(r.category) + (r.timeSlot ? ' ' + r.timeSlot : '');
     row.appendChild(left);
-    const x = document.createElement('button');
-    x.type = 'button';
-    x.textContent = '✕';
-    x.style.cssText = 'border:none;background:#fde8e8;color:#c0392b;border-radius:50%;width:28px;height:28px;font-size:14px;cursor:pointer;';
-    x.onclick = () => cancelSougei(r.id);
-    row.appendChild(x);
+    if (r.status === 'approved') {
+      // 担当者承認済み: 取消不可 (✕の代わりに承認済バッジ)
+      const ok = document.createElement('span');
+      ok.textContent = '✓ ' + t('sougeiApprovedMark');
+      ok.style.cssText = 'background:#e6f6ec;color:#1b7a3d;border-radius:10px;padding:3px 9px;font-size:0.8em;font-weight:700;';
+      row.appendChild(ok);
+    } else {
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.textContent = '✕';
+      x.style.cssText = 'border:none;background:#fde8e8;color:#c0392b;border-radius:50%;width:28px;height:28px;font-size:14px;cursor:pointer;';
+      x.onclick = () => cancelSougei(r.id);
+      row.appendChild(x);
+    }
     wrap.appendChild(row);
   });
 }
@@ -4270,7 +4284,8 @@ async function cancelSougei(id) {
     renderSougeiDayRecords();
     showAlert(t('sougeiCancelDone'), 'success');
   } catch (e) {
-    if (e && e.status === 400) showAlert(t('sougeiTooOld'), 'warning');
+    if (e && e.data && e.data.error === 'already_approved') showAlert(t('sougeiApprovedLock'), 'warning');
+    else if (e && e.status === 400) showAlert(t('sougeiTooOld'), 'warning');
     else showAlert(t('sougeiCancelFail'), 'error');
   } finally { showLoading(false); }
 }
@@ -4326,8 +4341,11 @@ async function loadSougeiHistory() {
       const w = (wk[currentLang] || wk.ja)[dt.getDay()];
       let html = '<div style="font-weight:700;margin-bottom:6px;">' + Number(d.slice(5, 7)) + '/' + Number(d.slice(8, 10)) + ' (' + w + ')　<span style="color:#4b56c9;">' + byDate[d].length + '</span></div>';
       byDate[d].forEach(r => {
+        const okMark = (r.status === 'approved')
+          ? ' <span style="background:#e6f6ec;color:#1b7a3d;border-radius:8px;padding:1px 7px;font-size:0.78em;font-weight:700;">✓ ' + escNotice(t('sougeiApprovedMark')) + '</span>'
+          : '';
         html += '<div style="padding:4px 0;font-size:0.95em;color:#444;">' + (SOUGEI_CAT_ICON[r.category] || '') + ' ' +
-          escNotice(_sgLabel(r.destination)) + '　' + escNotice(_sgLabel(r.category)) + (r.timeSlot ? ' ' + escNotice(r.timeSlot) : '') + '</div>';
+          escNotice(_sgLabel(r.destination)) + '　' + escNotice(_sgLabel(r.category)) + (r.timeSlot ? ' ' + escNotice(r.timeSlot) : '') + okMark + '</div>';
       });
       card.innerHTML = html;
       listEl.appendChild(card);
@@ -5403,7 +5421,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v42';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v43';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available

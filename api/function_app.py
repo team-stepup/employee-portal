@@ -57,7 +57,9 @@ SK_DEST = "Destination"      # 送迎先 (ASTI浜松/ユーシン/ASTI掛川)
 SK_CAT = "Category"          # 区分 (行き/帰り/遅刻/早退/病院対応)
 SK_SLOT = "TimeSlot"         # 時刻 (行き/帰りのみ。例 "17:00")
 SK_MEMO = "Memo"             # 補足メモ (任意)
-SK_STATUS = "Status"         # active / cancelled
+SK_STATUS = "Status"         # active(承認待ち) / approved(担当者承認済) / cancelled
+SK_APPROVED_BY = "ApprovedBy"   # 承認者 (メール or 氏名・yukyu-app が書込)
+SK_APPROVED_AT = "ApprovedAt"   # 承認日時 (ISO文字列・yukyu-app が書込)
 # 送迎連絡 List フィールド (ASCII名なので read/write とも OData_ プレフィックス無し)
 SG_DATE = "TargetDate"      # 対象日 (DateOnly)
 SG_SHAINNO = "ShainNo"      # 社員番号 (人単位配信用)
@@ -3039,6 +3041,12 @@ SOUGEI_DESTS = [
 ]
 SOUGEI_SPECIALS = ["遅刻", "早退", "病院対応", "その他（休業）"]
 SOUGEI_BACKDATE_DAYS = 7   # 記録し忘れの遡り許容日数
+# 送迎先ごとの承認担当者 (派遣先→担当者の会社ルーティングと同じ。役員は yukyu-app 側で全件承認可)
+SOUGEI_TANTOU_BY_DEST = {
+    "ASTI浜松": "m.yoshiura@team-stepup.com",   # 吉浦マルセロ
+    "ユーシン": "m.mori@team-stepup.com",       # 森まこと
+    "ASTI掛川": "y.mori@team-stepup.com",       # 森ゆうじ
+}
 
 
 def _sougei_kiroku_eligible(emp: Dict[str, Any]) -> bool:
@@ -3069,6 +3077,7 @@ def _sougei_own_records(shain_no: int, date_from: _dt.date, date_to: _dt.date) -
             "category": it.get(SK_CAT) or "",
             "timeSlot": it.get(SK_SLOT) or "",
             "memo": it.get(SK_MEMO) or "",
+            "status": it.get(SK_STATUS) or "active",
         })
     out.sort(key=lambda r: (r["date"], r["id"]), reverse=True)
     return out
@@ -3269,6 +3278,9 @@ def sougei_cancel(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"error": "forbidden"}, 403)
     if (it.get(SK_STATUS) or "active") == "cancelled":
         return _json_response({"ok": True, "already": True})
+    # 担当者承認済みの記録は本人取消不可 (修正は担当者が yukyu-app で行う)
+    if (it.get(SK_STATUS) or "active") == "approved":
+        return _json_response({"error": "already_approved"}, 400)
     d = _utc_to_jst_date(it.get(SK_DATE))
     today = _today_jst()
     # 当月分のみ取消可 (月を跨いだら集計対象なので本人は削除不可・修正は総務のExcel「不足・追加」列で)
@@ -3281,6 +3293,68 @@ def sougei_cancel(req: func.HttpRequest) -> func.HttpResponse:
         logging.exception("sougei cancel patch failed")
         return _json_response({"error": "cancel_failed", "detail": str(e)}, 500)
     return _json_response({"ok": True, "id": rec_id})
+
+
+def _sougei_pending_counts(until: _dt.date) -> Dict[str, int]:
+    """未承認 (Status=active) の送迎記録件数を送迎先別に集計 (until 日以前の分)。"""
+    items = sp_get_items(
+        LIST_SOUGEI_KIROKU,
+        select=",".join(["Id", SK_DATE, SK_DEST, SK_STATUS]),
+        filter_=f"{SK_STATUS} eq 'active'",
+        orderby="Id desc", top=5000,
+    )
+    counts: Dict[str, int] = {}
+    for it in items:
+        d = _utc_to_jst_date(it.get(SK_DATE))
+        if d is None or d > until:
+            continue
+        dest = (it.get(SK_DEST) or "").strip()
+        counts[dest] = counts.get(dest, 0) + 1
+    return counts
+
+
+def _sougei_send_pending_push():
+    """前日までの未承認 送迎記録があれば、送迎先の担当者へPush (yukyu-app で承認してもらう)。"""
+    yesterday = _today_jst() - _dt.timedelta(days=1)
+    counts = _sougei_pending_counts(yesterday)
+    per_email: Dict[str, Dict[str, int]] = {}
+    for dest, n in counts.items():
+        email = SOUGEI_TANTOU_BY_DEST.get(dest)
+        if not email or n <= 0:
+            continue
+        per_email.setdefault(email, {})[dest] = n
+    sent = 0
+    for email, dests in per_email.items():
+        total = sum(dests.values())
+        detail = "、".join(f"{d} {n}件" for d, n in dests.items())
+        sent += _push_to_admins([email], {
+            "title": "🚌 送迎記録の承認",
+            "body": f"未承認の送迎記録が {total}件あります（{detail}）。アプリの承認画面からご確認ください。",
+            "url": YUKYU_APP_URL,
+            "tag": "sougei-approval",
+            "badge": total,
+        })
+    return {"ok": True, "counts": counts, "targets": len(per_email), "sent": sent}
+
+
+@app.route(route="sougei/pending-test", methods=["POST", "GET", "OPTIONS"])
+def sougei_pending_test(req: func.HttpRequest) -> func.HttpResponse:
+    """手動確認用: 前日までの未承認 送迎記録の件数(送迎先別)。?push=1 で担当者へ実Push。総務/役員のみ。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        if req.params.get("push") == "1":
+            res = _sougei_send_pending_push()
+        else:
+            res = {"ok": True, "counts": _sougei_pending_counts(_today_jst() - _dt.timedelta(days=1)), "sent": 0}
+        return _json_response(res)
+    except Exception as e:
+        logging.exception("sougei_pending_test failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
 
 
 # ====== 事故報告 (運転手の交通事故報告・部課=094:本社（送迎者）) ======
@@ -4896,6 +4970,11 @@ def sankyu_overdue_timer(timer: func.TimerRequest) -> None:
             logging.info("社保・離職票 通知: counts=%s sent=%s", sres.get("counts"), sres.get("sent"))
         except Exception:
             logging.exception("社保・離職票 通知に失敗")
+        try:
+            gres = _sougei_send_pending_push()
+            logging.info("送迎記録 未承認通知: counts=%s sent=%s", gres.get("counts"), gres.get("sent"))
+        except Exception:
+            logging.exception("送迎記録 未承認通知に失敗")
     except Exception:
         logging.exception("産休育休 遅れ通知(timer)に失敗")
 
