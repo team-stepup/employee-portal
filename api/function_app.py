@@ -2520,6 +2520,7 @@ GAS_F_ODOIMG  = "_x8d70__x884c__x8ddd__x96e2__x75"    # 走行距離画像
 GAS_F_ODO     = "_x73fe__x5728__x8d70__x884c__x8d"    # 現在走行距離
 GAS_F_LITERS  = "_x7d66__x6cb9__x91cf__x2113_"        # 給油量ℓ
 GAS_F_PURPOSE = "_x5229__x7528__x76ee__x7684_"        # 利用目的
+GAS_F_APPLICANT = "_x7533__x8acb__x8005_"              # 申請者 (User・旧Forms経由のみ設定される)
 GAS_F_DIST    = "_x7d66__x6cb9__x9593__x8ddd__x96"    # 給油間距離 (Note・前回給油からの距離)
 GAS_F_NENPI   = "_x71c3__x8cbb_"                       # 燃費 (Note・給油間距離/給油量)
 GAS_F_KANKAKU = "_x7a7a__x767d__x671f__x9593_"        # 間隔=空白期間 (Note・前回給油からの経過)
@@ -2766,10 +2767,6 @@ def _kyuyu_notify_teams(shain_no, name, vehicle, day, amount, liters, odometer,
     def _h(s):
         return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
     veh_short = re.sub(r"[\s　]+", " ", vehicle or "").strip()
-    try:
-        amt_disp = f"¥{int(float(amount)):,}" if amount else "（未入力）"
-    except Exception:
-        amt_disp = f"¥{amount}" if amount else "（未入力）"
     # 距離 = 給油間距離（現在走行距離）。代車/メーター逆行で距離が無い時は走行距離のみ明示。
     if dist_s:
         dist_disp = f"{dist_s} km" + (f"（{_h(odometer)} km）" if odometer else "")
@@ -2785,8 +2782,7 @@ def _kyuyu_notify_teams(shain_no, name, vehicle, day, amount, liters, odometer,
         ("距離", dist_disp),
         ("燃費", f"{nenpi_s} km/ℓ" if nenpi_s else "―"),
         ("給油量", f"{_h(liters) if liters else '―'} ℓ"),
-        ("払戻金額", amt_disp),
-        ("支払い", _h(pay_type) if pay_type else "（未選択）"),
+        # 払戻金額/支払い行は非表示 (2026-07-22 ユーザー要望・旧ワークフローカードの体裁に統一。金額はPush/リストで確認)
     ]
     tr = "".join(
         f'<tr><td style="padding:1px 14px 1px 0;color:#666;white-space:nowrap">{k}</td>'
@@ -2808,8 +2804,14 @@ def _kyuyu_notify_teams(shain_no, name, vehicle, day, amount, liters, odometer,
         f'<div style="margin-top:12px;line-height:2">{"<br>".join(links)}</div>'
         f'{img_html}</div>'
     )
-    subject = f"⛽ 給油のお知らせ {name}（{veh_short}）{amt_disp}"
-    _send_notification_mail(subject, html, to_addr=KYUYU_TEAMS_EMAIL, html=True, attachments=attachments)
+    # 件名=上段見出し。「給油のお知らせ」は本文見出しと重複するため、ナンバー車種+申請者のみ (2026-07-22)
+    subject = f"⛽ {veh_short}　{name}".strip()
+    # 送信者=共有メールボックス「給油申請」(kyuyu@team-stepup.com)。h.yamashita名義だと自己発言扱いで
+    # 浩俊のTeams通知が鳴らないため(2026-07-22切替・ワークフローの重複カードは廃止)。
+    # Graph sendMail のキーは UPN 必須(このメールボックスは UPN が自動生成値で mail と別)。
+    _send_notification_mail(subject, html, to_addr=KYUYU_TEAMS_EMAIL, html=True, attachments=attachments,
+                            sender_addr=os.environ.get("KYUYU_MAIL_SENDER",
+                                                       "G9fb335d3718841e49991264c54e8f377@team-stepup.com"))
 
 
 @app.route(route="kyuyu/status", methods=["GET", "OPTIONS"])
@@ -3025,6 +3027,17 @@ def _kyuyu_item_to_notify(it: Dict[str, Any]) -> None:
     name = re.sub(r"\s*\([^)]*\)\s*$", "", re.sub(r"^\s*\d+\s*", "", title)).strip() if title else ""
     m = re.match(r"\s*(\d+)", title)
     shain_no = m.group(1) if m else ""
+    if not name:
+        # 旧Forms経由の項目は Title 空 → 申請者(User列)の表示名で補完
+        try:
+            uid = it.get("OData_" + GAS_F_APPLICANT + "Id") or it.get(GAS_F_APPLICANT + "Id")
+            if uid:
+                h = {"Authorization": f"Bearer {_get_sp_token()}", "Accept": "application/json;odata=nometadata"}
+                r = requests.get(f"{SITE_URL}/_api/web/getuserbyid({int(uid)})?$select=Title", headers=h, timeout=15)
+                if r.ok:
+                    name = (r.json().get("Title") or "").strip()
+        except Exception:
+            logging.exception("kyuyu applicant fallback failed")
     vehicle = og(GAS_F_VEHICLE)
     amount, liters, odometer = og(GAS_F_AMOUNT), og(GAS_F_LITERS), og(GAS_F_ODO)
     dist_s, nenpi_s, kankaku_s = og(GAS_F_DIST), og(GAS_F_NENPI), og(GAS_F_KANKAKU)
@@ -4687,13 +4700,16 @@ def _get_graph_token() -> str:
 
 
 def _send_notification_mail(subject: str, text: str, to_addr: Optional[str] = None,
-                            html: bool = False, attachments: Optional[list] = None) -> None:
+                            html: bool = False, attachments: Optional[list] = None,
+                            sender_addr: Optional[str] = None) -> None:
     """Teams チャネルのメールアドレス宛に Graph sendMail で通知。
-    送信元 = SHORUI_MAIL_SENDER (h.yamashita)、宛先 = to_addr or SHORUI_NOTIFY_EMAIL (チャネルメール)。
+    送信元 = sender_addr or SHORUI_MAIL_SENDER (h.yamashita)、宛先 = to_addr or SHORUI_NOTIFY_EMAIL (チャネルメール)。
+    sender_addr は自己発言だと投稿者本人にTeams通知が鳴らないため、共有メールボックス等に切替える用途
+    (Application Access Policy の許可グループに送信元を追加しておくこと)。
     html=True なら contentType=HTML。attachments=Graph fileAttachment 配列(インライン画像等)。
     環境変数未設定なら何もしない (申請自体は成功扱い)。"""
     to_addr = (to_addr or os.environ.get("SHORUI_NOTIFY_EMAIL", "")).strip()
-    sender = os.environ.get("SHORUI_MAIL_SENDER", "").strip()
+    sender = (sender_addr or os.environ.get("SHORUI_MAIL_SENDER", "")).strip()
     if not to_addr or not sender:
         return
     try:
