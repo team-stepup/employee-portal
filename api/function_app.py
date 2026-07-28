@@ -800,6 +800,40 @@ def _validate_pin(pin: Any) -> Optional[str]:
     return None
 
 
+def _portal_rollout_allowed(emp: Dict[str, Any]) -> bool:
+    """段階公開ゲート (2026-07-29): App Setting PORTAL_ROLLOUT_BUKA で
+    ログイン可能な対象を制御する。未設定 or '*' なら全員可。
+    値はカンマ区切りで、3桁以下(または '002-1' 形式)=部課番号 / 4桁以上の数字=社員番号(個別テスト用)。
+    例: '094' → 送迎運転手のみ。'094,002,078' → +ユーシン+ASTI都田。
+    094 指定時は部課表記ゆれ対策で _sougei_kiroku_eligible / KYUYU_DRIVERS も許可する。"""
+    raw = (os.environ.get("PORTAL_ROLLOUT_BUKA") or "").strip()
+    if not raw or raw == "*":
+        return True
+    allowed = {s.strip() for s in raw.split(",") if s.strip()}
+    shains = {a for a in allowed if a.isdigit() and len(a) >= 4}
+    bnos = allowed - shains
+    try:
+        sn = str(int(float(emp.get(F_SHAIN_NO) or 0)))
+    except (TypeError, ValueError):
+        sn = ""
+    if sn and sn in shains:
+        return True
+    buka = str(emp.get(F_BUKA) or "")
+    m = re.match(r"\s*(\d+(?:[-－]\d+)?)\s*[:：]", buka)
+    bno = m.group(1) if m else ""
+    if bno and bno in bnos:
+        return True
+    if "094" in bnos:
+        if _sougei_kiroku_eligible(emp):
+            return True
+        try:
+            if int(float(emp.get(F_SHAIN_NO))) in KYUYU_DRIVERS:
+                return True
+        except (TypeError, ValueError):
+            pass
+    return False
+
+
 @app.route(route="auth/login", methods=["POST", "OPTIONS"])
 def auth_login(req: func.HttpRequest) -> func.HttpResponse:
     """初回ログイン (3要素照合)。PIN 未設定なら pinSetupRequired を返す。
@@ -841,6 +875,9 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"error": "auth_failed"}, 401)
 
     clear_attempts(shain_no)
+    # 段階公開: 対象外の職場はログイン不可 (開放は PORTAL_ROLLOUT_BUKA 設定変更のみ)
+    if not _portal_rollout_allowed(emp):
+        return _json_response({"error": "not_open"}, 403)
     has_pin = bool((emp.get(F_PORTAL_PIN) or "").strip())
     if not has_pin:
         # PIN 未設定 → 短命の setup トークンを発行し、PIN 設定画面へ誘導
@@ -935,6 +972,9 @@ def auth_pin_login(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.exception("pin-login lookup failed")
         return _json_response({"error": "lookup_failed", "detail": str(e)}, 500)
+    # 段階公開: 対象外の職場はログイン不可 (PIN 検証前に判定・試行回数にも数えない)
+    if emp and not _portal_rollout_allowed(emp):
+        return _json_response({"error": "not_open"}, 403)
     stored = (emp.get(F_PORTAL_PIN) if emp else None)
     if not emp or not (stored or "").strip():
         # PIN 未設定 → 初回ログインへ誘導

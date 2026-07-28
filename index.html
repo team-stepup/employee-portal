@@ -1570,6 +1570,7 @@ const I18N = {
     pinSetSuccess: "PINを登録しました。次回から社員番号とPINでログインできます。",
     pinWrong: "社員番号またはPINが違います。",
     pinAlreadySet: "PINは設定済みです。社員番号とPINでログインしてください。PINを忘れた場合は会社（総務）にご連絡ください。",
+    portalNotOpen: "従業員ポータルは順番にご案内しています。あなたの職場ではまだ利用開始前です。開始までお待ちください。",
     logout: "ログアウト",
     menuApply: "前払い申請",
     menuHistory: "申請履歴",
@@ -1639,6 +1640,7 @@ const I18N = {
     pinSetSuccess: "PIN registrado. A partir da próxima vez, entre com nº e PIN.",
     pinWrong: "Nº de funcionário ou PIN incorreto.",
     pinAlreadySet: "O PIN já foi configurado. Entre com o nº de funcionário e o PIN. Se esqueceu o PIN, entre em contato com a empresa (RH).",
+    portalNotOpen: "O portal do funcionário está sendo liberado em etapas. Ainda não está disponível para o seu local de trabalho. Aguarde o início.",
     logout: "Sair",
     menuApply: "Adiantamento",
     menuHistory: "Histórico",
@@ -1713,6 +1715,7 @@ const I18N = {
     pinSetSuccess: "PIN registered. Next time, sign in with your number and PIN.",
     pinWrong: "Employee number or PIN is incorrect.",
     pinAlreadySet: "A PIN is already set. Please log in with your employee number and PIN. If you forgot your PIN, please contact the company (HR).",
+    portalNotOpen: "The employee portal is being rolled out in stages. It is not yet available for your workplace. Please wait for the launch.",
     logout: "Sign Out",
     menuApply: "Advance Request",
     menuHistory: "Request History",
@@ -3652,6 +3655,9 @@ async function tryPinLogin() {
       showLoginMode('setup');
       document.getElementById('setup-shainno').value = shainNo;
       _showInlineError('setup-error', t('firstTimeDesc'));
+    } else if (e.status === 403 && e.data && e.data.error === 'not_open') {
+      // 段階公開: 対象外の職場
+      _showInlineError('login-error', t('portalNotOpen'), 'portalNotOpen');
     } else if (e.status === 401) {
       _showInlineError('login-error', t('pinWrong'), 'pinWrong');
     } else {
@@ -3723,6 +3729,9 @@ async function tryVerifyForSetup() {
       _showInlineError('login-error', t('pinAlreadySet'), 'pinAlreadySet');
     } else if (e.status === 401) {
       _showInlineError('setup-error', t('authFailed'), 'authFailed');
+    } else if (e.status === 403 && e.data && e.data.error === 'not_open') {
+      // 段階公開: 対象外の職場
+      _showInlineError('setup-error', t('portalNotOpen'), 'portalNotOpen');
     } else if (e.status === 403) {
       _showInlineError('setup-error', t('notActive'), 'notActive');
     } else {
@@ -5460,7 +5469,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v46';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v47';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available
