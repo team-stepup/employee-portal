@@ -747,7 +747,7 @@
       <span class="icon">🛡️</span>
       <span class="label" data-i18n="menuHoken">任意保険 提出</span>
     </div>
-    <div class="menu-card" onclick="showScreen('shorui')">
+    <div class="menu-card" id="menu-card-shorui" onclick="showScreen('shorui')">
       <span class="card-num">⑦</span>
       <span class="icon">📄</span>
       <span class="label" data-i18n="menuShorui">必要書類 請求</span>
@@ -3849,6 +3849,9 @@ function renderHome() {
   if (sougeiCard) sougeiCard.style.display = state.profile.sougeiKirokuEligible ? '' : 'none';
   const jikoCard = document.getElementById('menu-card-jiko');
   if (jikoCard) jikoCard.style.display = state.profile.sougeiKirokuEligible ? '' : 'none';
+  // 必要書類 請求: 運転手(094:本社（送迎者）)には出さない
+  const shoruiCard = document.getElementById('menu-card-shorui');
+  if (shoruiCard) shoruiCard.style.display = state.profile.sougeiKirokuEligible ? 'none' : '';
   // 期限お知らせを即時表示 (履歴取得を待たず profile から)
   renderHomeNotices(state.historyCache ? state.historyCache.items : null);
   // プッシュ通知の設定UI

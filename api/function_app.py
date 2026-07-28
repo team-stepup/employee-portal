@@ -393,8 +393,8 @@ def is_valid_amount(amount) -> bool:
 
 # 部課番号 → 担当者 マッピング (memory ベース)
 TANTOU_YOSHIURA = {"114", "083", "086", "105", "043"}
-TANTOU_MORI_YUJI = {"077", "078", "071", "052", "040"}
-TANTOU_MAKOTO = {"002", "093", "091", "094", "107", "116", "117", "112"}
+TANTOU_MORI_YUJI = {"077", "078", "071", "052", "040", "094"}   # 094=本社（送迎者）: 2026-07-28 森まことから変更
+TANTOU_MAKOTO = {"002", "093", "091", "107", "116", "117", "112"}
 
 
 def get_tantou(buka_no: str) -> str:
@@ -3130,7 +3130,7 @@ SOUGEI_BACKDATE_DAYS = 7   # 記録し忘れの遡り許容日数
 # 送迎先ごとの承認担当者 (派遣先→担当者の会社ルーティングと同じ。役員は yukyu-app 側で全件承認可)
 SOUGEI_TANTOU_BY_DEST = {
     "ASTI浜松": "m.yoshiura@team-stepup.com",   # 吉浦マルセロ
-    "ユーシン": "m.mori@team-stepup.com",       # 森まこと
+    "ユーシン": "kaori.j@team-stepup.com",      # 城かおり (2026-07-28 森まことから変更)
     "ASTI掛川": "y.mori@team-stepup.com",       # 森ゆうじ
 }
 
