@@ -1569,6 +1569,7 @@ const I18N = {
     pinInvalid: "4桁の数字を入力してください (0000・1234等の簡単な番号は不可)。",
     pinSetSuccess: "PINを登録しました。次回から社員番号とPINでログインできます。",
     pinWrong: "社員番号またはPINが違います。",
+    pinAlreadySet: "PINは設定済みです。社員番号とPINでログインしてください。PINを忘れた場合は会社（総務）にご連絡ください。",
     logout: "ログアウト",
     menuApply: "前払い申請",
     menuHistory: "申請履歴",
@@ -1637,6 +1638,7 @@ const I18N = {
     pinInvalid: "Digite 4 dígitos (PINs simples como 0000/1234 não são permitidos).",
     pinSetSuccess: "PIN registrado. A partir da próxima vez, entre com nº e PIN.",
     pinWrong: "Nº de funcionário ou PIN incorreto.",
+    pinAlreadySet: "O PIN já foi configurado. Entre com o nº de funcionário e o PIN. Se esqueceu o PIN, entre em contato com a empresa (RH).",
     logout: "Sair",
     menuApply: "Adiantamento",
     menuHistory: "Histórico",
@@ -1710,6 +1712,7 @@ const I18N = {
     pinInvalid: "Enter 4 digits (simple PINs like 0000/1234 are not allowed).",
     pinSetSuccess: "PIN registered. Next time, sign in with your number and PIN.",
     pinWrong: "Employee number or PIN is incorrect.",
+    pinAlreadySet: "A PIN is already set. Please log in with your employee number and PIN. If you forgot your PIN, please contact the company (HR).",
     logout: "Sign Out",
     menuApply: "Advance Request",
     menuHistory: "Request History",
@@ -3700,7 +3703,7 @@ async function tryVerifyForSetup() {
         }
       }
     } else if (data.token) {
-      // 既に PIN 設定済みだが 3要素一致でログイン (PIN 救済)
+      // 旧バックエンド互換: 3要素一致でトークンが返った場合はそのままログイン
       state.token = data.token;
       state.profile = data.profile;
       localStorage.setItem("token", data.token);
@@ -3712,6 +3715,12 @@ async function tryVerifyForSetup() {
     if (e.status === 429) {
       const remainMin = Math.ceil(((e.data && e.data.remainingSeconds) || 1800) / 60);
       _showInlineError('setup-error', t('lockedOut').replace('{min}', remainMin));
+    } else if (e.status === 409 && e.data && e.data.error === 'pin_already_set') {
+      // PIN 設定済み → 3要素ログイン不可 (なりすまし対策)。PIN ログイン画面へ誘導
+      showLoginMode('pin');
+      const shEl = document.getElementById('login-shainno');
+      if (shEl && shainNo) shEl.value = shainNo;
+      _showInlineError('login-error', t('pinAlreadySet'), 'pinAlreadySet');
     } else if (e.status === 401) {
       _showInlineError('setup-error', t('authFailed'), 'authFailed');
     } else if (e.status === 403) {

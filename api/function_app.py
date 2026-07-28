@@ -803,8 +803,9 @@ def _validate_pin(pin: Any) -> Optional[str]:
 @app.route(route="auth/login", methods=["POST", "OPTIONS"])
 def auth_login(req: func.HttpRequest) -> func.HttpResponse:
     """初回ログイン (3要素照合)。PIN 未設定なら pinSetupRequired を返す。
-    PIN 設定済みの場合はこのエンドポイントは使わず /auth/pin-login を使う想定だが、
-    互換のため 3要素一致時はトークンも発行する。"""
+    PIN 設定済みの場合は 3要素が一致してもログインさせない (409 pin_already_set)。
+    生年月日・電話下4桁は本人以外も知り得るため、なりすまし防止で PIN のみを鍵とする。
+    PIN 忘れは総務が yukyu-app からポータルPIN列をクリア → 初回設定やり直し。"""
     pf = _handle_preflight(req)
     if pf:
         return pf
@@ -849,10 +850,8 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
             "setupToken": setup_token,
             "profile": _employee_to_profile(emp),
         })
-    # PIN 設定済みでも 3要素が合っていればログインさせる (PIN 忘れの救済も兼ねる)
-    token = jwt_issue(shain_no)
-    profile = _employee_to_profile(emp)
-    return _json_response({"token": token, "profile": profile})
+    # PIN 設定済み → 3要素ではログインさせない (2026-07-28 なりすまし対策で救済ルート廃止)
+    return _json_response({"error": "pin_already_set"}, 409)
 
 
 def jwt_issue_setup(shain_no: int) -> str:
