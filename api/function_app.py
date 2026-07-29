@@ -3184,6 +3184,8 @@ SOUGEI_DESTS = [
     {"name": "ASTI浜松", "go": ["8:00"], "back": ["17:00", "18:00", "19:00", "20:00"]},
     {"name": "ユーシン", "go": ["9:00"], "back": ["17:40", "19:45"]},
     {"name": "ASTI掛川", "go": ["8:00"], "back": ["17:00", "18:00", "19:00"]},
+    # ASTI都田 (2026-07-29 追加): 夜勤あり。入20:15の帰りは翌朝の出5:15/出8:00
+    {"name": "ASTI都田", "go": ["8:00", "20:15"], "back": ["17:00", "20:10", "5:15", "8:00"]},
 ]
 SOUGEI_SPECIALS = ["遅刻", "早退", "病院対応", "その他（休業）"]
 SOUGEI_BACKDATE_DAYS = 7   # 記録し忘れの遡り許容日数
@@ -3192,6 +3194,7 @@ SOUGEI_TANTOU_BY_DEST = {
     "ASTI浜松": "m.yoshiura@team-stepup.com",   # 吉浦マルセロ
     "ユーシン": "kaori.j@team-stepup.com",      # 城かおり (2026-07-28 森まことから変更)
     "ASTI掛川": "y.mori@team-stepup.com",       # 森ゆうじ
+    "ASTI都田": "y.mori@team-stepup.com",       # 森ゆうじ (2026-07-29 追加・078担当と同じ)
 }
 
 
