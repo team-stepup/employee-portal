@@ -767,7 +767,10 @@ def get_next_payday_for_friday(haraibi: str, friday: _dt.date) -> Optional[_dt.d
     例: 翌月末日支払いで f = 2026/05/29 なら、5/31 (4月分支払日) を返す。
          f = 2026/07/03 なら、7/31 (6月分支払日) を返す (6/30 は既に過ぎた支払い)。
     給料日週 NG 判定は「次回受け取り給料日が f と同週か」で行う。
-    給料日が土日祝の場合は前倒しした実際の振込日で判定する。"""
+    給料日が土日祝の場合は前倒しした実際の振込日で判定する。
+    同週判定のため、f より前でも f の週の月曜以降の給料日は返す
+    (例: 給料日8/20(木) に対する f=8/21(金) は同週なのでNGにする必要がある)。"""
+    week_mon, _week_sun = week_range(friday)
     for offset in (-2, -1, 0, 1, 2, 3):
         y, m = friday.year, friday.month + offset
         while m > 12:
@@ -780,7 +783,7 @@ def get_next_payday_for_friday(haraibi: str, friday: _dt.date) -> Optional[_dt.d
         pd = parse_payday_rule(haraibi, ref)
         if pd:
             pd = _adjust_payday_to_bank_day(pd)
-        if pd and pd >= friday:
+        if pd and pd >= week_mon:
             return pd
     return None
 
