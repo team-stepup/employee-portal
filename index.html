@@ -4730,6 +4730,10 @@ async function initRequestScreen() {
   document.getElementById('apply-reason').value = '';
   // 金額 UI リセット
   try {
+    // プルダウンも placeholder に戻す (前回の選択が見た目だけ残ると、state=未選択との
+    // 不一致で「同じ金額を選んだつもりなのに"金額を選択してください"」になる)
+    const _amtSel = document.getElementById('amount-select');
+    if (_amtSel) _amtSel.value = '';
     document.getElementById('amount-custom-wrap').classList.add('hidden');
     document.getElementById('amount-custom').value = '';
     document.getElementById('amount-custom-error').classList.add('hidden');
@@ -5484,7 +5488,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v48';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v49';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available
