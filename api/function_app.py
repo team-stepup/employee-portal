@@ -3208,6 +3208,90 @@ def _sougei_own_records(shain_no: int, date_from: _dt.date, date_to: _dt.date) -
     return out
 
 
+# ====== 前払い 承認/却下 → 本人へロック画面Push (yukyu-app から呼び出し・2026-07-29) ======
+@app.route(route="yukyu/maebarai-notify", methods=["POST", "OPTIONS"])
+def yukyu_maebarai_notify(req: func.HttpRequest) -> func.HttpResponse:
+    """担当者が前払いを承認/却下した時に、本人へ国籍別言語(ja/en/pt)でPush通知+アイコンバッジ。
+    呼び出し元: yukyu-app approveMaebariShinsei / rejectMaebariShinsei (best-effort・失敗しても承認は成立)。
+    Body: { shainNo, id, action: 'approved'|'rejected', reason?, amount?, kiboubi?(ISO) }"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    _staff, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    try:
+        shain_no = int(float(body.get("shainNo")))
+    except (TypeError, ValueError):
+        return _json_response({"error": "invalid_shain_no"}, 400)
+    action = str(body.get("action") or "")
+    if action not in ("approved", "rejected"):
+        return _json_response({"error": "invalid_action"}, 400)
+    reason = str(body.get("reason") or "").strip()
+    amount = str(body.get("amount") or "").strip()
+    kiboubi = str(body.get("kiboubi") or "").strip()
+
+    items = sp_get_items(
+        LIST_SHAIN,
+        select=f"Id,{F_SHAIN_NO},{F_KOKUSEKI},{F_PORTAL_PUSH}",
+        filter_=f"{F_SHAIN_NO} eq {shain_no}",
+        orderby="Id desc",
+    )
+    # 同一社員番号の複数レコード対策: Push購読があるレコードを優先
+    emp = None
+    for it in items:
+        if (it.get(F_PORTAL_PUSH) or "").strip():
+            emp = it
+            break
+    if emp is None:
+        emp = items[0] if items else None
+    if not emp:
+        return _json_response({"ok": False, "pushed": 0, "detail": "employee_not_found"})
+    sub = (emp.get(F_PORTAL_PUSH) or "").strip()
+    if not sub:
+        return _json_response({"ok": True, "pushed": 0, "detail": "no_subscription"})
+
+    lang = _notify_lang(str(emp.get(F_KOKUSEKI) or ""))
+    kd = ""
+    if kiboubi:
+        try:
+            _kdt = _dt.datetime.fromisoformat(kiboubi.replace("Z", "+00:00")) + _dt.timedelta(hours=9)
+            kd = f"{_kdt.month}/{_kdt.day}"
+        except Exception:
+            kd = ""
+    amt = f"¥{amount}" if amount else ""
+    if action == "approved":
+        titles = {"ja": "💴 前払いが承認されました", "pt": "💴 Adiantamento aprovado",
+                  "en": "💴 Advance approved"}
+        bodies = {
+            "ja": f"前払い申請{f'（{amt}）' if amt else ''}が承認されました。" + (f"{kd} に振込予定です。" if kd else ""),
+            "pt": f"Seu pedido de adiantamento{f' ({amt})' if amt else ''} foi aprovado." + (f" Depósito previsto: {kd}." if kd else ""),
+            "en": f"Your advance request{f' ({amt})' if amt else ''} has been approved." + (f" Payment date: {kd}." if kd else ""),
+        }
+    else:
+        titles = {"ja": "前払い申請の結果", "pt": "Resultado do adiantamento",
+                  "en": "Advance request result"}
+        bodies = {
+            "ja": "申請は承認されませんでした。" + (f"理由: {reason}" if reason else "アプリでご確認ください。"),
+            "pt": "Seu pedido não foi aprovado." + (f" Motivo: {reason}" if reason else " Verifique no aplicativo."),
+            "en": "Your request was not approved." + (f" Reason: {reason}" if reason else " Please check the app."),
+        }
+    payload = {"title": titles[lang], "body": bodies[lang], "url": "/",
+               "tag": f"maebarai-{action}-{body.get('id') or ''}", "badge": 1}
+    r = _send_web_push(sub, payload)
+    if r == "gone":
+        try:
+            sp_patch_item(LIST_SHAIN, int(emp["Id"]), {F_PORTAL_PUSH: ""})
+        except Exception:
+            pass
+    logging.info("maebarai-notify shain=%s action=%s lang=%s result=%s", shain_no, action, lang, r)
+    return _json_response({"ok": True, "pushed": 1 if r == "ok" else 0, "lang": lang, "result": r})
+
+
 @app.route(route="sougei/config", methods=["GET", "OPTIONS"])
 def sougei_config(req: func.HttpRequest) -> func.HttpResponse:
     """送迎記録の画面マスタ (送迎先/時刻/特別区分) + 本日の自分の記録。"""
