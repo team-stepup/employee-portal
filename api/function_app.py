@@ -655,9 +655,13 @@ def find_active_employee(shain_no: int, birthday: str, tel_last4: str) -> Option
 # ====== 業務ロジック: 給料日週・休日 ======
 def list_kaisha_kyujitsu_dates() -> List[_dt.date]:
     items = sp_get_items(LIST_KAISHA_KYUJITSU,
-                         select=f"Id,{F_KYUJITSU_DATE},{F_KYUJITSU_KIND}")
+                         select=f"Id,{F_KYUJITSU_DATE},{F_KYUJITSU_KIND},{F_KYUJITSU_NAME}")
     out = []
     for it in items:
+        # 「半日有給」の日は稼働日扱い → 前払いNG判定の休日に含めない (2026-07-29 ルール確定)
+        label = f"{it.get(F_KYUJITSU_KIND) or ''} {it.get(F_KYUJITSU_NAME) or ''}"
+        if "半日" in label or "半有給" in label:
+            continue
         d = _utc_to_jst_date(it.get(F_KYUJITSU_DATE))
         if d:
             out.append(d)
@@ -737,11 +741,26 @@ def is_in_payday_week(friday: _dt.date, payday: _dt.date) -> bool:
     return mon <= payday <= sun
 
 
+def _adjust_payday_to_bank_day(pd: _dt.date) -> _dt.date:
+    """給料日が土日祝(銀行休業日)の場合、直前の平日に前倒しする=実際の振込日。
+    (例: 20日が日曜→18日(金)、20日が月曜祝日→17日(金)。給料日週NGは振込日基準で判定)
+    jpholiday 未導入環境でも土日前倒しだけは効くようフォールバックする。"""
+    try:
+        import jpholiday
+        def _is_hol(d): return bool(jpholiday.is_holiday(d))
+    except Exception:
+        def _is_hol(d): return False
+    while pd.weekday() >= 5 or _is_hol(pd) or (pd.month == 1 and pd.day <= 3) or (pd.month == 12 and pd.day == 31):
+        pd -= _dt.timedelta(days=1)
+    return pd
+
+
 def get_next_payday_for_friday(haraibi: str, friday: _dt.date) -> Optional[_dt.date]:
-    """金曜日 f に対する「次回受け取り予定の給料日」(>= f) を返す。
+    """金曜日 f に対する「次回受け取り予定の給料日(振込日ベース)」(>= f) を返す。
     例: 翌月末日支払いで f = 2026/05/29 なら、5/31 (4月分支払日) を返す。
          f = 2026/07/03 なら、7/31 (6月分支払日) を返す (6/30 は既に過ぎた支払い)。
-    給料日週 NG 判定は「次回受け取り給料日が f と同週か」で行う。"""
+    給料日週 NG 判定は「次回受け取り給料日が f と同週か」で行う。
+    給料日が土日祝の場合は前倒しした実際の振込日で判定する。"""
     for offset in (-2, -1, 0, 1, 2, 3):
         y, m = friday.year, friday.month + offset
         while m > 12:
@@ -752,6 +771,8 @@ def get_next_payday_for_friday(haraibi: str, friday: _dt.date) -> Optional[_dt.d
             m += 12
         ref = _dt.date(y, m, 1)
         pd = parse_payday_rule(haraibi, ref)
+        if pd:
+            pd = _adjust_payday_to_bank_day(pd)
         if pd and pd >= friday:
             return pd
     return None
@@ -6014,11 +6035,17 @@ def health(req: func.HttpRequest) -> func.HttpResponse:
         sp_ok = len(items) >= 0
     except Exception as e:
         sp_error = str(e)
+    try:
+        import jpholiday  # noqa: F401
+        _jph = True
+    except Exception:
+        _jph = False
     return _json_response({
         "ok": True,
         "spOk": sp_ok,
         "spError": sp_error,
         "jwtConfigured": bool(JWT_SECRET),
+        "jpholiday": _jph,
         "timestamp": _dt.datetime.utcnow().isoformat(),
     })
 

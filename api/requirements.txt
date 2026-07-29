@@ -8,3 +8,4 @@ requests
 pyjwt
 pywebpush
 Pillow
+jpholiday
