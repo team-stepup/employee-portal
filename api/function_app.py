@@ -678,8 +678,15 @@ def fetch_hakensaki(buka_text: str) -> Optional[Dict[str, Any]]:
     )
     bno = parse_buka_no(buka_text)
     for it in items:
-        if it.get(F_HAKEN_BANGO) == bno or it.get(F_HAKEN_TITLE) == buka_text:
+        if str(it.get(F_HAKEN_BANGO) or "") == str(bno) or it.get(F_HAKEN_TITLE) == buka_text:
             return it
+    # 枝番フォールバック: 社員の部課=094 だが List 番号=094-1 のような登録ずれ対策。
+    # 完全一致が無い時のみ「094-」始まりを許容 (002 と 002-1 のような別会社は完全一致が先に効く)
+    if bno:
+        for it in items:
+            b = str(it.get(F_HAKEN_BANGO) or "")
+            if b.startswith(str(bno) + "-") or b.startswith(str(bno) + "－"):
+                return it
     return None
 
 
