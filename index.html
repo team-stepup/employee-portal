@@ -727,6 +727,11 @@
       <span class="label" data-i18n="menuRenraku">お知らせ</span>
       <span id="renraku-badge" class="new-badge hidden">0</span>
     </div>
+    <div class="menu-card" id="menu-card-meisai" onclick="showScreen('meisai')">
+      <span class="card-num">💰</span>
+      <span class="icon">💰</span>
+      <span class="label" data-i18n="menuMeisai">給料明細</span>
+    </div>
     <div class="menu-card" id="menu-card-zairyu" onclick="showScreen('zairyu')">
       <span class="card-num">③</span>
       <span class="icon">🪪</span>
@@ -1427,6 +1432,20 @@
   <button class="btn btn-secondary" onclick="showScreen('home')" data-i18n="back">戻る</button>
 </div>
 
+<!-- ====== Screen: 給料明細 (本人ダウンロード・源泉と同方式) ====== -->
+<div id="screen-meisai" class="container hidden">
+  <div class="header">
+    <h1>💰 <span data-i18n="meisaiTitle">給料明細</span></h1>
+    <span class="logout-btn" onclick="showScreen('home')">✕</span>
+  </div>
+  <div class="card">
+    <p style="font-size:0.85em;color:#666;margin:0 0 12px;" data-i18n="meisaiHint">タップすると表示・保存できます。</p>
+    <div id="meisai-loading" style="text-align:center;padding:20px;"><div class="spinner"></div></div>
+    <div id="meisai-list"></div>
+    <div id="meisai-empty" class="hidden" style="color:#999;text-align:center;padding:16px;" data-i18n="meisaiEmpty">給料明細はまだありません。</div>
+  </div>
+</div>
+
 <!-- ====== Screen: お知らせ (連絡事項) ====== -->
 <div id="screen-renraku" class="container hidden">
   <div class="header">
@@ -1572,6 +1591,10 @@ const I18N = {
     pinWrong: "社員番号またはPINが違います。",
     pinAlreadySet: "PINは設定済みです。社員番号とPINでログインしてください。PINを忘れた場合は会社（総務）にご連絡ください。",
     portalNotOpen: "従業員ポータルは順番にご案内しています。あなたの職場ではまだ利用開始前です。開始までお待ちください。",
+    menuMeisai: "給料明細",
+    meisaiTitle: "給料明細",
+    meisaiHint: "タップすると表示・保存できます。コンビニ印刷は「必要書類」画面の🏪ガイドを参照してください。",
+    meisaiEmpty: "給料明細はまだありません。",
     logout: "ログアウト",
     menuApply: "前払い申請",
     menuHistory: "申請履歴",
@@ -1642,6 +1665,10 @@ const I18N = {
     pinWrong: "Nº de funcionário ou PIN incorreto.",
     pinAlreadySet: "O PIN já foi configurado. Entre com o nº de funcionário e o PIN. Se esqueceu o PIN, entre em contato com a empresa (RH).",
     portalNotOpen: "O portal do funcionário está sendo liberado em etapas. Ainda não está disponível para o seu local de trabalho. Aguarde o início.",
+    menuMeisai: "Holerite",
+    meisaiTitle: "Holerite (contracheque)",
+    meisaiHint: "Toque para abrir/salvar. Para imprimir na loja de conveniência, veja o guia 🏪 na tela de Documentos.",
+    meisaiEmpty: "Nenhum holerite ainda.",
     logout: "Sair",
     menuApply: "Adiantamento",
     menuHistory: "Histórico",
@@ -1717,6 +1744,10 @@ const I18N = {
     pinWrong: "Employee number or PIN is incorrect.",
     pinAlreadySet: "A PIN is already set. Please log in with your employee number and PIN. If you forgot your PIN, please contact the company (HR).",
     portalNotOpen: "The employee portal is being rolled out in stages. It is not yet available for your workplace. Please wait for the launch.",
+    menuMeisai: "Payslip",
+    meisaiTitle: "Payslip",
+    meisaiHint: "Tap to view/save. For convenience-store printing, see the 🏪 guide on the Documents screen.",
+    meisaiEmpty: "No payslips yet.",
     logout: "Sign Out",
     menuApply: "Advance Request",
     menuHistory: "Request History",
@@ -3169,6 +3200,56 @@ async function sharePdfFile(file) {
     return 'failed';
   }
 }
+// ====== 給料明細 (本人ダウンロード・源泉徴収票と同方式) ======
+async function loadMeisaiList() {
+  const listEl = document.getElementById('meisai-list');
+  const loadingEl = document.getElementById('meisai-loading');
+  const emptyEl = document.getElementById('meisai-empty');
+  listEl.innerHTML = '';
+  emptyEl.classList.add('hidden');
+  loadingEl.classList.remove('hidden');
+  try {
+    const data = await callApi('GET', '/shorui/meisai-list');
+    const items = data.items || [];
+    loadingEl.classList.add('hidden');
+    if (items.length === 0) {
+      emptyEl.classList.remove('hidden');
+      return;
+    }
+    items.forEach(it => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'btn-download-doc';
+      row.innerHTML = '💰 <span>' + it.label + '</span>';
+      row.onclick = () => downloadMeisai(it.serverRelativeUrl, it.fileName, row);
+      listEl.appendChild(row);
+    });
+  } catch (e) {
+    loadingEl.classList.add('hidden');
+    emptyEl.classList.remove('hidden');
+    emptyEl.textContent = t('networkError') + ((e.data && e.data.error) ? ' (' + e.data.error + ')' : '');
+  }
+}
+
+async function downloadMeisai(serverRelativeUrl, fileName, btn) {
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '⏳ <span>' + t('shoruiDownloading') + '</span>';
+  try {
+    const data = await callApi('GET', '/shorui/meisai-download?url=' + encodeURIComponent(serverRelativeUrl));
+    const byteChars = atob(data.base64);
+    const bytes = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([bytes], { type: data.contentType || 'application/pdf' });
+    savePdfBlob(blob, data.fileName || fileName || 'meisai.pdf');
+  } catch (e) {
+    showAlert(t('networkError') + ((e.data && e.data.error) ? ' (' + e.data.error + ')' : ''), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
 function savePdfBlob(blob, fileName) {
   const url = URL.createObjectURL(blob);
   const pw = window.open(url, '_blank');
@@ -3582,7 +3663,7 @@ function acceptRules() {
 function showScreen(name) {
   ['login','home','request','history','zairyu','zairyu-confirm','license','license-confirm',
    'shaken','shaken-confirm','hoken','hoken-confirm','shorui','shorui-history','bento','bento-approve','renraku','kyuyu',
-   'sougei-kiroku','sougei-history','jiko'].forEach(s => {
+   'sougei-kiroku','sougei-history','jiko','meisai'].forEach(s => {
     const el = document.getElementById('screen-' + s);
     if (el) el.classList.add('hidden');
   });
@@ -3602,6 +3683,7 @@ function showScreen(name) {
   if (name === 'bento-approve') initBentoApproveScreen();
   if (name === 'renraku') initRenrakuScreen();
   if (name === 'sougei-history') initSougeiHistoryScreen();
+  if (name === 'meisai') loadMeisaiList();
 }
 
 // ====== ログイン ======
@@ -3867,7 +3949,8 @@ function renderHome() {
   const sougeiCard = document.getElementById('menu-card-sougei');
   if (sougeiCard) sougeiCard.style.display = state.profile.sougeiKirokuEligible ? '' : 'none';
   const jikoCard = document.getElementById('menu-card-jiko');
-  if (jikoCard) jikoCard.style.display = state.profile.sougeiKirokuEligible ? '' : 'none';
+  // 2026-07-29 ユーザー指示で報告書(事故報告)ボタンは非表示 (再表示は sougeiKirokuEligible 判定に戻す)
+  if (jikoCard) jikoCard.style.display = 'none';
   // 必要書類 請求: 運転手(094:本社（送迎者）)には出さない
   const shoruiCard = document.getElementById('menu-card-shorui');
   if (shoruiCard) shoruiCard.style.display = state.profile.sougeiKirokuEligible ? 'none' : '';
@@ -5488,7 +5571,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v49';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v50';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available

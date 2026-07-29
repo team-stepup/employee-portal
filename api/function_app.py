@@ -5818,6 +5818,94 @@ def shorui_gensen_download(req: func.HttpRequest) -> func.HttpResponse:
         return _json_response({"error": "internal", "detail": str(e)}, 500)
 
 
+# ====== 給料明細 本人ダウンロード (2026-07-29・源泉徴収票と同方式) ======
+MEISAI_BASE_PATH = "/sites/TeamStepup/Shared Documents/社員ファイル/給与明細データ"
+# ファイル名規則: 給与 + 支払日YYYYMMDD + 社員番号(ゼロ埋め) + .pdf  例: 給与20260717050466.pdf
+_MEISAI_RE = re.compile(r"^給与(\d{8})(\d{1,7})\.pdf$", re.IGNORECASE)
+
+
+def _match_meisai_filename(fname: str, shain_no: int) -> Optional[str]:
+    """本人の明細なら支払日 YYYYMMDD を返す。違えば None。"""
+    m = _MEISAI_RE.match(fname or "")
+    if not m:
+        return None
+    try:
+        if int(m.group(2)) != int(shain_no):
+            return None
+    except ValueError:
+        return None
+    return m.group(1)
+
+
+@app.route(route="shorui/meisai-list", methods=["GET", "OPTIONS"])
+def shorui_meisai_list(req: func.HttpRequest) -> func.HttpResponse:
+    """本人の給料明細 PDF を月別フォルダから検索して一覧返す (総務不要)。
+    現行命名の月別フォルダ (R7.〜 / R8.〜) のみ対象。旧年フォルダ(2019等)は対象外。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    try:
+        matches: List[Dict[str, Any]] = []
+        for f in _ts_folders(MEISAI_BASE_PATH):
+            folder_name = f.get("Name", "")
+            if not re.match(r"^R\d+", folder_name):
+                continue
+            try:
+                files = _ts_files(f.get("ServerRelativeUrl"))
+            except Exception:
+                continue
+            for fl in files:
+                pay = _match_meisai_filename(fl.get("Name", ""), shain_no)
+                if pay:
+                    # フォルダ名の括弧以降(支払日メモ)を除去 → 「R8.6月分」
+                    label = re.sub(r"[\s　]*[（(【].*$", "", folder_name)
+                    disp = f"{label}（支払 {int(pay[4:6])}/{int(pay[6:8])}）"
+                    matches.append({
+                        "label": disp,
+                        "payDate": pay,
+                        "fileName": fl.get("Name"),
+                        "serverRelativeUrl": fl.get("ServerRelativeUrl"),
+                    })
+        matches.sort(key=lambda m: m.get("payDate", ""), reverse=True)
+        return _json_response({"items": matches[:24]})
+    except Exception as e:
+        logging.exception("meisai-list failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
+@app.route(route="shorui/meisai-download", methods=["GET", "OPTIONS"])
+def shorui_meisai_download(req: func.HttpRequest) -> func.HttpResponse:
+    """本人の給料明細 PDF をダウンロード (base64)。
+    Query: ?url=<serverRelativeUrl>。明細フォルダ配下 + ファイル名が本人の社員番号のみ許可。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    shain_no = int(payload["shainNo"])
+    sru = req.params.get("url") or ""
+    if not sru.startswith(MEISAI_BASE_PATH + "/") or ".." in sru:
+        return _json_response({"error": "invalid_path"}, 400)
+    fname = sru.rstrip("/").split("/")[-1]
+    if not _match_meisai_filename(fname, shain_no):
+        return _json_response({"error": "forbidden"}, 403)
+    try:
+        from urllib.parse import quote
+        api = f"{SITE_TEAMSTEPUP}/_api/web/GetFileByServerRelativeUrl('{quote(sru)}')/$value"
+        rb = requests.get(api, headers={"Authorization": f"Bearer {_get_sp_token()}"}, timeout=60)
+        rb.raise_for_status()
+        b64 = base64.b64encode(rb.content).decode("ascii")
+        return _json_response({"fileName": fname, "contentType": "application/pdf", "base64": b64})
+    except Exception as e:
+        logging.exception("meisai-download failed")
+        return _json_response({"error": "internal", "detail": str(e)}, 500)
+
+
 # 会社情報 (在職証明書) — yukyu-app と同一
 COMPANY_INFO = {
     "addrJp": "静岡県磐田市上本郷1006-7",
