@@ -1387,6 +1387,7 @@
 <div id="screen-history" class="container hidden">
   <div class="header">
     <h1>📋 <span data-i18n="screenHistoryTitle">申請履歴</span></h1>
+    <span class="logout-btn" id="history-refresh-btn" onclick="refreshHistoryFromButton()" style="margin-right:6px;">🔄</span>
     <span class="logout-btn" onclick="showScreen('home')">✕</span>
   </div>
 
@@ -4928,6 +4929,20 @@ function _historyMaebariCard(it) {
   return item;
 }
 
+// ヘッダーの 🔄 再読込ボタン: 現在のビューを保ったままサーバーから再取得
+async function refreshHistoryFromButton() {
+  const btn = document.getElementById('history-refresh-btn');
+  const loading = document.getElementById('history-loading');
+  if (btn) { btn.style.opacity = '0.4'; btn.style.pointerEvents = 'none'; }
+  if (loading) loading.classList.remove('hidden');
+  try {
+    await refreshHistoryData();
+  } finally {
+    if (loading) loading.classList.add('hidden');
+    if (btn) { btn.style.opacity = ''; btn.style.pointerEvents = ''; }
+  }
+}
+
 // 前払いキャンセル等の後、現在のビュー(詳細なら詳細)を保ったまま再取得・再描画
 async function refreshHistoryData() {
   try {
@@ -5469,7 +5484,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v47';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v48';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available
