@@ -1072,14 +1072,36 @@ def _fetch_today_sougei(shain_no: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
+# ====== 車両管理List (/sites/PowerApps/Lists/List) ======
+# 担当車両カード・給油申請の既定車両・給油申請の対象判定 の3か所から参照するため共通化。
+# プロフィール取得ごとに毎回 SP を叩かないよう短期キャッシュ(5分)。総務がListを直したときも
+# 5分以内に反映されるのでデータ修正の確認を待たせない。
+SHARYO_LIST_PATH = "/sites/PowerApps/Lists/List"
+_sharyo_cache: Dict[str, Any] = {"items": None, "ts": 0.0}
+
+
+def _sharyo_items() -> List[Dict[str, Any]]:
+    """車両管理Listの全行(5分キャッシュ)。失敗時は前回値、無ければ空リスト(best-effort)。"""
+    now = time.time()
+    if _sharyo_cache["items"] is not None and (now - _sharyo_cache["ts"] < 300):
+        return _sharyo_cache["items"]
+    try:
+        h = {"Authorization": f"Bearer {_get_sp_token()}", "Accept": "application/json;odata=nometadata"}
+        url = f"{SITE_URL}/_api/web/GetList('{SHARYO_LIST_PATH}')/items?$top=500"
+        items = requests.get(url, headers=h, timeout=30).json().get("value", [])
+        _sharyo_cache["items"] = items
+        _sharyo_cache["ts"] = now
+        return items
+    except Exception:
+        logging.exception("sharyo list fetch failed")
+        return _sharyo_cache["items"] or []
+
+
 def _driver_vehicle_card(shain_no: int) -> Optional[Dict[str, str]]:
     """車両管理List(DriverShainNo==社員番号)から担当車両の 車名+ナンバープレート を返す。
     名前カード表示用。該当なし/失敗時は None (best-effort)。"""
     try:
-        h = {"Authorization": f"Bearer {_get_sp_token()}", "Accept": "application/json;odata=nometadata"}
-        url = f"{SITE_URL}/_api/web/GetList('/sites/PowerApps/Lists/List')/items?$top=500"
-        items = requests.get(url, headers=h, timeout=30).json().get("value", [])
-        for it in items:
+        for it in _sharyo_items():
             ds = it.get("DriverShainNo")
             try:
                 if ds is None or int(float(ds)) != int(shain_no):
@@ -2581,7 +2603,11 @@ def zairyu_ocr(req: func.HttpRequest) -> func.HttpResponse:
 # (旧 Forms 用 Power Automate フローは Forms 応答トリガーでポータル投入には発火しないため。
 #  F1/Forms 廃止後も止まらないようバックエンドに集約。)精算は浩俊が随時。
 LIST_GASORIN = "ac84ec0e-6853-463a-9469-d94b52940485"   # SP「ガソリン代払い戻し」(List54)
-KYUYU_DRIVERS = {50466, 50565, 50692, 50709, 50736, 50743, 50750, 60057, 111113, 111356}
+# 給油申請の対象運転手(社員番号)。2026-06 の F1 解約時の10名を起点に列挙。
+# 以後の増員は _kyuyu_assigned_drivers() (車両管理List駆動) が自動で拾うので追記不要。
+# 50715 ヒラタ ベーラ = 2026-07-30 追加 (車両管理Listには7638ハイエースで登録済だったが
+# 当時は本セットだけで判定していたためホームに⛽給油ボタンが出ていなかった)。
+KYUYU_DRIVERS = {50466, 50565, 50692, 50709, 50715, 50736, 50743, 50750, 60057, 111113, 111356}
 KYUYU_FOLDER_BASE = "/sites/TeamStepup/Shared Documents/給油申請レシート"
 # Teams「送迎関係」チャネルのメールアドレス(チャネルへメール投稿=Forms フロー廃止後も通知継続)。
 # 既定値はメモ由来。実際のチャネルメール(Teams→チャネル→メールアドレスを取得)で上書き可。
@@ -2641,10 +2667,7 @@ def _kyuyu_default_vehicle(shain_no: int, vehicles: List[str]) -> str:
     """車両管理(List=/sites/PowerApps/Lists/List)の DriverShainNo==社員番号 の担当車両を探し、
     vehicles(List54の選択肢)から ナンバー一致 する1件を返す。無ければ ''(=選択してください)。"""
     try:
-        h = {"Authorization": f"Bearer {_get_sp_token()}", "Accept": "application/json;odata=nometadata"}
-        url = f"{SITE_URL}/_api/web/GetList('/sites/PowerApps/Lists/List')/items?$top=500"
-        items = requests.get(url, headers=h, timeout=30).json().get("value", [])
-        for it in items:
+        for it in _sharyo_items():
             ds = it.get("DriverShainNo")
             try:
                 if ds is None or int(float(ds)) != int(shain_no):
@@ -2671,11 +2694,39 @@ def _kyuyu_default_vehicle(shain_no: int, vehicles: List[str]) -> str:
         return ""
 
 
+def _kyuyu_assigned_drivers() -> set:
+    """車両管理Listで担当車両(Usage='使用')が割り当てられている社員番号の集合。
+    廃車/売却行は DriverShainNo が空なので自然に除外される。"""
+    out = set()
+    for it in _sharyo_items():
+        if str(it.get("Usage") or "").strip() != "使用":
+            continue
+        ds = it.get("DriverShainNo")
+        if ds is None or str(ds).strip() == "":
+            continue
+        try:
+            out.add(int(float(ds)))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def _kyuyu_eligible(emp: Dict[str, Any]) -> bool:
-    """給油申請の対象=送迎運転手(社員番号がドライバーセットに含まれる)。"""
+    """給油申請の対象=送迎運転手。判定は2段構え:
+      ① KYUYU_DRIVERS (F1解約時の初期メンバーを固定列挙。車両管理List障害時の保険も兼ねる)
+      ② 車両管理Listで担当車両(Usage='使用')が割り当てられている社員番号
+    ②があるので、運転手が増えても総務が車両管理Listに登録すれば自動で対象になる
+    (コード修正+デプロイ不要)。②の取得失敗時は①のみで判定 (best-effort)。"""
     try:
-        return int(float(emp.get(F_SHAIN_NO))) in KYUYU_DRIVERS
+        sn = int(float(emp.get(F_SHAIN_NO)))
+    except (TypeError, ValueError):
+        return False
+    if sn in KYUYU_DRIVERS:
+        return True
+    try:
+        return sn in _kyuyu_assigned_drivers()
     except Exception:
+        logging.exception("kyuyu assigned-driver lookup failed")
         return False
 
 
