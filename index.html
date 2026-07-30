@@ -282,6 +282,83 @@
   }
   .btn-download-doc:active { background: #d8eed8; }
   .btn-download-doc:disabled { opacity: 0.6; cursor: default; }
+  /* ====== 給料明細リスト (v51 デザイン刷新・過去1年分) ====== */
+  .ms-summary {
+    display: flex; align-items: center; gap: 11px;
+    background: linear-gradient(135deg, #0f2a52 0%, #2e5a99 58%, #1e88a8 100%);
+    color: #fff; border-radius: 16px; padding: 13px 15px; margin-bottom: 12px;
+    box-shadow: 0 7px 18px rgba(31,56,100,0.28);
+    position: relative; overflow: hidden;
+  }
+  .ms-summary::after {   /* 斜めの光沢 */
+    content: ''; position: absolute; top: -50%; right: -6%;
+    width: 110px; height: 220%; background: rgba(255,255,255,0.09);
+    transform: rotate(20deg); pointer-events: none;
+  }
+  .ms-summary .ms-sm-ic { font-size: 1.7em; line-height: 1; }
+  .ms-summary .ms-sm-t { display: block; font-size: 0.94em; font-weight: 800; letter-spacing: 0.2px; }
+  .ms-summary .ms-sm-s {
+    display: block; font-size: 0.72em; opacity: 0.85; margin-top: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ms-summary .ms-sm-n { margin-left: auto; text-align: right; line-height: 1.05; padding-left: 6px; }
+  .ms-summary .ms-sm-n b { font-size: 1.55em; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .ms-summary .ms-sm-n span { font-size: 0.68em; opacity: 0.85; margin-left: 1px; }
+  .ms-hint { font-size: 0.78em; color: #5c7291; margin: 0 2px 10px; line-height: 1.5; }
+  .ms-year { display: flex; align-items: center; gap: 9px; margin: 16px 0 9px; }
+  .ms-year .ms-y-t {
+    font-size: 0.8em; font-weight: 800; color: #2e5a99;
+    letter-spacing: 0.6px; white-space: nowrap;
+  }
+  .ms-year .ms-y-line { flex: 1; height: 1px; background: linear-gradient(90deg, #a9c1e0, rgba(169,193,224,0)); }
+  .ms-card {
+    display: flex; align-items: center; gap: 11px; width: 100%;
+    background: #fff; border: none; border-radius: 16px;
+    padding: 13px 14px 13px 0; margin-bottom: 10px;
+    box-shadow: 0 3px 10px rgba(31,56,100,0.10);
+    cursor: pointer; text-align: left; overflow: hidden; position: relative;
+    font-family: inherit; color: #1f3864;
+    transition: transform 0.08s, box-shadow 0.12s;
+    animation: ms-in 0.34s cubic-bezier(0.2,0.7,0.3,1) both;
+  }
+  .ms-card::before {   /* 左のアクセントバー */
+    content: ''; flex: 0 0 5px; align-self: stretch;
+    background: linear-gradient(180deg, #2e5a99, #1e88a8);
+  }
+  .ms-card:active { transform: scale(0.985); box-shadow: 0 2px 6px rgba(31,56,100,0.12); }
+  .ms-card:disabled { cursor: default; }
+  @keyframes ms-in { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+  .ms-mon { display: flex; align-items: baseline; gap: 2px; margin-left: 13px; min-width: 76px; }
+  .ms-mon b {
+    font-size: 1.78em; font-weight: 800; line-height: 1;
+    letter-spacing: -0.5px; font-variant-numeric: tabular-nums;
+  }
+  .ms-mon i { font-style: normal; font-size: 0.75em; font-weight: 700; opacity: 0.72; }
+  .ms-mid { flex: 1; min-width: 0; }
+  .ms-mid .ms-pay { display: block; font-size: 0.8em; color: #6b7a90; font-weight: 700; }
+  .ms-mid .ms-tap { display: block; font-size: 0.68em; color: #a9b4c4; margin-top: 2px; }
+  .ms-dl {
+    flex: 0 0 38px; width: 38px; height: 38px; border-radius: 50%;
+    background: linear-gradient(135deg, #eaf2fb, #d5e4f6); color: #2e5a99;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1em; font-weight: 800;
+  }
+  .ms-pill {
+    position: absolute; top: 0; right: 0;
+    background: linear-gradient(135deg, #ffb300, #f57c00); color: #fff;
+    font-size: 0.62em; font-weight: 800; letter-spacing: 0.5px;
+    padding: 3px 10px 4px 12px; border-radius: 0 0 0 11px;
+  }
+  .ms-card.is-latest {   /* 最新月は塗りカードで主役に */
+    background: linear-gradient(135deg, #12305c 0%, #2e5a99 60%, #1e88a8 100%);
+    color: #fff; box-shadow: 0 9px 22px rgba(31,56,100,0.32);
+    padding-top: 17px; padding-bottom: 17px;
+  }
+  .ms-card.is-latest::before { background: linear-gradient(180deg, #ffd54f, #ffb300); }
+  .ms-card.is-latest .ms-mon b { font-size: 1.95em; }
+  .ms-card.is-latest .ms-mid .ms-pay { color: rgba(255,255,255,0.92); }
+  .ms-card.is-latest .ms-mid .ms-tap { color: rgba(255,255,255,0.6); }
+  .ms-card.is-latest .ms-dl { background: rgba(255,255,255,0.2); color: #fff; }
   .zaishoku-preview {
     border: 1.5px solid #e0e6ed; border-radius: 10px; padding: 10px 12px;
     background: #fafbfc; font-size: 0.92em; color: #1f3864;
@@ -1438,12 +1515,18 @@
     <h1>💰 <span data-i18n="meisaiTitle">給料明細</span></h1>
     <span class="logout-btn" onclick="showScreen('home')">✕</span>
   </div>
-  <div class="card">
-    <p style="font-size:0.85em;color:#666;margin:0 0 12px;" data-i18n="meisaiHint">タップすると表示・保存できます。</p>
-    <div id="meisai-loading" style="text-align:center;padding:20px;"><div class="spinner"></div></div>
-    <div id="meisai-list"></div>
-    <div id="meisai-empty" class="hidden" style="color:#999;text-align:center;padding:16px;" data-i18n="meisaiEmpty">給料明細はまだありません。</div>
+  <div id="meisai-summary" class="ms-summary hidden">
+    <span class="ms-sm-ic">💰</span>
+    <span style="flex:1; min-width:0;">
+      <span class="ms-sm-t" data-i18n="meisaiSummaryTitle">直近1年分の給料明細</span>
+      <span class="ms-sm-s" id="meisai-summary-sub"></span>
+    </span>
+    <span class="ms-sm-n"><b id="meisai-count">0</b><span data-i18n="meisaiCountUnit">件</span></span>
   </div>
+  <p class="ms-hint" data-i18n="meisaiHint">タップすると表示・保存できます。</p>
+  <div id="meisai-loading" style="text-align:center;padding:20px;"><div class="spinner"></div></div>
+  <div id="meisai-list"></div>
+  <div id="meisai-empty" class="hidden card" style="color:#999;text-align:center;padding:20px;" data-i18n="meisaiEmpty">給料明細はまだありません。</div>
 </div>
 
 <!-- ====== Screen: お知らせ (連絡事項) ====== -->
@@ -1593,8 +1676,14 @@ const I18N = {
     portalNotOpen: "従業員ポータルは順番にご案内しています。あなたの職場ではまだ利用開始前です。開始までお待ちください。",
     menuMeisai: "給料明細",
     meisaiTitle: "給料明細",
-    meisaiHint: "タップすると表示・保存できます。コンビニ印刷は「必要書類」画面の🏪ガイドを参照してください。",
+    meisaiHint: "直近1年分（12か月）を表示しています。それより前の明細が必要なときは会社（総務）にご連絡ください。コンビニ印刷は「必要書類」画面の🏪ガイドを参照してください。",
     meisaiEmpty: "給料明細はまだありません。",
+    meisaiSummaryTitle: "直近1年分の給料明細",
+    meisaiCountUnit: "件",
+    meisaiLatest: "最新",
+    meisaiPaid: "支払",
+    meisaiMonthSuffix: "月分",
+    meisaiTapHint: "タップで表示・保存",
     logout: "ログアウト",
     menuApply: "前払い申請",
     menuHistory: "申請履歴",
@@ -1667,8 +1756,14 @@ const I18N = {
     portalNotOpen: "O portal do funcionário está sendo liberado em etapas. Ainda não está disponível para o seu local de trabalho. Aguarde o início.",
     menuMeisai: "Holerite",
     meisaiTitle: "Holerite (contracheque)",
-    meisaiHint: "Toque para abrir/salvar. Para imprimir na loja de conveniência, veja o guia 🏪 na tela de Documentos.",
+    meisaiHint: "Exibindo os últimos 12 meses. Se precisar de holerites mais antigos, fale com a empresa (RH). Para imprimir na loja de conveniência, veja o guia 🏪 na tela de Documentos.",
     meisaiEmpty: "Nenhum holerite ainda.",
+    meisaiSummaryTitle: "Holerites — últimos 12 meses",
+    meisaiCountUnit: "itens",
+    meisaiLatest: "Recente",
+    meisaiPaid: "Pago",
+    meisaiMonthSuffix: "",
+    meisaiTapHint: "Toque para abrir/salvar",
     logout: "Sair",
     menuApply: "Adiantamento",
     menuHistory: "Histórico",
@@ -1746,8 +1841,14 @@ const I18N = {
     portalNotOpen: "The employee portal is being rolled out in stages. It is not yet available for your workplace. Please wait for the launch.",
     menuMeisai: "Payslip",
     meisaiTitle: "Payslip",
-    meisaiHint: "Tap to view/save. For convenience-store printing, see the 🏪 guide on the Documents screen.",
+    meisaiHint: "Showing the last 12 months. If you need older payslips, please contact the company (HR). For convenience-store printing, see the 🏪 guide on the Documents screen.",
     meisaiEmpty: "No payslips yet.",
+    meisaiSummaryTitle: "Payslips — last 12 months",
+    meisaiCountUnit: "items",
+    meisaiLatest: "Latest",
+    meisaiPaid: "Paid",
+    meisaiMonthSuffix: "",
+    meisaiTapHint: "Tap to view/save",
     logout: "Sign Out",
     menuApply: "Advance Request",
     menuHistory: "Request History",
@@ -3201,12 +3302,45 @@ async function sharePdfFile(file) {
   }
 }
 // ====== 給料明細 (本人ダウンロード・源泉徴収票と同方式) ======
+// バックエンドが常に「支払日が過去1年以内・最大12件」だけを返す。
+// フォルダを毎回スキャンするので、総務が新しい月を置けば次に開いた時点で自動で並ぶ。
+const MEISAI_MON_ABBR = {
+  en: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+  pt: ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'],
+};
+
+// 対象月の見せ方: 日本語は「6 月分」/ 英・葡は「Jun」
+function meisaiMonthParts(it) {
+  const m = it.month || it.payMonth || 0;
+  const abbr = MEISAI_MON_ABBR[currentLang];
+  if (!abbr) return { big: m ? String(m) : '―', suf: t('meisaiMonthSuffix') };
+  return { big: (m ? (abbr[m - 1] || String(m)) : '―'), suf: '' };
+}
+
+function meisaiPayText(it) {
+  const mm = it.payMonth, dd = it.payDay;
+  if (!mm || !dd) return '';
+  let d;
+  if (currentLang === 'pt') d = dd + '/' + String(mm).padStart(2, '0');
+  else if (currentLang === 'en') d = (MEISAI_MON_ABBR.en[mm - 1] || mm) + ' ' + dd;
+  else d = mm + '/' + dd;
+  return t('meisaiPaid') + ' ' + d;
+}
+
+function meisaiYearText(it) {
+  const sy = it.seirekiYear || 0;
+  if (!sy) return '';
+  return currentLang === 'ja' ? (sy + '年 ・ 令和' + it.warekiYear + '年') : String(sy);
+}
+
 async function loadMeisaiList() {
   const listEl = document.getElementById('meisai-list');
   const loadingEl = document.getElementById('meisai-loading');
   const emptyEl = document.getElementById('meisai-empty');
+  const sumEl = document.getElementById('meisai-summary');
   listEl.innerHTML = '';
   emptyEl.classList.add('hidden');
+  sumEl.classList.add('hidden');
   loadingEl.classList.remove('hidden');
   try {
     const data = await callApi('GET', '/shorui/meisai-list');
@@ -3214,13 +3348,41 @@ async function loadMeisaiList() {
     loadingEl.classList.add('hidden');
     if (items.length === 0) {
       emptyEl.classList.remove('hidden');
+      emptyEl.textContent = t('meisaiEmpty');
       return;
     }
-    items.forEach(it => {
+    // ヘッダー: 件数 + 最新月
+    document.getElementById('meisai-count').textContent = items.length;
+    const top = items[0];
+    const tp = meisaiMonthParts(top);
+    const br = currentLang === 'ja' ? ['（', '）'] : [' (', ')'];
+    document.getElementById('meisai-summary-sub').textContent =
+      t('meisaiLatest') + ': ' + tp.big + tp.suf + br[0] + meisaiPayText(top) + br[1];
+    sumEl.classList.remove('hidden');
+
+    let curYear = null;
+    items.forEach((it, idx) => {
+      const yTxt = meisaiYearText(it);
+      if (yTxt && yTxt !== curYear) {
+        curYear = yTxt;
+        const h = document.createElement('div');
+        h.className = 'ms-year';
+        h.innerHTML = '<span class="ms-y-t">' + escHtmlR(yTxt) + '</span><span class="ms-y-line"></span>';
+        listEl.appendChild(h);
+      }
+      const mp = meisaiMonthParts(it);
       const row = document.createElement('button');
       row.type = 'button';
-      row.className = 'btn-download-doc';
-      row.innerHTML = '💰 <span>' + it.label + '</span>';
+      row.className = 'ms-card' + (idx === 0 ? ' is-latest' : '');
+      row.style.animationDelay = Math.min(idx * 45, 400) + 'ms';
+      row.innerHTML =
+        (idx === 0 ? '<span class="ms-pill">' + escHtmlR(t('meisaiLatest')) + '</span>' : '') +
+        '<span class="ms-mon"><b>' + escHtmlR(mp.big) + '</b><i>' + escHtmlR(mp.suf) + '</i></span>' +
+        '<span class="ms-mid">' +
+          '<span class="ms-pay">📅 ' + escHtmlR(meisaiPayText(it)) + '</span>' +
+          '<span class="ms-tap">' + escHtmlR(t('meisaiTapHint')) + '</span>' +
+        '</span>' +
+        '<span class="ms-dl">⤓</span>';
       row.onclick = () => downloadMeisai(it.serverRelativeUrl, it.fileName, row);
       listEl.appendChild(row);
     });
@@ -3232,9 +3394,13 @@ async function loadMeisaiList() {
 }
 
 async function downloadMeisai(serverRelativeUrl, fileName, btn) {
-  const orig = btn.innerHTML;
+  // カードのレイアウトを壊さないよう、右の丸アイコンだけ待機表示に差し替える
+  const icon = btn.querySelector('.ms-dl');
+  const origIcon = icon ? icon.textContent : '';
+  const orig = icon ? null : btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = '⏳ <span>' + t('shoruiDownloading') + '</span>';
+  if (icon) icon.textContent = '⏳';
+  else btn.innerHTML = '⏳ <span>' + t('shoruiDownloading') + '</span>';
   try {
     const data = await callApi('GET', '/shorui/meisai-download?url=' + encodeURIComponent(serverRelativeUrl));
     const byteChars = atob(data.base64);
@@ -3246,7 +3412,8 @@ async function downloadMeisai(serverRelativeUrl, fileName, btn) {
     showAlert(t('networkError') + ((e.data && e.data.error) ? ' (' + e.data.error + ')' : ''), 'error');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = orig;
+    if (icon) icon.textContent = origIcon;
+    else btn.innerHTML = orig;
   }
 }
 
@@ -3930,12 +4097,15 @@ function renderHome() {
   const isJapanese = String(state.profile.kokuseki || '').includes('日本');
   const zairyuCard = document.getElementById('menu-card-zairyu');
   if (zairyuCard) zairyuCard.style.display = isJapanese ? 'none' : '';
-  // 車通勤者のみ表示: 免許証 / 車検証・自賠責 / 任意保険
+  // 車通勤者のみ表示: 車検証・自賠責 / 任意保険 (マイカーの書類)
   const carOnly = state.profile.commutesByCar ? '' : 'none';
-  ['menu-card-license', 'menu-card-shaken', 'menu-card-hoken'].forEach(id => {
+  ['menu-card-shaken', 'menu-card-hoken'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = carOnly;
   });
+  // 免許証提出は 車通勤者 + 送迎運転手 (会社の送迎車を運転するため・2026-07-30)
+  const licenseCard = document.getElementById('menu-card-license');
+  if (licenseCard) licenseCard.style.display = isLicenseEligible() ? '' : 'none';
   // 弁当注文: ユーシン/委託管理のみ。承認カードはモリマコトのみ
   const bentoCard = document.getElementById('menu-card-bento');
   if (bentoCard) bentoCard.style.display = state.profile.bentoEligible ? '' : 'none';
@@ -5394,11 +5564,25 @@ async function bentoApprove(id, action){
 // 期限お知らせ対象書類 (key=profile日付, cond=対象者, screen=提出画面)
 const EXPIRY_BANNERS = [
   { key: 'zairyuKigen', cond: 'foreign', titleNear: 'noticeZairyuTitle', titleExp: 'noticeZairyuExpired', btn: 'noticeSubmitZairyu', screen: 'zairyu', noun: 'docNounZairyu' },
-  { key: 'menkyoKigen', cond: 'car', titleNear: 'noticeLicenseTitle', titleExp: 'noticeLicenseExpired', btn: 'noticeSubmitLicense', screen: 'license', noun: 'docNounMenkyo' },
+  { key: 'menkyoKigen', cond: 'license', titleNear: 'noticeLicenseTitle', titleExp: 'noticeLicenseExpired', btn: 'noticeSubmitLicense', screen: 'license', noun: 'docNounMenkyo' },
   { key: 'shakenKigen', cond: 'car', titleNear: 'noticeShakenTitle', titleExp: 'noticeShakenExpired', btn: 'noticeSubmitShaken', screen: 'shaken', noun: 'docNounShaken' },
   { key: 'jibaiKigen', cond: 'car', titleNear: 'noticeJibaiTitle', titleExp: 'noticeJibaiExpired', btn: 'noticeSubmitShaken', screen: 'shaken', noun: 'docNounJibai' },
   { key: 'niniKigen', cond: 'car', titleNear: 'noticeNiniTitle', titleExp: 'noticeNiniExpired', btn: 'noticeSubmitNini', screen: 'hoken', noun: 'docNounNini' },
 ];
+
+// 免許証の提出・期限お知らせの対象 = 車通勤者 + 送迎運転手。
+// backend の licenseEligible を使い、古いキャッシュ等で未設定なら送迎/給油の判定で補う。
+function isLicenseEligible() {
+  const p = state.profile || {};
+  if (typeof p.licenseEligible === 'boolean') return p.licenseEligible;
+  return !!(p.commutesByCar || p.sougeiKirokuEligible || p.kyuyuEligible);
+}
+
+function expiryCondOk(cond, isJp, car) {
+  if (cond === 'foreign') return !isJp;
+  if (cond === 'license') return isLicenseEligible();
+  return car;
+}
 
 function getExpiryNoticeCount() {
   const p = state.profile || {};
@@ -5407,7 +5591,7 @@ function getExpiryNoticeCount() {
   const car = !!p.commutesByCar;
   let n = 0;
   EXPIRY_BANNERS.forEach(s => {
-    const ok = s.cond === 'foreign' ? !isJp : car;
+    const ok = expiryCondOk(s.cond, isJp, car);
     if (!ok || !p[s.key] || !inWin(daysUntil(p[s.key]))) return;
     // 在留: 更新予定が登録済み(未来)なら催促カウントから除外
     if (s.key === 'zairyuKigen' && p.zairyuRenewPlan && daysUntil(p.zairyuRenewPlan) >= 0) return;
@@ -5478,9 +5662,9 @@ function renderHomeNotices(items) {
   const inWindow = (d) => d !== null && d >= -OVERDUE_GRACE && d <= WARN_DAYS;
   const isJp = String(p.kokuseki || '').includes('日本');
   const car = !!p.commutesByCar;
-  // 2) 書類の期限お知らせ (在留=外国籍 / 免許・車検・自賠責・任意=車通勤)
+  // 2) 書類の期限お知らせ (在留=外国籍 / 免許=車通勤+送迎運転手 / 車検・自賠責・任意=車通勤)
   EXPIRY_BANNERS.forEach(s => {
-    const ok = s.cond === 'foreign' ? !isJp : car;
+    const ok = expiryCondOk(s.cond, isJp, car);
     if (!ok) return;
     const v = p[s.key];
     if (!v) return;
@@ -5571,7 +5755,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v50';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v51';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available

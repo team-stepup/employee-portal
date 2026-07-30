@@ -169,6 +169,15 @@ def commutes_by_sougei(emp: Dict[str, Any]) -> bool:
     return "送迎" in combined
 
 
+def license_eligible(emp: Dict[str, Any]) -> bool:
+    """免許証提出の対象 = 車通勤者 + 送迎運転手 (2026-07-30 追加)。
+    運転手は通勤方法が「送迎sougei」なので車通勤判定に入らないが、会社の送迎車を運転する
+    ため免許証の提出・期限管理が必要。車検証/自賠責/任意保険 (会社所有車) は対象外のまま。"""
+    return (commutes_by_car(emp)
+            or _sougei_kiroku_eligible(emp)
+            or _kyuyu_eligible(emp))
+
+
 def guess_lang_from_kokuseki(kokuseki: Optional[str]) -> str:
     """本(国)籍 から推奨言語を推定。
     日本/日本人/中国 → ja
@@ -1109,6 +1118,8 @@ def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
         "zaiyokuSyubetu": emp.get(F_ZAIYOKU),
         "commutesByCar": commutes_by_car(emp),
         "commutesBySougei": is_sougei,
+        # 免許証提出: 車通勤者 + 送迎運転手 (車検証/自賠責/任意保険は commutesByCar のまま)
+        "licenseEligible": license_eligible(emp),
         # 弁当注文: 注文はユーシン/委託管理のみ。承認は yukyu-app(役員/森まこと/森ゆうじ)で行うため
         # ポータルには承認UIを出さない (派遣社員=注文する側のみ)
         "bentoEligible": (("ユーシン" in strip_buka_prefix(buka_text)) or ("ﾕｰｼﾝ" in strip_buka_prefix(buka_text))),
@@ -4072,8 +4083,8 @@ def license_submit(req: func.HttpRequest) -> func.HttpResponse:
         emp = find_active_employee_by_shain(shain_no)
         if not emp:
             return _json_response({"error": "not_active"}, 403)
-        # 車通勤判定 (車通勤以外には提出を許可しない)
-        if not commutes_by_car(emp):
+        # 提出対象判定 (車通勤者 + 送迎運転手。それ以外には許可しない)
+        if not license_eligible(emp):
             return _json_response({"error": "not_commute_by_car"}, 403)
         buka_text = emp.get(F_BUKA) or ""
         shain_folder = find_shain_folder_url(shain_no, buka_text)
@@ -5837,10 +5848,26 @@ def _match_meisai_filename(fname: str, shain_no: int) -> Optional[str]:
     return m.group(1)
 
 
+# 「R8.6月分（支払7/17）」→ 令和8年 / 6月分
+_MEISAI_FOLDER_RE = re.compile(r"^R(\d+)[\.．](\d+)")
+MEISAI_MONTHS = 12   # 表示する月数 (過去1年分)
+
+
+def _meisai_cutoff_yyyymmdd() -> str:
+    """過去1年分の境界日 (JST の今日から1年前) を YYYYMMDD で返す。"""
+    today = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(hours=9)).date()
+    try:
+        cutoff = today.replace(year=today.year - 1)
+    except ValueError:      # 2/29 → 前年は 2/28
+        cutoff = today.replace(year=today.year - 1, day=28)
+    return cutoff.strftime("%Y%m%d")
+
+
 @app.route(route="shorui/meisai-list", methods=["GET", "OPTIONS"])
 def shorui_meisai_list(req: func.HttpRequest) -> func.HttpResponse:
     """本人の給料明細 PDF を月別フォルダから検索して一覧返す (総務不要)。
-    現行命名の月別フォルダ (R7.〜 / R8.〜) のみ対象。旧年フォルダ(2019等)は対象外。"""
+    現行命名の月別フォルダ (R7.〜 / R8.〜) のみ対象。旧年フォルダ(2019等)は対象外。
+    表示は常に過去1年分 (支払日が1年以内・最大12件)。"""
     pf = _handle_preflight(req)
     if pf:
         return pf
@@ -5849,6 +5876,7 @@ def shorui_meisai_list(req: func.HttpRequest) -> func.HttpResponse:
         return err
     shain_no = int(payload["shainNo"])
     try:
+        cutoff = _meisai_cutoff_yyyymmdd()
         matches: List[Dict[str, Any]] = []
         for f in _ts_folders(MEISAI_BASE_PATH):
             folder_name = f.get("Name", "")
@@ -5860,18 +5888,34 @@ def shorui_meisai_list(req: func.HttpRequest) -> func.HttpResponse:
                 continue
             for fl in files:
                 pay = _match_meisai_filename(fl.get("Name", ""), shain_no)
-                if pay:
-                    # フォルダ名の括弧以降(支払日メモ)を除去 → 「R8.6月分」
-                    label = re.sub(r"[\s　]*[（(【].*$", "", folder_name)
-                    disp = f"{label}（支払 {int(pay[4:6])}/{int(pay[6:8])}）"
-                    matches.append({
-                        "label": disp,
-                        "payDate": pay,
-                        "fileName": fl.get("Name"),
-                        "serverRelativeUrl": fl.get("ServerRelativeUrl"),
-                    })
+                if not pay:
+                    continue
+                if pay < cutoff:          # 過去1年より古い明細は返さない
+                    continue
+                # フォルダ名の括弧以降(支払日メモ)を除去 → 「R8.6月分」
+                label = re.sub(r"[\s　]*[（(【].*$", "", folder_name)
+                disp = f"{label}（支払 {int(pay[4:6])}/{int(pay[6:8])}）"
+                fm = _MEISAI_FOLDER_RE.match(folder_name)
+                wareki_year = int(fm.group(1)) if fm else 0
+                item: Dict[str, Any] = {
+                    "label": disp,
+                    "payDate": pay,
+                    "fileName": fl.get("Name"),
+                    "serverRelativeUrl": fl.get("ServerRelativeUrl"),
+                    # ↓ フロントのカード表示用 (令和年 / 対象月 / 支払日)
+                    "warekiYear": wareki_year,
+                    "seirekiYear": (2018 + wareki_year) if wareki_year else 0,
+                    "month": int(fm.group(2)) if fm else 0,
+                    "payMonth": int(pay[4:6]),
+                    "payDay": int(pay[6:8]),
+                }
+                matches.append(item)
         matches.sort(key=lambda m: m.get("payDate", ""), reverse=True)
-        return _json_response({"items": matches[:24]})
+        return _json_response({
+            "items": matches[:MEISAI_MONTHS],
+            "months": MEISAI_MONTHS,
+            "cutoff": cutoff,
+        })
     except Exception as e:
         logging.exception("meisai-list failed")
         return _json_response({"error": "internal", "detail": str(e)}, 500)
@@ -5974,10 +6018,11 @@ def _notify_lang(kokuseki: str) -> str:
     return "pt"
 
 
-# 通知対象の書類: (kind, 満了日フィールド, 条件 'foreign'|'car', アプリの提出画面)
+# 通知対象の書類: (kind, 満了日フィールド, 条件 'foreign'|'car'|'license')
+#   foreign = 外国籍 / car = 車通勤者(マイカーの書類) / license = 車通勤者+送迎運転手
 EXPIRY_DOC_SPECS = [
     ("zairyu", F_ZAIRYU_KIGEN, "foreign"),
-    ("menkyo", F_MENKYO_KIGEN, "car"),
+    ("menkyo", F_MENKYO_KIGEN, "license"),
     ("shaken", F_SHAKEN_KIGEN, "car"),
     ("jibai", F_JIBAI_KIGEN, "car"),
     ("nini", F_NINI_KIGEN, "car"),
@@ -6059,12 +6104,13 @@ def daily_expiry_check(timer: func.TimerRequest) -> None:
             emp_id = it.get("Id")
             is_foreign = "日本" not in kokuseki
             is_car = commutes_by_car(it)
+            cond_ok = {"foreign": is_foreign, "car": is_car, "license": license_eligible(it)}
             renew_plan = _utc_to_jst_date(it.get(F_RENEW_PLAN))
             plan_active = bool(renew_plan and renew_plan >= today)  # 予定日が未来 → 在留の催促を止める
             for kind, field, cond in EXPIRY_DOC_SPECS:
                 if (no, kind) in seen:
                     continue
-                if not (is_foreign if cond == "foreign" else is_car):
+                if not cond_ok.get(cond, False):
                     continue
                 kig = _utc_to_jst_date(it.get(field))
                 if not kig:
