@@ -2642,7 +2642,9 @@ _kyuyu_veh_cache = {"vehicles": None, "ts": 0.0}
 
 
 def _kyuyu_vehicles() -> List[str]:
-    """List54「ナンバー、車両」の既存値から車両一覧を動的生成(使用回数多い順)。1時間キャッシュ。失敗時はGAS_VEHICLES。"""
+    """List54「ナンバー、車両」の既存値(使用回数多い順) + 車両管理Listの使用中車両。
+    履歴だけだと一度も給油申請されていない新車両(例 7875ラクティス)が永遠に出ないため、
+    車両管理List(Usage='使用')でナンバー未出現の車両を末尾に補完する。1時間キャッシュ。失敗時はGAS_VEHICLES。"""
     now = time.time()
     if _kyuyu_veh_cache["vehicles"] and (now - _kyuyu_veh_cache["ts"] < 3600):
         return _kyuyu_veh_cache["vehicles"]
@@ -2653,8 +2655,18 @@ def _kyuyu_vehicles() -> List[str]:
             v = str(it.get("OData_" + GAS_F_VEHICLE) or it.get(GAS_F_VEHICLE) or "").strip()
             if v:
                 cnt[v] = cnt.get(v, 0) + 1
-        if cnt:
-            vs = [v for v, _ in sorted(cnt.items(), key=lambda x: -x[1])]
+        vs = [v for v, _ in sorted(cnt.items(), key=lambda x: -x[1])]
+        seen = {re.sub(r"\D", "", (v.split() or [""])[0]) for v in vs}
+        for it in _sharyo_items():
+            if str(it.get("Usage") or "").strip() != "使用":
+                continue
+            digits = re.sub(r"\D", "", str(it.get("OData__x004e_O2") or it.get("_x004e_O2") or ""))
+            if not digits or digits in seen:
+                continue
+            car_name = str(it.get("syamei_x0020_") or "").strip()
+            vs.append(f"{digits}　{car_name}".strip())
+            seen.add(digits)
+        if vs:
             _kyuyu_veh_cache["vehicles"] = vs
             _kyuyu_veh_cache["ts"] = now
             return vs
