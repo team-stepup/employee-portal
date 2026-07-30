@@ -640,11 +640,13 @@
   /* 確認モーダルの はい/いいえ (横幅オーバーフロー防止・同一サイズ) */
   .confirm-buttons { display: flex; gap: 10px; margin-top: 6px; }
   .confirm-buttons .modal-btn { flex: 1; min-width: 0; padding: 13px 8px; font-size: 1em; margin: 0; }
-  /* 初回登録の生年月日 3分割入力 (Androidのカレンダーピッカー回避) */
-  .bday-row { display: flex; align-items: center; gap: 6px; }
-  .bday-row input { flex: 1; min-width: 0; text-align: center; }
-  .bday-row input.bday-y { flex: 1.6; }
-  .bday-sep { color: #999; font-weight: 700; }
+  /* 初回登録の生年月日 3分割入力 (カレンダーピッカー回避・pt表示時は日/月/年順に並び替え) */
+  .bday-row { display: flex; align-items: flex-end; gap: 6px; }
+  .bday-cell { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .bday-cell-y { flex: 1.6; }
+  .bday-cell input { width: 100%; min-width: 0; text-align: center; }
+  .bday-unit { font-size: 0.72em; color: #888; text-align: center; margin-bottom: 3px; font-weight: 700; }
+  .bday-sep { color: #999; font-weight: 700; padding-bottom: 14px; }
   /* iOS Safari の date/time 入力: 既定スタイルだと枠が右にずれる/幅が効かないため無効化 */
   input[type="date"], input[type="time"] {
     -webkit-appearance: none; appearance: none;
@@ -723,14 +725,23 @@
     <label class="label" data-i18n="shainNoLabel">社員番号</label>
     <input id="setup-shainno" type="number" placeholder="例: 70342" inputmode="numeric">
     <label class="label" data-i18n="birthdayLabel">生年月日</label>
-    <div class="bday-row">
-      <input id="setup-bday-y" class="bday-y" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="1990" autocomplete="bday-year">
+    <div class="bday-row" id="bday-row">
+      <div class="bday-cell bday-cell-y">
+        <span class="bday-unit" data-i18n="bdayYearUnit">年</span>
+        <input id="setup-bday-y" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="1990" autocomplete="bday-year">
+      </div>
       <span class="bday-sep">/</span>
-      <input id="setup-bday-m" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="12" autocomplete="bday-month">
+      <div class="bday-cell bday-cell-m">
+        <span class="bday-unit" data-i18n="bdayMonthUnit">月</span>
+        <input id="setup-bday-m" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="12" autocomplete="bday-month">
+      </div>
       <span class="bday-sep">/</span>
-      <input id="setup-bday-d" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="31" autocomplete="bday-day">
+      <div class="bday-cell bday-cell-d">
+        <span class="bday-unit" data-i18n="bdayDayUnit">日</span>
+        <input id="setup-bday-d" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="31" autocomplete="bday-day">
+      </div>
     </div>
-    <p style="font-size:0.78em; color:#999; margin:6px 0 0;" data-i18n="birthdayDigitsHint">西暦→月→日の順に数字で入力（例: 1990 / 12 / 31）</p>
+    <p style="font-size:0.78em; color:#999; margin:6px 0 0;" data-i18n="birthdayDigitsHint">数字で直接入力（例: 1990 / 12 / 31）</p>
     <label class="label" data-i18n="telLabel">電話番号 (下4桁)</label>
     <input id="setup-tel" type="number" placeholder="例: 1234" inputmode="numeric" maxlength="4">
     <button id="setup-verify-btn" class="btn btn-primary" data-i18n="verifyBtn">本人確認する</button>
@@ -1667,8 +1678,11 @@ const I18N = {
     login: "ログイン",
     shainNoLabel: "社員番号",
     birthdayLabel: "生年月日",
-    birthdayDigitsHint: "西暦→月→日の順に数字で入力（例: 1990 / 12 / 31）",
+    birthdayDigitsHint: "数字で直接入力（例: 1990 / 12 / 31）",
     birthdayInvalid: "生年月日が正しくありません。西暦・月・日を確認してください。",
+    bdayYearUnit: "年",
+    bdayMonthUnit: "月",
+    bdayDayUnit: "日",
     telLabel: "電話番号 (下4桁)",
     pinLabel: "PIN (4桁)",
     loginButton: "ログイン",
@@ -1749,8 +1763,11 @@ const I18N = {
     login: "Entrar",
     shainNoLabel: "Nº do Funcionário",
     birthdayLabel: "Data de Nascimento",
-    birthdayDigitsHint: "Digite com números: ano → mês → dia (ex: 1990 / 12 / 31)",
-    birthdayInvalid: "Data de nascimento inválida. Verifique ano, mês e dia.",
+    birthdayDigitsHint: "Digite com números (ex: 31 / 12 / 1990)",
+    birthdayInvalid: "Data de nascimento inválida. Verifique dia, mês e ano.",
+    bdayYearUnit: "Ano",
+    bdayMonthUnit: "Mês",
+    bdayDayUnit: "Dia",
     telLabel: "Telefone (últimos 4 dígitos)",
     pinLabel: "PIN (4 dígitos)",
     loginButton: "Entrar",
@@ -1836,8 +1853,11 @@ const I18N = {
     login: "Sign In",
     shainNoLabel: "Employee No.",
     birthdayLabel: "Date of Birth",
-    birthdayDigitsHint: "Enter numbers: year → month → day (e.g. 1990 / 12 / 31)",
+    birthdayDigitsHint: "Enter numbers (e.g. 1990 / 12 / 31)",
     birthdayInvalid: "Invalid date of birth. Please check year, month and day.",
+    bdayYearUnit: "Year",
+    bdayMonthUnit: "Month",
+    bdayDayUnit: "Day",
     telLabel: "Phone (last 4 digits)",
     pinLabel: "PIN (4 digits)",
     loginButton: "Sign In",
@@ -2328,6 +2348,8 @@ function applyI18n() {
   document.querySelectorAll('[data-i18n-ph]').forEach(el => {
     el.placeholder = t(el.getAttribute('data-i18n-ph'));
   });
+  // 生年月日3分割欄の並び (ptは日/月/年)
+  if (typeof updateBdayLayout === 'function') updateBdayLayout();
   document.documentElement.lang = currentLang;
   // 全 lang-btn に active クラスを付け直し
   document.querySelectorAll('.lang-btn').forEach(btn => {
@@ -3936,17 +3958,38 @@ async function tryPinLogin() {
   }
 }
 
-// 生年月日 3分割入力: 数字のみ許可・桁が埋まったら次欄へ自動フォーカス
+// 生年月日 3分割入力: pt(ブラジル式)は 日/月/年 の並びに入れ替え。
+// 入力欄の見た目順を返す (自動フォーカス移動は常に「見た目の左→右」)
+function _bdayVisualFields() {
+  const y = document.getElementById('setup-bday-y');
+  const m = document.getElementById('setup-bday-m');
+  const d = document.getElementById('setup-bday-d');
+  return currentLang === 'pt' ? [d, m, y] : [y, m, d];
+}
+
+// 言語に合わせて欄の並び(flex order)を切替。applyI18n から呼ばれる
+function updateBdayLayout() {
+  const row = document.getElementById('bday-row');
+  if (!row) return;
+  const cells = _bdayVisualFields().map((el) => el.closest('.bday-cell'));
+  cells.forEach((cell, i) => { cell.style.order = i * 2; });
+  row.querySelectorAll('.bday-sep').forEach((sep, i) => { sep.style.order = i * 2 + 1; });
+}
+
+// 数字のみ許可・桁が埋まったら見た目順で次欄へ自動フォーカス
 (function initBdayInputs() {
   const fields = ['setup-bday-y', 'setup-bday-m', 'setup-bday-d']
     .map((id) => document.getElementById(id));
   if (fields.some((el) => !el)) return;
-  fields.forEach((el, i) => {
+  fields.forEach((el) => {
     el.addEventListener('input', () => {
       el.value = el.value.replace(/[^0-9]/g, '');
-      if (el.value.length >= el.maxLength && i < fields.length - 1) fields[i + 1].focus();
+      const visual = _bdayVisualFields();
+      const i = visual.indexOf(el);
+      if (el.value.length >= el.maxLength && i >= 0 && i < visual.length - 1) visual[i + 1].focus();
     });
   });
+  updateBdayLayout();
 })();
 
 // 3欄を YYYY-MM-DD に合成。未入力=null / 不正な日付=''
@@ -5803,7 +5846,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v52';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v53';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available
