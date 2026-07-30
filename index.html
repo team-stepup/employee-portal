@@ -640,6 +640,11 @@
   /* 確認モーダルの はい/いいえ (横幅オーバーフロー防止・同一サイズ) */
   .confirm-buttons { display: flex; gap: 10px; margin-top: 6px; }
   .confirm-buttons .modal-btn { flex: 1; min-width: 0; padding: 13px 8px; font-size: 1em; margin: 0; }
+  /* 初回登録の生年月日 3分割入力 (Androidのカレンダーピッカー回避) */
+  .bday-row { display: flex; align-items: center; gap: 6px; }
+  .bday-row input { flex: 1; min-width: 0; text-align: center; }
+  .bday-row input.bday-y { flex: 1.6; }
+  .bday-sep { color: #999; font-weight: 700; }
   /* iOS Safari の date/time 入力: 既定スタイルだと枠が右にずれる/幅が効かないため無効化 */
   input[type="date"], input[type="time"] {
     -webkit-appearance: none; appearance: none;
@@ -718,7 +723,14 @@
     <label class="label" data-i18n="shainNoLabel">社員番号</label>
     <input id="setup-shainno" type="number" placeholder="例: 70342" inputmode="numeric">
     <label class="label" data-i18n="birthdayLabel">生年月日</label>
-    <input id="setup-birthday" type="date">
+    <div class="bday-row">
+      <input id="setup-bday-y" class="bday-y" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="1990" autocomplete="bday-year">
+      <span class="bday-sep">/</span>
+      <input id="setup-bday-m" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="12" autocomplete="bday-month">
+      <span class="bday-sep">/</span>
+      <input id="setup-bday-d" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="31" autocomplete="bday-day">
+    </div>
+    <p style="font-size:0.78em; color:#999; margin:6px 0 0;" data-i18n="birthdayDigitsHint">西暦→月→日の順に数字で入力（例: 1990 / 12 / 31）</p>
     <label class="label" data-i18n="telLabel">電話番号 (下4桁)</label>
     <input id="setup-tel" type="number" placeholder="例: 1234" inputmode="numeric" maxlength="4">
     <button id="setup-verify-btn" class="btn btn-primary" data-i18n="verifyBtn">本人確認する</button>
@@ -1655,6 +1667,8 @@ const I18N = {
     login: "ログイン",
     shainNoLabel: "社員番号",
     birthdayLabel: "生年月日",
+    birthdayDigitsHint: "西暦→月→日の順に数字で入力（例: 1990 / 12 / 31）",
+    birthdayInvalid: "生年月日が正しくありません。西暦・月・日を確認してください。",
     telLabel: "電話番号 (下4桁)",
     pinLabel: "PIN (4桁)",
     loginButton: "ログイン",
@@ -1735,6 +1749,8 @@ const I18N = {
     login: "Entrar",
     shainNoLabel: "Nº do Funcionário",
     birthdayLabel: "Data de Nascimento",
+    birthdayDigitsHint: "Digite com números: ano → mês → dia (ex: 1990 / 12 / 31)",
+    birthdayInvalid: "Data de nascimento inválida. Verifique ano, mês e dia.",
     telLabel: "Telefone (últimos 4 dígitos)",
     pinLabel: "PIN (4 dígitos)",
     loginButton: "Entrar",
@@ -1820,6 +1836,8 @@ const I18N = {
     login: "Sign In",
     shainNoLabel: "Employee No.",
     birthdayLabel: "Date of Birth",
+    birthdayDigitsHint: "Enter numbers: year → month → day (e.g. 1990 / 12 / 31)",
+    birthdayInvalid: "Invalid date of birth. Please check year, month and day.",
     telLabel: "Phone (last 4 digits)",
     pinLabel: "PIN (4 digits)",
     loginButton: "Sign In",
@@ -3918,14 +3936,44 @@ async function tryPinLogin() {
   }
 }
 
+// 生年月日 3分割入力: 数字のみ許可・桁が埋まったら次欄へ自動フォーカス
+(function initBdayInputs() {
+  const fields = ['setup-bday-y', 'setup-bday-m', 'setup-bday-d']
+    .map((id) => document.getElementById(id));
+  if (fields.some((el) => !el)) return;
+  fields.forEach((el, i) => {
+    el.addEventListener('input', () => {
+      el.value = el.value.replace(/[^0-9]/g, '');
+      if (el.value.length >= el.maxLength && i < fields.length - 1) fields[i + 1].focus();
+    });
+  });
+})();
+
+// 3欄を YYYY-MM-DD に合成。未入力=null / 不正な日付=''
+function getSetupBirthday() {
+  const y = document.getElementById('setup-bday-y').value.trim();
+  const m = document.getElementById('setup-bday-m').value.trim();
+  const d = document.getElementById('setup-bday-d').value.trim();
+  if (!y || !m || !d) return null;
+  const yi = parseInt(y, 10), mi = parseInt(m, 10), di = parseInt(d, 10);
+  if (yi < 1900 || yi > new Date().getFullYear()) return '';
+  const dt = new Date(yi, mi - 1, di);
+  if (dt.getFullYear() !== yi || dt.getMonth() !== mi - 1 || dt.getDate() !== di) return '';
+  return yi + '-' + String(mi).padStart(2, '0') + '-' + String(di).padStart(2, '0');
+}
+
 // 初回: 3要素照合 → PIN 設定モードへ
 async function tryVerifyForSetup() {
   const shainNo = parseInt(document.getElementById('setup-shainno').value, 10);
-  const birthday = document.getElementById('setup-birthday').value;
+  const birthday = getSetupBirthday();
   const telLast4 = document.getElementById('setup-tel').value;
   document.getElementById('setup-error').classList.add('hidden');
-  if (!shainNo || !birthday || !telLast4) {
+  if (!shainNo || birthday === null || !telLast4) {
     _showInlineError('setup-error', t('missingLoginFields'), 'missingLoginFields');
+    return;
+  }
+  if (birthday === '') {
+    _showInlineError('setup-error', t('birthdayInvalid'), 'birthdayInvalid');
     return;
   }
   showLoading(true);
@@ -5755,7 +5803,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v51';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v52';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available
