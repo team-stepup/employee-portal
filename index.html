@@ -100,6 +100,10 @@
   .menu-card .label { font-size: 0.9em; font-weight: 700; color: #1f3864; margin: 0; display: block; }
   .menu-card .badge { display: inline-block; background: #f44336; color: #fff; font-size: 0.7em; padding: 2px 6px; border-radius: 10px; margin-top: 4px; }
   .menu-card.coming-soon { opacity: 0.6; }
+  /* 給油専用ホーム (福田/モレイラ): 給油申請を2列ぶち抜きで大きく表示 */
+  .menu-card.kyuyu-only-big { grid-column: 1 / -1; padding: 30px 12px; }
+  .menu-card.kyuyu-only-big .icon { font-size: 3.4em; margin-bottom: 8px; }
+  .menu-card.kyuyu-only-big .label { font-size: 1.05em; }
   .user-card {
     background: linear-gradient(135deg, #1f3864, #2e5a99); color: #fff;
     border-radius: 12px; padding: 10px 14px; margin-bottom: 10px; box-shadow: 0 3px 9px rgba(0,0,0,0.11);
@@ -809,19 +813,19 @@
       <span class="icon">🚗</span>
       <span class="label" data-i18n="menuKyuyu">給油申請</span>
     </div>
-    <div class="menu-card" onclick="openRequestWithRules()">
+    <div class="menu-card" id="menu-card-maebarai" onclick="openRequestWithRules()">
       <span class="card-num">①</span>
       <span class="icon">💴</span>
       <span class="label" data-i18n="menuApply">前払い申請</span>
     </div>
-    <div class="menu-card" onclick="showScreen('history')" style="position:relative;">
+    <div class="menu-card" id="menu-card-history" onclick="showScreen('history')" style="position:relative;">
       <span class="card-num">②</span>
       <span class="icon">📋</span>
       <span class="label" data-i18n="menuHistory">申請履歴</span>
       <span id="history-new-badge" class="new-badge hidden">0</span>
       <span id="history-new-status" class="new-status hidden"></span>
     </div>
-    <div class="menu-card" onclick="showScreen('renraku')" style="position:relative;">
+    <div class="menu-card" id="menu-card-renraku" onclick="showScreen('renraku')" style="position:relative;">
       <span class="card-num">📣</span>
       <span class="icon">📢</span>
       <span class="label" data-i18n="menuRenraku">お知らせ</span>
@@ -4215,6 +4219,18 @@ function renderHome() {
   // 必要書類 請求: 運転手(094:本社（送迎者）)には出さない
   const shoruiCard = document.getElementById('menu-card-shorui');
   if (shoruiCard) shoruiCard.style.display = state.profile.sougeiKirokuEligible ? 'none' : '';
+  // 給油専用ホーム (委託管理の福田/モレイラ・2026-08-03): 給油申請+免許証提出
+  // (+車通勤者は車検証・自賠責/任意保険) 以外のカードを隠し、給油を大きく1枚表示
+  const kyuyuOnly = !!state.profile.kyuyuOnly;
+  if (kyuyuOnly) {
+    ['menu-card-sougei', 'menu-card-jiko', 'menu-card-bento', 'menu-card-bento-approve',
+     'menu-card-maebarai', 'menu-card-history', 'menu-card-renraku', 'menu-card-meisai',
+     'menu-card-zairyu', 'menu-card-shorui'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+  }
+  if (kyuyuCard) kyuyuCard.classList.toggle('kyuyu-only-big', kyuyuOnly);
   // 期限お知らせを即時表示 (履歴取得を待たず profile から)
   renderHomeNotices(state.historyCache ? state.historyCache.items : null);
   // プッシュ通知の設定UI
@@ -5846,7 +5862,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v53';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v54';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available

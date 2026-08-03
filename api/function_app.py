@@ -1148,6 +1148,8 @@ def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
         "isBentoApprover": False,
         # 給油申請: 送迎運転手(社員番号セット)のみボタン表示
         "kyuyuEligible": _kyuyu_eligible(emp),
+        # 給油専用ホーム: 給油+免許証(+車通勤書類)以外のカードを隠す (委託管理の2名)
+        "kyuyuOnly": _kyuyu_only(emp),
         # 送迎記録: 部課=094:本社（送迎者）の運転手のみボタン表示
         "sougeiKirokuEligible": _sougei_kiroku_eligible(emp),
         # 担当車両 (車両管理List・運転手のみ)。名前カードに 車種+ナンバー を表示
@@ -2608,6 +2610,9 @@ LIST_GASORIN = "ac84ec0e-6853-463a-9469-d94b52940485"   # SP「ガソリン代�
 # 50715 ヒラタ ベーラ = 2026-07-30 追加 (車両管理Listには7638ハイエースで登録済だったが
 # 当時は本セットだけで判定していたためホームに⛽給油ボタンが出ていなかった)。
 KYUYU_DRIVERS = {50466, 50565, 50692, 50709, 50715, 50736, 50743, 50750, 60057, 111113, 111356}
+# 給油専用ホーム (2026-08-03): 委託管理の2名(モレイラ/福田)は前払い・弁当・給料明細等が
+# 対象外のため、ホームを 給油申請+免許証提出(+車通勤者は車検証/任意保険) だけに絞る。
+KYUYU_ONLY_SHAINS = {111113, 111356}
 KYUYU_FOLDER_BASE = "/sites/TeamStepup/Shared Documents/給油申請レシート"
 # Teams「送迎関係」チャネルのメールアドレス(チャネルへメール投稿=Forms フロー廃止後も通知継続)。
 # 既定値はメモ由来。実際のチャネルメール(Teams→チャネル→メールアドレスを取得)で上書き可。
@@ -2723,6 +2728,14 @@ def _kyuyu_assigned_drivers() -> set:
     return out
 
 
+def _kyuyu_only(emp: Dict[str, Any]) -> bool:
+    """給油専用ホームの対象 (KYUYU_ONLY_SHAINS の社員番号のみ)。"""
+    try:
+        return int(float(emp.get(F_SHAIN_NO))) in KYUYU_ONLY_SHAINS
+    except (TypeError, ValueError):
+        return False
+
+
 def _kyuyu_eligible(emp: Dict[str, Any]) -> bool:
     """給油申請の対象=送迎運転手。判定は2段構え:
       ① KYUYU_DRIVERS (F1解約時の初期メンバーを固定列挙。車両管理List障害時の保険も兼ねる)
@@ -2826,12 +2839,17 @@ def _kyuyu_calc(vehicle: str, odometer: str, liters: str):
         plate_is_num = _kyuyu_plate_key(vehicle).isdigit()
         if plate_is_num and cur_odo is not None and prev_odo is not None and cur_odo > prev_odo:
             dist = cur_odo - prev_odo
-            if dist < 100000:   # 桁ミス/車両入替の異常値を除外
-                dist_s = str(int(round(dist)))
+            # 給油1回分としてあり得る距離のみ採用(満タン50ℓ×30km/ℓ=1500kmが上限目安)。
+            # 前回走行距離の誤入力(例: 155998→159998)で異常な距離/燃費が記録されるのを防ぐ。
+            if dist <= 1500:
                 n = re.sub(r"[^\d.]", "", liters).strip(".") if liters else ""
                 lit = float(n) if n else 0.0
-                if lit > 0:
-                    nenpi_s = str(round(dist / lit, 1))
+                nenpi = (dist / lit) if lit > 0 else None
+                # 燃費40km/ℓ超はどちらかの走行距離が誤り→距離/燃費とも出さない
+                if nenpi is None or nenpi <= 40:
+                    dist_s = str(int(round(dist)))
+                    if nenpi is not None:
+                        nenpi_s = str(round(nenpi, 1))
     except Exception:
         logging.exception("kyuyu calc failed")
     return dist_s, nenpi_s, kankaku_s
