@@ -1129,7 +1129,8 @@ def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
         "name": emp.get(F_SHAIN_NAME),
         "zairyuName": emp.get(F_ZAIRYU_NAME) or "",
         "kokuseki": kokuseki,
-        "preferredLang": guess_lang_from_kokuseki(kokuseki),
+        # 給油専用2名(福田/モレイラ)は国籍欄が空でブラジル出身→ポルトガル語を既定表示
+        "preferredLang": ("pt" if _kyuyu_only(emp) else guess_lang_from_kokuseki(kokuseki)),
         "hakensaki": strip_buka_prefix(buka_text),
         "bukaRaw": buka_text,
         "bukaNo": parse_buka_no(buka_text),
