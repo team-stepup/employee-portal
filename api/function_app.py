@@ -400,10 +400,11 @@ def is_valid_amount(amount) -> bool:
         return False
     return True
 
-# 部課番号 → 担当者 マッピング (memory ベース)
-TANTOU_YOSHIURA = {"114", "083", "086", "105", "043"}
-TANTOU_MORI_YUJI = {"077", "078", "071", "052", "040", "094"}   # 094=本社（送迎者）: 2026-07-28 森まことから変更
-TANTOU_MAKOTO = {"002", "093", "091", "107", "116", "117", "112"}
+# 部課番号 → 担当者 マッピング (2026-08-05 森まこと退社(8/7)に伴い後任へ付け替え＋未登録5社(097/035/034/037/110)追加)
+TANTOU_YOSHIURA = {"114", "083", "086", "105", "043", "035", "037", "107", "117"}
+TANTOU_MORI_YUJI = {"077", "078", "071", "052", "040", "094", "097", "034", "110", "091", "093"}   # 094=本社（送迎者）
+TANTOU_JO_KAORI = {"002"}
+TANTOU_YAMASHITA = {"112", "116"}
 
 
 def get_tantou(buka_no: str) -> str:
@@ -415,8 +416,10 @@ def get_tantou(buka_no: str) -> str:
         return "吉浦マルセロ"
     if no in TANTOU_MORI_YUJI:
         return "森ゆうじ"
-    if no in TANTOU_MAKOTO:
-        return "森まこと"
+    if no in TANTOU_JO_KAORI:
+        return "城かおり"
+    if no in TANTOU_YAMASHITA:
+        return "山下浩俊"
     return "未設定"
 
 
@@ -5037,7 +5040,8 @@ def _send_web_push(sub_json: str, payload: Dict[str, Any]) -> str:
 TANTOU_EMAIL = {
     "吉浦マルセロ": "m.yoshiura@team-stepup.com",
     "森ゆうじ": "y.mori@team-stepup.com",
-    "森まこと": "m.mori@team-stepup.com",
+    "城かおり": "kaori.j@team-stepup.com",
+    "山下浩俊": "h.yamashita@team-stepup.com",
 }
 ADMIN_APPROVER_EMAILS = ["h.yamashita@team-stepup.com", "a.yamashita@team-stepup.com"]
 BENTO_APPROVER_EMAILS = ADMIN_APPROVER_EMAILS + ["m.mori@team-stepup.com", "y.mori@team-stepup.com"]
@@ -6958,3 +6962,89 @@ def yukyu_sougei_send_batch(req: func.HttpRequest) -> func.HttpResponse:
     return _json_response({"ok": True, "saved": saved, "pushed": pushed, "unchanged": unchanged,
                            "errors": errors, "date": target.isoformat(),
                            "driverTargets": driver_targets, "driverPushed": driver_pushed})
+
+
+# ====== メール下書き作成 (指定メールボックスの「下書き」に保存・送信はしない) ======
+# 弁当の _bento_send_summary と同じ Mail.ReadWrite (MI) を使う汎用版。
+# 用途: ASTI月初報告を森ゆうじの下書きへ添付付きで入れる (asti-getsujihoukoku スキルから呼ぶ)。
+# 送信元は許可リスト内のみ。Application Access Policy の許可グループにも入っている必要がある。
+MAIL_DRAFT_MAX_BYTES = 3 * 1024 * 1024   # 添付合計(base64前)の上限
+
+
+def _mail_draft_allowed() -> list:
+    raw = os.environ.get("MAIL_DRAFT_SENDERS", "y.mori@team-stepup.com,m.mori@team-stepup.com")
+    return [s.strip().lower() for s in raw.split(",") if s.strip()]
+
+
+@app.route(route="yukyu/mail-draft", methods=["POST", "OPTIONS"])
+def yukyu_mail_draft(req: func.HttpRequest) -> func.HttpResponse:
+    """{sender, to, subject, bodyHtml|body, attachments:[{name,contentBytes}]} → 下書き作成。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+
+    sender = str(body.get("sender") or "").strip()
+    allowed = _mail_draft_allowed()
+    if sender.lower() not in allowed:
+        return _json_response({"error": "sender_not_allowed", "sender": sender, "allowed": allowed}, 403)
+
+    subject = str(body.get("subject") or "").strip()
+    if not subject:
+        return _json_response({"error": "subject_required"}, 400)
+
+    html = body.get("bodyHtml")
+    content = str(html if html is not None else (body.get("body") or ""))
+
+    to_list = body.get("to") or []
+    if isinstance(to_list, str):
+        to_list = [a.strip() for a in to_list.split(",") if a.strip()]
+
+    msg = {"subject": subject,
+           "body": {"contentType": "HTML" if html is not None else "Text", "content": content}}
+    if to_list:
+        msg["toRecipients"] = [{"emailAddress": {"address": a}} for a in to_list]
+
+    atts = body.get("attachments") or []
+    total = 0
+    if atts:
+        built = []
+        for a in atts:
+            name = str(a.get("name") or "").strip()
+            cb = str(a.get("contentBytes") or "")
+            if not name or not cb:
+                return _json_response({"error": "invalid_attachment"}, 400)
+            total += (len(cb) * 3) // 4
+            built.append({"@odata.type": "#microsoft.graph.fileAttachment",
+                          "name": name, "contentBytes": cb})
+        if total > MAIL_DRAFT_MAX_BYTES:
+            return _json_response({"error": "attachments_too_large", "bytes": total}, 413)
+        msg["attachments"] = built
+
+    try:
+        token = _get_graph_token()
+        r = requests.post(f"https://graph.microsoft.com/v1.0/users/{sender}/messages",
+                          headers={"Authorization": f"Bearer {token}",
+                                   "Content-Type": "application/json"},
+                          json=msg, timeout=120)
+    except Exception as e:
+        logging.exception("mail-draft failed")
+        return _json_response({"error": "graph_call_failed", "detail": str(e)[:300]}, 502)
+
+    if not r.ok:
+        # 403 は Application Access Policy に sender が含まれていない可能性が高い
+        logging.warning("mail-draft graph error %s %s", r.status_code, r.text[:300])
+        return _json_response({"error": "graph_error", "status": r.status_code,
+                               "detail": r.text[:500]}, 502)
+
+    j = r.json()
+    logging.info("mail-draft created by %s for %s (%d attachments, %d bytes)",
+                 email, sender, len(atts), total)
+    return _json_response({"ok": True, "draftId": j.get("id"), "webLink": j.get("webLink"),
+                           "sender": sender, "to": to_list, "attachments": len(atts)})
