@@ -2621,10 +2621,7 @@ KYUYU_FOLDER_BASE = "/sites/TeamStepup/Shared Documents/給油申請レシート
 # Teams「送迎関係」チャネルのメールアドレス(チャネルへメール投稿=Forms フロー廃止後も通知継続)。
 # 既定値はメモ由来。実際のチャネルメール(Teams→チャネル→メールアドレスを取得)で上書き可。
 KYUYU_TEAMS_EMAIL = os.environ.get("KYUYU_TEAMS_EMAIL", "80ade604.team-stepup.com@jp.teams.ms")
-# 給油申請のロック画面Push宛(浩俊)。自分メモ(48:notes)は自己発言扱いで通知が出ないため、
-# yukyu-app の既存Push基盤(_push_to_admins)で浩俊端末へ別途お知らせを出す。
-KYUYU_PUSH_EMAILS = [e.strip() for e in os.environ.get(
-    "KYUYU_PUSH_EMAILS", "h.yamashita@team-stepup.com").split(",") if e.strip()]
+# 給油申請の通知は Teams「送迎関係」チャネルのみ (ロック画面Pushは 2026-08-06 廃止)
 # List54 業務フィールド (AddValidateUpdateItemUsingPath は InternalName を要求=OData_ プレフィックス無し)
 GAS_F_VEHICLE = "_x30ca__x30f3__x30d0__x30fc__x30"   # ナンバー、車両
 GAS_F_AMOUNT  = "_x6255__x623b__x91d1__x984d_"        # 払戻金額
@@ -3169,18 +3166,7 @@ def _kyuyu_do_apply(ident: str, name: str, body: Dict[str, Any]) -> func.HttpRes
                             receipt_bytes=receipt_bytes_list, odo_bytes_raw=odo_bytes)
     except Exception:
         logging.exception("kyuyu teams notify failed")
-    # 浩俊へロック画面Push (メモ投稿は自己発言で通知が出ないため、Pushで気付けるように・best-effort)
-    try:
-        veh_short = re.sub(r"[\s　]+", " ", vehicle).strip()
-        amt = f"¥{int(float(amount)):,}" if amount else ""
-        _push_to_admins(KYUYU_PUSH_EMAILS, {
-            "title": "⛽ 給油申請",
-            "body": f"{name}（{veh_short}）{amt}".strip(),
-            "url": f"{SITE_URL}/Lists/List54/AllItems.aspx",
-            "tag": "kyuyu-apply", "badge": 1,
-        })
-    except Exception:
-        logging.exception("kyuyu push failed")
+    # 通知は Teams「送迎関係」チャネルのみ (Push は 2026-08-06 ユーザー指示で廃止)
     return _json_response({"ok": True, "id": new_id})
 
 
@@ -3213,15 +3199,6 @@ def _kyuyu_item_to_notify(it: Dict[str, Any]) -> None:
     odo_url = og(GAS_F_ODOIMG)
     _kyuyu_notify_teams(shain_no, name, vehicle, _today_jst(), amount, liters, odometer,
                         dist_s, nenpi_s, kankaku_s, pay_type, purposes, receipt_urls, odo_url)
-    try:
-        veh_short = re.sub(r"[\s　]+", " ", vehicle).strip()
-        amt = f"¥{int(float(amount)):,}" if amount else ""
-        _push_to_admins(KYUYU_PUSH_EMAILS, {
-            "title": "⛽ 給油申請", "body": f"{name}（{veh_short}）{amt}".strip(),
-            "url": f"{SITE_URL}/Lists/List54/AllItems.aspx", "tag": "kyuyu-apply", "badge": 1,
-        })
-    except Exception:
-        logging.exception("kyuyu item push failed")
 
 
 # --- yukyu-app (役員/担当者) 版の給油申請 ---
