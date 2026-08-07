@@ -5398,6 +5398,45 @@ def _soumu_counts():
         return "退社" if (e.get(F_YUKYU_TAISHA) or e.get(F_HAKEN_TAISHA)) else "在職"
 
     # 社保喪失: 退社日(遅い方)<=今日 AND 総務-社保が「取得完了」かつ「喪失」でない
+    #   ただし移動退社は社保継続のため除外 (yukyu-app classifyExitEmp と同ルール):
+    #   ① 採用種別に「移動」を含む
+    #   ①-b 退社後14日以内に同一社員番号の次の入社レコードがある (再入社系は除く)
+    #   ② 有給後退社日なし(派遣先退社のみ)で、後続に新しい入社レコードがある
+    k_syubetu = None
+    for _t, _v in fm.items():
+        if "採用種別" in (_t or ""):
+            k_syubetu = _v
+            break
+    by_bango = {}
+    for e in emps:
+        bn = _norm_bango(e.get(F_SHAIN_NO))
+        if bn:
+            by_bango.setdefault(bn, []).append(e)
+
+    def _syubetu(e):
+        return str((k_syubetu and e.get(k_syubetu)) or "")
+
+    def _is_idou_taisha(e, yt, ht, exit_date):
+        if "移動" in _syubetu(e):
+            return True
+        others = [o for o in by_bango.get(_norm_bango(e.get(F_SHAIN_NO)), []) if o is not e]
+        for o in others:
+            nd = _parse_jst_date(o.get(F_NYUSHA))
+            if not nd or nd <= exit_date:
+                continue
+            sv = _syubetu(o)
+            if ("再入" in sv) or ("再採" in sv) or ("出戻" in sv):
+                continue   # 再入社は移動ではない
+            if (nd - exit_date).days <= 14:
+                return True
+        if yt:
+            return False   # 有給使用後退社日あり = 完全退社
+        for o in others:
+            nd = _parse_jst_date(o.get(F_NYUSHA))
+            if nd and nd > ht:
+                return True
+        return False
+
     shitsu = 0
     for e in emps:
         if not e.get("Title"):
@@ -5411,6 +5450,8 @@ def _soumu_counts():
             continue
         v = str((k_shaho and e.get(k_shaho)) or "")
         if "取得完了" in v and "喪失" not in v:
+            if _is_idou_taisha(e, yt, ht, max(ds)):
+                continue
             shitsu += 1
 
     # 離職票: 退社 AND 離職票=「必要」 AND 総務-離職票 in {不要,空欄}
@@ -7025,3 +7066,391 @@ def yukyu_mail_draft(req: func.HttpRequest) -> func.HttpResponse:
                  email, sender, len(atts), total)
     return _json_response({"ok": True, "draftId": j.get("id"), "webLink": j.get("webLink"),
                            "sender": sender, "to": to_list, "attachments": len(atts)})
+
+
+
+# ============================================================
+# 事務所勤怠 (kintai/*) — 事務所管理スタッフ+役員の打刻・承認
+#   認証: 呼び出し元の SP MSAL トークン → currentuser → 事務所社員List の UPN と照合
+#   List は「役員のみ閲覧」の固有権限。スタッフの読み書きはすべて MI 経由のここを通る
+#   打刻時刻はサーバー時刻 (JST) で記録し、上書き不可 (改ざん防止)
+# ============================================================
+LIST_JIMUSHO_SHAIN = "f6272734-d397-4a73-9f6a-810017d4b638"   # 事務所社員 (役員のみ閲覧)
+LIST_JIMUSHO_TC = "34046197-dfc2-4007-80d1-2f6ee0e99021"      # 事務所タイムカード (役員のみ閲覧)
+KINTAI_YAKUIN_EMPNO = {"1", "2"}      # 役員: 週次承認なしで自動確定
+KINTAI_KUBUN_SET = {"出勤", "有給1日", "AM有給", "PM有給", "欠勤"}
+
+_kintai_users_cache: Dict[str, Any] = {"ts": 0.0, "map": {}}
+
+
+def _kintai_jst_now() -> _dt.datetime:
+    return _dt.datetime.utcnow() + _dt.timedelta(hours=9)
+
+
+def _kintai_user_map() -> Dict[str, Dict[str, Any]]:
+    """UPN(lower) → {empNo, name, yakuin}。5分キャッシュ。退職日ありは除外。"""
+    now = time.time()
+    if _kintai_users_cache["ts"] > now - 300 and _kintai_users_cache["map"]:
+        return _kintai_users_cache["map"]
+    items = sp_get_items(LIST_JIMUSHO_SHAIN, select="Id,Title,EmpNo,UPN,TaishokuDate")
+    m: Dict[str, Dict[str, Any]] = {}
+    for it in items:
+        upn = str(it.get("UPN") or "").strip().lower()
+        emp = str(it.get("EmpNo") or "").strip()
+        if not upn or not emp:
+            continue
+        if str(it.get("TaishokuDate") or "").strip():
+            continue
+        m[upn] = {"empNo": emp, "name": str(it.get("Title") or "").strip(),
+                  "yakuin": emp in KINTAI_YAKUIN_EMPNO}
+    _kintai_users_cache["ts"] = now
+    _kintai_users_cache["map"] = m
+    return m
+
+
+def require_kintai_auth(req: func.HttpRequest):
+    """事務所勤怠の本人確認。SP トークン → currentuser → UPN照合。
+    OK なら (user dict, None)、NG なら (None, HttpResponse)。"""
+    auth = req.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None, _json_response({"error": "unauthorized"}, 401)
+    caller_token = auth[7:].strip()
+    try:
+        r = requests.get(
+            f"{SP_RESOURCE}/_api/web/currentuser",
+            headers={"Authorization": f"Bearer {caller_token}",
+                     "Accept": "application/json;odata=nometadata"},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return None, _json_response({"error": "unauthorized"}, 401)
+        info = r.json()
+        email = str(info.get("Email") or info.get("UserPrincipalName") or "").strip().lower()
+    except Exception:
+        logging.exception("kintai auth: SP currentuser failed")
+        return None, _json_response({"error": "unauthorized"}, 401)
+    try:
+        umap = _kintai_user_map()
+    except Exception:
+        logging.exception("kintai auth: user map load failed")
+        return None, _json_response({"error": "server_error"}, 500)
+    u = umap.get(email)
+    if not u:
+        logging.warning("kintai auth: not allowed: %s", email)
+        return None, _json_response({"error": "forbidden"}, 403)
+    return {**u, "email": email}, None
+
+
+def _kintai_get_day_row(emp_no: str, date_s: str) -> Optional[Dict[str, Any]]:
+    rows = sp_get_items(
+        LIST_JIMUSHO_TC,
+        select="Id,Title,EmpNo,KinmuDate,ClockIn,ClockOut,Kubun,Status,ApprovedBy,ApprovedAt,Memo",
+        filter_=f"EmpNo eq '{emp_no}' and KinmuDate eq '{date_s}'",
+    )
+    return rows[0] if rows else None
+
+
+def _kintai_row_public(it: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": it.get("Id"),
+        "name": it.get("Title"),
+        "empNo": it.get("EmpNo"),
+        "date": it.get("KinmuDate"),
+        "clockIn": it.get("ClockIn") or "",
+        "clockOut": it.get("ClockOut") or "",
+        "kubun": it.get("Kubun") or "出勤",
+        "status": it.get("Status") or "未承認",
+        "approvedBy": it.get("ApprovedBy") or "",
+        "approvedAt": it.get("ApprovedAt") or "",
+        "memo": it.get("Memo") or "",
+    }
+
+
+@app.route(route="kintai/punch", methods=["POST", "OPTIONS"])
+def kintai_punch(req: func.HttpRequest) -> func.HttpResponse:
+    """出勤/退勤の打刻。body: {type: 'in'|'out'}。サーバー時刻(JST)で記録。
+    既に打刻済みの枠は上書きしない (already=true で現時刻を返す)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    user, err = require_kintai_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    ptype = str(body.get("type") or "").strip()
+    if ptype not in ("in", "out"):
+        return _json_response({"error": "invalid_type"}, 400)
+
+    now = _kintai_jst_now()
+    date_s = now.strftime("%Y-%m-%d")
+    time_s = now.strftime("%H:%M")
+    fld = "ClockIn" if ptype == "in" else "ClockOut"
+
+    try:
+        row = _kintai_get_day_row(user["empNo"], date_s)
+        if row is None:
+            fields = {
+                "Title": user["name"],
+                "EmpNo": user["empNo"],
+                "KinmuDate": date_s,
+                fld: time_s,
+                "Kubun": "出勤",
+                "Status": "自動確定" if user["yakuin"] else "未承認",
+            }
+            sp_post_item(LIST_JIMUSHO_TC, fields)
+            row = _kintai_get_day_row(user["empNo"], date_s)
+        else:
+            if str(row.get(fld) or "").strip():
+                return _json_response({"ok": False, "already": True,
+                                       "time": row.get(fld),
+                                       "today": _kintai_row_public(row)})
+            sp_patch_item(LIST_JIMUSHO_TC, int(row["Id"]), {fld: time_s})
+            row = _kintai_get_day_row(user["empNo"], date_s)
+    except Exception as e:
+        logging.exception("kintai punch failed")
+        return _json_response({"error": "sp_error", "detail": str(e)[:300]}, 502)
+
+    logging.info("kintai punch %s %s %s %s", user["empNo"], user["name"], ptype, time_s)
+    return _json_response({"ok": True, "type": ptype, "time": time_s,
+                           "today": _kintai_row_public(row) if row else None})
+
+
+@app.route(route="kintai/my", methods=["GET", "OPTIONS"])
+def kintai_my(req: func.HttpRequest) -> func.HttpResponse:
+    """本人の月次勤怠 + 当日状態。?month=YYYY-MM (省略時は当月・JST)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    user, err = require_kintai_auth(req)
+    if err:
+        return err
+    now = _kintai_jst_now()
+    month = str(req.params.get("month") or now.strftime("%Y-%m"))
+    if not re.match(r"^\d{4}-\d{2}$", month):
+        return _json_response({"error": "invalid_month"}, 400)
+    try:
+        rows = sp_get_items(
+            LIST_JIMUSHO_TC,
+            select="Id,Title,EmpNo,KinmuDate,ClockIn,ClockOut,Kubun,Status,ApprovedBy,ApprovedAt,Memo",
+            filter_=f"EmpNo eq '{user['empNo']}' and startswith(KinmuDate,'{month}')",
+        )
+    except Exception as e:
+        logging.exception("kintai my failed")
+        return _json_response({"error": "sp_error", "detail": str(e)[:300]}, 502)
+    rows.sort(key=lambda r: str(r.get("KinmuDate") or ""))
+    today_s = now.strftime("%Y-%m-%d")
+    today_row = next((r for r in rows if r.get("KinmuDate") == today_s), None)
+    return _json_response({
+        "ok": True, "month": month,
+        "me": {"empNo": user["empNo"], "name": user["name"], "yakuin": user["yakuin"]},
+        "today": _kintai_row_public(today_row) if today_row else None,
+        "rows": [_kintai_row_public(r) for r in rows],
+    })
+
+
+@app.route(route="kintai/list", methods=["GET", "OPTIONS"])
+def kintai_list(req: func.HttpRequest) -> func.HttpResponse:
+    """全員分の勤怠 (役員のみ)。?from=YYYY-MM-DD&to=YYYY-MM-DD。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    user, err = require_kintai_auth(req)
+    if err:
+        return err
+    if not user["yakuin"]:
+        return _json_response({"error": "forbidden"}, 403)
+    f = str(req.params.get("from") or "")
+    t = str(req.params.get("to") or "")
+    if not (re.match(r"^\d{4}-\d{2}-\d{2}$", f) and re.match(r"^\d{4}-\d{2}-\d{2}$", t)):
+        return _json_response({"error": "invalid_range"}, 400)
+    try:
+        rows = sp_get_items(
+            LIST_JIMUSHO_TC,
+            select="Id,Title,EmpNo,KinmuDate,ClockIn,ClockOut,Kubun,Status,ApprovedBy,ApprovedAt,Memo",
+            filter_=f"KinmuDate ge '{f}' and KinmuDate le '{t}'",
+        )
+        members = [{"empNo": v["empNo"], "name": v["name"], "yakuin": v["yakuin"]}
+                   for v in _kintai_user_map().values()]
+    except Exception as e:
+        logging.exception("kintai list failed")
+        return _json_response({"error": "sp_error", "detail": str(e)[:300]}, 502)
+    rows.sort(key=lambda r: (str(r.get("EmpNo") or ""), str(r.get("KinmuDate") or "")))
+    members.sort(key=lambda m: int(m["empNo"]) if str(m["empNo"]).isdigit() else 0)
+    return _json_response({"ok": True, "from": f, "to": t, "members": members,
+                           "rows": [_kintai_row_public(r) for r in rows]})
+
+
+@app.route(route="kintai/pending", methods=["GET", "OPTIONS"])
+def kintai_pending(req: func.HttpRequest) -> func.HttpResponse:
+    """承認待ちの有給・欠勤申請 (役員のみ・日付範囲なし＝未来の申請も含む)。
+    ホームの勤怠バッジと承認画面の「承認待ちの申請」欄で使用。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    user, err = require_kintai_auth(req)
+    if err:
+        return err
+    if not user["yakuin"]:
+        return _json_response({"error": "forbidden"}, 403)
+    try:
+        rows = sp_get_items(
+            LIST_JIMUSHO_TC,
+            select="Id,Title,EmpNo,KinmuDate,ClockIn,ClockOut,Kubun,Status,ApprovedBy,ApprovedAt,Memo",
+            filter_="Status eq '未承認' and Kubun ne '出勤'",
+        )
+    except Exception as e:
+        logging.exception("kintai pending failed")
+        return _json_response({"error": "sp_error", "detail": str(e)[:300]}, 502)
+    rows.sort(key=lambda r: str(r.get("KinmuDate") or ""))
+    return _json_response({"ok": True, "count": len(rows),
+                           "rows": [_kintai_row_public(r) for r in rows]})
+
+
+@app.route(route="kintai/mark", methods=["POST", "OPTIONS"])
+def kintai_mark(req: func.HttpRequest) -> func.HttpResponse:
+    """区分 (有給1日/AM有給/PM有給/欠勤/出勤) と備考の設定。
+    スタッフ=自分の未承認日のみ。役員=誰でも。行が無ければ作成。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    user, err = require_kintai_auth(req)
+    if err:
+        return err
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    date_s = str(body.get("date") or "").strip()
+    kubun = str(body.get("kubun") or "").strip()
+    memo = str(body.get("memo") or "").strip()[:250]
+    emp_no = str(body.get("empNo") or user["empNo"]).strip()
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", date_s):
+        return _json_response({"error": "invalid_date"}, 400)
+    if kubun and kubun not in KINTAI_KUBUN_SET:
+        return _json_response({"error": "invalid_kubun"}, 400)
+    if emp_no != user["empNo"] and not user["yakuin"]:
+        return _json_response({"error": "forbidden"}, 403)
+    try:
+        row = _kintai_get_day_row(emp_no, date_s)
+        prev_kubun = str(row.get("Kubun") or "") if row is not None else ""
+        if row is not None and str(row.get("Status")) == "承認済" and not user["yakuin"]:
+            return _json_response({"error": "already_approved"}, 409)
+        target = next((v for v in _kintai_user_map().values() if v["empNo"] == emp_no), None)
+        if target is None:
+            return _json_response({"error": "unknown_empno"}, 400)
+        if row is None:
+            fields = {
+                "Title": target["name"], "EmpNo": emp_no, "KinmuDate": date_s,
+                "Kubun": kubun or "出勤",
+                "Status": "自動確定" if target["yakuin"] else "未承認",
+            }
+            if memo:
+                fields["Memo"] = memo
+            sp_post_item(LIST_JIMUSHO_TC, fields)
+        else:
+            patch: Dict[str, Any] = {}
+            if kubun:
+                patch["Kubun"] = kubun
+            if "memo" in body:
+                patch["Memo"] = memo
+            if patch:
+                sp_patch_item(LIST_JIMUSHO_TC, int(row["Id"]), patch)
+        row = _kintai_get_day_row(emp_no, date_s)
+    except Exception as e:
+        logging.exception("kintai mark failed")
+        return _json_response({"error": "sp_error", "detail": str(e)[:300]}, 502)
+    # スタッフ本人の有給/欠勤の申請(・取り消し)は役員へ承認依頼Push (2026-08-07)
+    if not user["yakuin"] and emp_no == user["empNo"]:
+        try:
+            md = f"{int(date_s[5:7])}/{int(date_s[8:10])}"
+            note = f"（{memo}）" if memo else ""
+            if kubun and kubun != "出勤":
+                _push_to_admins(ADMIN_APPROVER_EMAILS, {
+                    "title": "🕐 勤怠申請（承認待ち）",
+                    "body": f"{user['name']}さん {md} 「{kubun}」の申請{note}。勤怠画面から承認できます。",
+                    "url": YUKYU_APP_URL, "tag": "kintai-shinsei",
+                })
+            elif kubun == "出勤" and prev_kubun and prev_kubun != "出勤":
+                _push_to_admins(ADMIN_APPROVER_EMAILS, {
+                    "title": "🕐 勤怠申請の取り消し",
+                    "body": f"{user['name']}さん {md} 「{prev_kubun}」の申請を取り消しました（出勤に戻す）。",
+                    "url": YUKYU_APP_URL, "tag": "kintai-shinsei",
+                })
+        except Exception:
+            logging.exception("kintai mark push failed")
+    logging.info("kintai mark %s by %s: %s %s %s", emp_no, user["email"], date_s, kubun, memo[:40])
+    return _json_response({"ok": True, "row": _kintai_row_public(row) if row else None})
+
+
+@app.route(route="kintai/edit", methods=["POST", "OPTIONS"])
+def kintai_edit(req: func.HttpRequest) -> func.HttpResponse:
+    """打刻時刻の修正 (役員のみ・打刻漏れ対応)。body: {id, clockIn?, clockOut?, memo?}。
+    修正は必ず備考に理由を残す運用。バージョン履歴にも全変更が残る。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    user, err = require_kintai_auth(req)
+    if err:
+        return err
+    if not user["yakuin"]:
+        return _json_response({"error": "forbidden"}, 403)
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    try:
+        item_id = int(body.get("id"))
+    except Exception:
+        return _json_response({"error": "invalid_id"}, 400)
+    patch: Dict[str, Any] = {}
+    for key, fldname in (("clockIn", "ClockIn"), ("clockOut", "ClockOut")):
+        if key in body:
+            v = str(body.get(key) or "").strip()
+            if v and not re.match(r"^\d{1,2}:\d{2}$", v):
+                return _json_response({"error": "invalid_time", "field": key}, 400)
+            patch[fldname] = v
+    if "memo" in body:
+        patch["Memo"] = str(body.get("memo") or "").strip()[:250]
+    if not patch:
+        return _json_response({"error": "no_fields"}, 400)
+    try:
+        sp_patch_item(LIST_JIMUSHO_TC, item_id, patch)
+    except Exception as e:
+        logging.exception("kintai edit failed")
+        return _json_response({"error": "sp_error", "detail": str(e)[:300]}, 502)
+    logging.info("kintai edit id=%s by %s: %s", item_id, user["email"], patch)
+    return _json_response({"ok": True})
+
+
+@app.route(route="kintai/approve", methods=["POST", "OPTIONS"])
+def kintai_approve(req: func.HttpRequest) -> func.HttpResponse:
+    """週次承認 (役員のみ)。body: {ids: [itemId...]}。最大200件。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    user, err = require_kintai_auth(req)
+    if err:
+        return err
+    if not user["yakuin"]:
+        return _json_response({"error": "forbidden"}, 403)
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    ids = body.get("ids") or []
+    if not isinstance(ids, list) or not ids or len(ids) > 200:
+        return _json_response({"error": "invalid_ids"}, 400)
+    now_s = _kintai_jst_now().strftime("%Y-%m-%d %H:%M")
+    done, errors = [], []
+    for i in ids:
+        try:
+            sp_patch_item(LIST_JIMUSHO_TC, int(i), {
+                "Status": "承認済", "ApprovedBy": user["name"], "ApprovedAt": now_s})
+            done.append(int(i))
+        except Exception as e:
+            errors.append({"id": i, "error": str(e)[:200]})
+    logging.info("kintai approve by %s: %d ok / %d err", user["email"], len(done), len(errors))
+    return _json_response({"ok": len(errors) == 0, "approved": done, "errors": errors})
