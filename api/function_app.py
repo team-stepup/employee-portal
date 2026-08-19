@@ -2921,6 +2921,18 @@ def _kyuyu_build_inline_images(receipt_urls, odo_url, receipt_bytes=None, odo_by
     return attachments, ""
 
 
+def _kyuyu_amt_disp(amount) -> str:
+    """Teams通知用の金額表示。'4698' → '¥4,698'。数値化できなければそのまま。空なら ―"""
+    if amount in (None, ""):
+        return "―"
+    try:
+        n = float(str(amount).replace(",", ""))
+        s = f"¥{int(round(n)):,}"
+    except Exception:
+        s = str(amount)
+    return s
+
+
 def _kyuyu_notify_teams(shain_no, name, vehicle, day, amount, liters, odometer,
                         dist_s, nenpi_s, kankaku_s, pay_type, purposes,
                         receipt_urls, odo_url, receipt_bytes=None, odo_bytes_raw=None) -> None:
@@ -2945,7 +2957,8 @@ def _kyuyu_notify_teams(shain_no, name, vehicle, day, amount, liters, odometer,
         ("距離", dist_disp),
         ("燃費", f"{nenpi_s} km/ℓ" if nenpi_s else "―"),
         ("給油量", f"{_h(liters) if liters else '―'} ℓ"),
-        # 払戻金額/支払い行は非表示 (2026-07-22 ユーザー要望・旧ワークフローカードの体裁に統一。金額はPush/リストで確認)
+        # 金額行: 2026-07-22 に一度非表示→2026-08-19 ユーザー要望で再表示(支払い方法は引き続き非表示)
+        ("金額", _kyuyu_amt_disp(amount)),
     ]
     tr = "".join(
         f'<tr><td style="padding:1px 14px 1px 0;color:#666;white-space:nowrap">{k}</td>'
