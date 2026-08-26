@@ -115,6 +115,7 @@ def build_row(token, d, id1, tantou=""):
     put(_title_key(token, "メールアドレス"), str(d.get("mail") or "").strip()[:120])
     put(_title_key(token, "緊急連絡先"), str(d.get("emergency") or "").strip()[:200])
     put(_title_key(token, "在留資格"), d.get("zairyu"))
+    put(_title_key(token, "応募求人"), str(d.get("applyJob") or "").strip()[:150])
     put(_title_key(token, "免許証有効期限"), d.get("licenseExp"))
     yomi = d.get("yomeru")
     kaku = d.get("kakeru")

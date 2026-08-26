@@ -68,6 +68,8 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
     <button id="langEn" onclick="setLang('en')">English</button>
   </div>
 
+  <div id="applyJobBanner" style="display:none;margin:10px 14px 0;padding:10px 14px;background:#fffbeb;border:1.5px solid #f59e0b;border-radius:10px;font-size:14px;font-weight:700;color:#92400e;"></div>
+
   <div class="card">
     <h2 data-t="s1">1. 基本情報</h2>
     <label class="fl"><span data-t="name">名前（カタカナ または ローマ字）</span> <span class="req">*</span></label>
@@ -252,6 +254,13 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
 <script>
 var API = 'https://func-employee-portal-7833.azurewebsites.net/api/mensetsu/submit';
 var LANG = 'ja';
+// URLパラメータ: ?job=応募求人(HP求人ページから引き継ぎ) / ?lang=表示言語
+var APPLY_JOB = '', URL_LANG = '';
+try {
+  var _q = new URLSearchParams(location.search);
+  APPLY_JOB = (_q.get('job') || '').slice(0, 120);
+  URL_LANG = _q.get('lang') || '';
+} catch (e) {}
 var T = {
   title: { ja:'面接シート', pt:'Ficha de Entrevista', en:'Interview Sheet' },
   sub: { ja:'下の項目を入力してください', pt:'Preencha os campos abaixo', en:'Please fill in the form below' },
@@ -276,6 +285,7 @@ var T = {
   camBack: { ja:'裏を撮影', pt:'Fotografar o VERSO', en:'Take photo: BACK' },
   camLic: { ja:'免許証（表面）を撮影', pt:'Fotografar a carteira de motorista (frente)', en:'Take photo: license (front)' },
   camDone: { ja:'撮影しました（タップで撮り直し）', pt:'Foto OK (toque para refazer)', en:'Photo saved (tap to retake)' },
+  applyJob: { ja:'📌 応募する求人', pt:'📌 Vaga', en:'📌 Applying for' },
   s3: { ja:'3. 在留資格・日本語', pt:'3. Visto e japonês', en:'3. Visa & Japanese' },
   zairyu: { ja:'在留資格', pt:'Tipo de visto (zairyu)', en:'Residence status (visa)' },
   rikai: { ja:'日本語を理解する', pt:'Entender japonês', en:'Understand Japanese' },
@@ -636,6 +646,11 @@ function townPicked() {
 }
 
 function buildAll() {
+  var ab = document.getElementById('applyJobBanner');
+  if (ab) {
+    if (APPLY_JOB) { ab.style.display = 'block'; ab.textContent = t('applyJob') + ': ' + APPLY_JOB; }
+    else ab.style.display = 'none';
+  }
   buildDateSelects();
   buildCityChips();
   refreshTownSelect();
@@ -848,7 +863,7 @@ async function submitForm() {
     commute: picked.commute || '', license: license,
     licenseExp: dateVal('f_lic_y', 'f_lic_m', 'f_lic_d'),
     uniform: val('f_uniform'), shoes: val('f_shoes'),
-    tantou: val('f_tantou'), jobs: jobs, lang: LANG,
+    tantou: val('f_tantou'), jobs: jobs, lang: LANG, applyJob: APPLY_JOB,
     zairyuImages: (val('f_nationality') === '日本') ? [] : [_zcImgs[1], _zcImgs[2]].filter(Boolean),
     licenseImage: (picked.commute === '車' || picked.commute === 'バイク') ? _lcImg : null,
     company_hp: val('company_hp')
@@ -876,7 +891,8 @@ async function submitForm() {
 
 buildAll();
 addJob(); addJob(); addJob();
-setLang('pt');   // デフォルトはポルトガル語(応募者の多数派)
+// デフォルトはポルトガル語(応募者の多数派)。?lang= があればそれを優先
+setLang((URL_LANG === 'ja' || URL_LANG === 'pt' || URL_LANG === 'en') ? URL_LANG : 'pt');
 </script>
 </body>
 </html>
