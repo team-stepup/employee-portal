@@ -111,11 +111,13 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
 
   <div class="card">
     <h2 data-t="s2">2. 住所</h2>
-    <label class="fl" data-t="zip">郵便番号（7桁・自動で住所が入ります）</label>
+    <label class="fl" data-t="cityPick">住んでいる市・区をタップしてください</label>
+    <div class="chiprow" id="g_city" style="margin-bottom:4px;"></div>
+    <label class="fl"><span data-t="addr">住所（続けて町名を入力・番地は不要）</span> <span class="req">*</span></label>
+    <input type="text" id="f_addr" placeholder="浜松市中央区○○町">
+    <label class="fl" data-t="zip">郵便番号（わかる場合のみ・入れると住所が自動で入ります）</label>
     <input type="tel" id="f_zip" inputmode="numeric" maxlength="8" placeholder="4300000" oninput="zipLookup()">
     <div class="zip-hint" id="zipHint"></div>
-    <label class="fl"><span data-t="addr">住所（市区町まで）</span> <span class="req">*</span></label>
-    <input type="text" id="f_addr" placeholder="浜松市中央区○○町">
   </div>
 
   <div class="card">
@@ -227,8 +229,9 @@ var T = {
   mail: { ja:'メールアドレス', pt:'E-mail', en:'E-mail' },
   emg: { ja:'緊急連絡先（名前と電話）', pt:'Contato de emergência (nome e tel)', en:'Emergency contact (name & phone)' },
   s2: { ja:'2. 住所', pt:'2. Endereço', en:'2. Address' },
-  zip: { ja:'郵便番号（7桁・自動で住所が入ります）', pt:'CEP (7 dígitos, endereço automático)', en:'Postal code (7 digits, auto-fill)' },
-  addr: { ja:'住所（市区町まで）', pt:'Endereço (cidade e bairro)', en:'Address (city & town)' },
+  cityPick: { ja:'住んでいる市・区をタップしてください', pt:'Toque na sua cidade', en:'Tap your city' },
+  zip: { ja:'郵便番号（わかる場合のみ・入れると住所が自動で入ります）', pt:'CEP (se souber; preenche o endereço automaticamente)', en:'Postal code (if known; auto-fills address)' },
+  addr: { ja:'住所（続けて町名を入力・番地は不要）', pt:'Endereço (digite o bairro; número não é necessário)', en:'Address (add your town; no street number needed)' },
   s3: { ja:'3. 在留資格・日本語', pt:'3. Visto e japonês', en:'3. Visa & Japanese' },
   zairyu: { ja:'在留資格', pt:'Tipo de visto (zairyu)', en:'Residence status (visa)' },
   rikai: { ja:'日本語を理解する', pt:'Entender japonês', en:'Understand Japanese' },
@@ -441,7 +444,32 @@ function relabelJobs() {
   }
 }
 
+// 市・区のワンタップ選択 → 住所欄の先頭にセット
+var CITIES = ['浜松市中央区', '浜松市浜名区', '浜松市天竜区', '磐田市', '袋井市', '掛川市', '湖西市'];
+function buildCityChips() {
+  var box = document.getElementById('g_city');
+  if (!box) return;
+  box.innerHTML = '';
+  CITIES.forEach(function(c) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = c;
+    var cur = (document.getElementById('f_addr') || { value: '' }).value;
+    b.className = (cur.indexOf(c) === 0) ? 'on' : '';
+    b.onclick = function() {
+      var ad = document.getElementById('f_addr');
+      var rest = ad.value;
+      CITIES.forEach(function(x) { if (rest.indexOf(x) === 0) rest = rest.slice(x.length); });
+      ad.value = c + rest;
+      buildCityChips();
+      ad.focus();
+    };
+    box.appendChild(b);
+  });
+}
+
 function buildAll() {
+  buildCityChips();
   buildBtnGroup('g_sex', 'sex', 'sex');
   buildBtnGroup('g_marital', 'marital', 'marital');
   buildBtnGroup('g_jpRikai', 'jpLevel', 'jpRikai');
@@ -505,6 +533,7 @@ async function zipLookup() {
       var a = d.results[0];
       document.getElementById('f_addr').value = (a.address1 || '') + (a.address2 || '') + (a.address3 || '');
       document.getElementById('zipHint').textContent = '✔ ' + a.address1 + a.address2 + a.address3;
+      buildCityChips();
     }
   } catch (e) {}
 }
