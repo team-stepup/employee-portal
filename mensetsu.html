@@ -71,9 +71,13 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
     <label class="fl"><span data-t="name">名前（カタカナ または ローマ字）</span> <span class="req">*</span></label>
     <input type="text" id="f_name" autocomplete="name">
     <div class="row2">
-      <div>
+      <div style="flex:1.6;">
         <label class="fl"><span data-t="birth">生年月日</span> <span class="req">*</span></label>
-        <input type="date" id="f_birth" min="1940-01-01">
+        <div class="row2">
+          <div><select id="f_birth_y"></select></div>
+          <div><select id="f_birth_m"></select></div>
+          <div><select id="f_birth_d"></select></div>
+        </div>
       </div>
       <div>
         <label class="fl" data-t="sex">性別</label>
@@ -166,7 +170,11 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
     <label class="fl" data-t="lic">運転免許</label>
     <select id="f_license"></select>
     <label class="fl" data-t="licExp">免許証有効期限</label>
-    <input type="date" id="f_licenseExp">
+    <div class="row2">
+      <div><select id="f_lic_y"></select></div>
+      <div><select id="f_lic_m"></select></div>
+      <div><select id="f_lic_d"></select></div>
+    </div>
     <label class="fl" data-t="shikaku">資格（複数選択可）</label>
     <div class="chiprow" id="g_shikaku"></div>
     <label class="fl" data-t="shikakuFree">その他の資格（自由入力）</label>
@@ -266,6 +274,9 @@ var T = {
   jriyuu: { ja:'退職した理由', pt:'Motivo da saída', en:'Reason for leaving' },
   years: { ja:'年', pt:'anos', en:'yr' },
   months: { ja:'ヶ月', pt:'meses', en:'mo' },
+  phYear: { ja:'年', pt:'Ano', en:'Year' },
+  phMonth: { ja:'月', pt:'Mês', en:'Month' },
+  phDay: { ja:'日', pt:'Dia', en:'Day' },
   other: { ja:'その他（入力）', pt:'Outro (digitar)', en:'Other (type)' },
   needName: { ja:'名前を入力してください', pt:'Digite o nome', en:'Please enter your name' },
   needTel: { ja:'電話番号を入力してください', pt:'Digite o telefone', en:'Please enter your phone number' },
@@ -444,6 +455,41 @@ function relabelJobs() {
   }
 }
 
+// 年月日プルダウン (生年月日/免許証有効期限)
+function fillDateSelect(id, ph, from, to, step) {
+  var sel = document.getElementById(id);
+  if (!sel) return;
+  if (sel.options.length > 1) {   // 構築済み→プレースホルダーの言語だけ更新
+    sel.options[0].textContent = ph;
+    return;
+  }
+  sel.innerHTML = '';
+  var op0 = document.createElement('option');
+  op0.value = '';
+  op0.textContent = ph;
+  sel.appendChild(op0);
+  for (var v = from; (step > 0 ? v <= to : v >= to); v += step) {
+    var op = document.createElement('option');
+    op.value = String(v);
+    op.textContent = String(v);
+    sel.appendChild(op);
+  }
+}
+function buildDateSelects() {
+  var thisYear = new Date().getFullYear();
+  fillDateSelect('f_birth_y', t('phYear'), thisYear - 16, 1940, -1);
+  fillDateSelect('f_birth_m', t('phMonth'), 1, 12, 1);
+  fillDateSelect('f_birth_d', t('phDay'), 1, 31, 1);
+  fillDateSelect('f_lic_y', t('phYear'), thisYear, thisYear + 16, 1);
+  fillDateSelect('f_lic_m', t('phMonth'), 1, 12, 1);
+  fillDateSelect('f_lic_d', t('phDay'), 1, 31, 1);
+}
+function dateVal(py, pm, pd) {
+  var y = val(py), m = val(pm), d = val(pd);
+  if (!y || !m || !d) return '';
+  return y + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2);
+}
+
 // 市・区のワンタップ選択 → 住所欄の先頭にセット
 var CITIES = ['浜松市中央区', '浜松市浜名区', '浜松市天竜区', '磐田市', '袋井市', '掛川市', '湖西市'];
 function buildCityChips() {
@@ -469,6 +515,7 @@ function buildCityChips() {
 }
 
 function buildAll() {
+  buildDateSelects();
   buildCityChips();
   buildBtnGroup('g_sex', 'sex', 'sex');
   buildBtnGroup('g_marital', 'marital', 'marital');
@@ -543,7 +590,8 @@ function val(id) { var el = document.getElementById(id); return el ? el.value.tr
 async function submitForm() {
   var err = document.getElementById('errBox');
   err.style.display = 'none';
-  var name = val('f_name'), tel = val('f_tel'), addr = val('f_addr'), birth = val('f_birth');
+  var name = val('f_name'), tel = val('f_tel'), addr = val('f_addr');
+  var birth = dateVal('f_birth_y', 'f_birth_m', 'f_birth_d');
   var agree = document.getElementById('f_agree');
   var msg = !name ? t('needName') : (!tel ? t('needTel') : (!birth ? t('needBirth') : (!addr ? t('needAddr')
     : (!(agree && agree.checked) ? t('needAgree') : ''))));
@@ -589,7 +637,8 @@ async function submitForm() {
     jpRikai: picked.jpRikai || '', jpHanasu: picked.jpHanasu || '', jpPct: picked.jpPct || '',
     yomeru: multi.yomeru, kakeru: multi.kakeru,
     zangyo: picked.zangyo || '', sat: picked.sat || '', kotai: picked.kotai || '',
-    commute: picked.commute || '', license: license, licenseExp: val('f_licenseExp'),
+    commute: picked.commute || '', license: license,
+    licenseExp: dateVal('f_lic_y', 'f_lic_m', 'f_lic_d'),
     uniform: val('f_uniform'), shoes: val('f_shoes'),
     tantou: val('f_tantou'), jobs: jobs, lang: LANG,
     company_hp: val('company_hp')
