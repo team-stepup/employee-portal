@@ -117,8 +117,10 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
     <h2 data-t="s2">2. 住所</h2>
     <label class="fl" data-t="cityPick">住んでいる市・区をタップしてください</label>
     <div class="chiprow" id="g_city" style="margin-bottom:4px;"></div>
-    <label class="fl"><span data-t="addr">住所（続けて町名を入力・番地は不要）</span> <span class="req">*</span></label>
-    <input type="text" id="f_addr" placeholder="浜松市中央区○○町">
+    <label class="fl" data-t="townPick">町名を選んでください（番地は不要）</label>
+    <select id="f_townSel" onchange="townPicked()"></select>
+    <label class="fl"><span data-t="addr">住所（自動で入ります・直接入力もできます）</span> <span class="req">*</span></label>
+    <input type="text" id="f_addr" placeholder="浜松市中央区○○町" oninput="buildCityChips();refreshTownSelect()">
     <label class="fl" data-t="zip">郵便番号（わかる場合のみ・入れると住所が自動で入ります）</label>
     <input type="tel" id="f_zip" inputmode="numeric" maxlength="8" placeholder="4300000" oninput="zipLookup()">
     <div class="zip-hint" id="zipHint"></div>
@@ -237,6 +239,7 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
   <p data-t="doneBody">スタッフにお声がけください。</p>
 </div>
 
+<script src="mensetsu_towns.js?v=1"></script>
 <script>
 var API = 'https://func-employee-portal-7833.azurewebsites.net/api/mensetsu/submit';
 var LANG = 'ja';
@@ -255,7 +258,11 @@ var T = {
   s2: { ja:'2. 住所', pt:'2. Endereço', en:'2. Address' },
   cityPick: { ja:'住んでいる市・区をタップしてください', pt:'Toque na sua cidade', en:'Tap your city' },
   zip: { ja:'郵便番号（わかる場合のみ・入れると住所が自動で入ります）', pt:'CEP (se souber; preenche o endereço automaticamente)', en:'Postal code (if known; auto-fills address)' },
-  addr: { ja:'住所（続けて町名を入力・番地は不要）', pt:'Endereço (digite o bairro; número não é necessário)', en:'Address (add your town; no street number needed)' },
+  addr: { ja:'住所（自動で入ります・直接入力もできます）', pt:'Endereço (preenchido automaticamente; pode digitar também)', en:'Address (auto-filled; you can also type)' },
+  townPick: { ja:'町名を選んでください（番地は不要）', pt:'Selecione o bairro (não precisa do número da casa)', en:'Select your town (no street number needed)' },
+  townFirst: { ja:'― タップして町名を選択 ―', pt:'― Toque para selecionar o bairro ―', en:'― Tap to select your town ―' },
+  townNeedCity: { ja:'↑ 先に市・区をタップしてください', pt:'↑ Primeiro toque na cidade acima', en:'↑ Tap your city above first' },
+  townOther: { ja:'リストにない（自分で入力する）', pt:'Não está na lista (vou digitar)', en:'Not in the list (I will type it)' },
   s3: { ja:'3. 在留資格・日本語', pt:'3. Visto e japonês', en:'3. Visa & Japanese' },
   zairyu: { ja:'在留資格', pt:'Tipo de visto (zairyu)', en:'Residence status (visa)' },
   rikai: { ja:'日本語を理解する', pt:'Entender japonês', en:'Understand Japanese' },
@@ -530,24 +537,90 @@ function buildCityChips() {
   CITIES.forEach(function(c) {
     var b = document.createElement('button');
     b.type = 'button';
-    b.textContent = c;
+    b.textContent = (LANG === 'ja') ? c : c + ' ' + ((window.CITY_ROMA || {})[c] || '');
     var cur = (document.getElementById('f_addr') || { value: '' }).value;
     b.className = (cur.indexOf(c) === 0) ? 'on' : '';
     b.onclick = function() {
       var ad = document.getElementById('f_addr');
       var rest = ad.value;
       CITIES.forEach(function(x) { if (rest.indexOf(x) === 0) rest = rest.slice(x.length); });
+      if (isListedTown(rest)) rest = '';   // 別の市のリスト選択町名を引き継がない
       ad.value = c + rest;
       buildCityChips();
-      ad.focus();
+      refreshTownSelect();
     };
     box.appendChild(b);
   });
 }
 
+// 町名ドロップダウン (mensetsu_towns.js: TOWN_DATA = {市区: [[町名, ローマ字, 郵便番号], ...]})
+function isListedTown(s) {
+  if (!s) return false;
+  var td = window.TOWN_DATA || {};
+  for (var c in td) {
+    for (var i = 0; i < td[c].length; i++) { if (td[c][i][0] === s) return true; }
+  }
+  return false;
+}
+function addrCity() {
+  var ad = (document.getElementById('f_addr') || { value: '' }).value;
+  var city = '';
+  CITIES.forEach(function(c) { if (ad.indexOf(c) === 0) city = c; });
+  return city;
+}
+function refreshTownSelect() {
+  var sel = document.getElementById('f_townSel');
+  if (!sel) return;
+  var city = addrCity();
+  var td = (window.TOWN_DATA || {})[city] || [];
+  var rest = ((document.getElementById('f_addr') || { value: '' }).value).slice(city.length);
+  // rest に前方一致する町名のうち最長のものを選択状態にする
+  var best = '';
+  td.forEach(function(tw) { if (rest && rest.indexOf(tw[0]) === 0 && tw[0].length > best.length) best = tw[0]; });
+  sel.innerHTML = '';
+  var o0 = document.createElement('option');
+  o0.value = '';
+  o0.textContent = city ? t('townFirst') : t('townNeedCity');
+  sel.appendChild(o0);
+  td.forEach(function(tw) {
+    var o = document.createElement('option');
+    o.value = tw[0];
+    o.textContent = (LANG === 'ja') ? tw[0] : tw[0] + '（' + tw[1] + '）';
+    if (tw[0] === best) o.selected = true;
+    sel.appendChild(o);
+  });
+  if (city) {
+    var oo = document.createElement('option');
+    oo.value = '__other__';
+    oo.textContent = t('townOther');
+    sel.appendChild(oo);
+  }
+  sel.disabled = !city;
+}
+function townPicked() {
+  var sel = document.getElementById('f_townSel');
+  var ad = document.getElementById('f_addr');
+  var city = addrCity();
+  if (!city || !sel) return;
+  if (sel.value === '__other__') { ad.value = city; ad.focus(); return; }
+  if (!sel.value) return;
+  ad.value = city + sel.value;
+  var td = (window.TOWN_DATA || {})[city] || [];
+  for (var i = 0; i < td.length; i++) {
+    if (td[i][0] === sel.value && td[i][2]) {
+      var z = document.getElementById('f_zip');
+      if (z) z.value = td[i][2];
+      var h = document.getElementById('zipHint');
+      if (h) h.textContent = '✔ 〒' + td[i][2].slice(0, 3) + '-' + td[i][2].slice(3);
+      break;
+    }
+  }
+}
+
 function buildAll() {
   buildDateSelects();
   buildCityChips();
+  refreshTownSelect();
   buildBtnGroup('g_sex', 'sex', 'sex');
   buildBtnGroup('g_marital', 'marital', 'marital');
   buildBtnGroup('g_jpRikai', 'jpLevel', 'jpRikai');
@@ -681,6 +754,7 @@ async function zipLookup() {
       document.getElementById('f_addr').value = (a.address1 || '') + (a.address2 || '') + (a.address3 || '');
       document.getElementById('zipHint').textContent = '✔ ' + a.address1 + a.address2 + a.address3;
       buildCityChips();
+      refreshTownSelect();
     }
   } catch (e) {}
 }
