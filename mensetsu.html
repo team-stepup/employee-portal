@@ -45,6 +45,8 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
   background:linear-gradient(135deg,var(--pl),var(--p)); box-shadow:0 4px 14px rgba(94,53,177,.35); }
 .err { color:#c62828; font-size:13px; font-weight:700; margin-top:8px; display:none; }
 .zip-hint { font-size:12px; color:#0f766e; margin-top:4px; min-height:16px; }
+.camBtn { display:flex; align-items:center; justify-content:center; gap:6px; width:100%; padding:13px 10px; font-size:15px; font-weight:800; border:2px dashed var(--pl); border-radius:12px; background:#f6f2fc; color:#5e35b1; cursor:pointer; }
+.camBtn.done { border-style:solid; background:#ecfdf5; border-color:#10b981; color:#047857; }
 .row2 { display:flex; gap:8px; }
 .row2 > div { flex:1; min-width:0; }
 #done { display:none; text-align:center; padding:60px 20px; }
@@ -133,8 +135,14 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
       <select id="f_zairyu"></select>
       <label class="fl" data-t="zairyuUp">在留カードの写真（表・裏）</label>
       <div class="row2">
-        <div><input type="file" id="f_zc1" accept="image/*" onchange="zcPreview(1)" style="font-size:13px;padding:8px;"></div>
-        <div><input type="file" id="f_zc2" accept="image/*" onchange="zcPreview(2)" style="font-size:13px;padding:8px;"></div>
+        <div>
+          <input type="file" id="f_zc1" accept="image/*" capture="environment" onchange="zcPreview(1)" style="display:none;">
+          <button type="button" class="camBtn" id="camZc1" onclick="document.getElementById('f_zc1').click()">📷 <span data-t="camFront">表を撮影</span></button>
+        </div>
+        <div>
+          <input type="file" id="f_zc2" accept="image/*" capture="environment" onchange="zcPreview(2)" style="display:none;">
+          <button type="button" class="camBtn" id="camZc2" onclick="document.getElementById('f_zc2').click()">📷 <span data-t="camBack">裏を撮影</span></button>
+        </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:6px;">
         <img id="zcp1" style="max-width:48%;border-radius:8px;border:1px solid #e2e8f0;display:none;" alt="">
@@ -189,7 +197,8 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
     </div>
     <div id="licUpBlock" style="display:none;">
       <label class="fl" data-t="licUp">免許証の写真（表面のみ）</label>
-      <input type="file" id="f_lc1" accept="image/*" onchange="lcPreview()" style="font-size:13px;padding:8px;">
+      <input type="file" id="f_lc1" accept="image/*" capture="environment" onchange="lcPreview()" style="display:none;">
+      <button type="button" class="camBtn" id="camLc1" onclick="document.getElementById('f_lc1').click()" style="max-width:340px;">📷 <span data-t="camLic">免許証（表面）を撮影</span></button>
       <img id="lcp1" style="max-width:60%;border-radius:8px;border:1px solid #e2e8f0;display:none;margin-top:6px;" alt="">
       <p style="font-size:11px;color:#94a3b8;margin:6px 0 0;" data-t="licNote">表面だけで大丈夫です（裏面は不要）。面接当日は原本をお持ちください。</p>
     </div>
@@ -239,7 +248,7 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
   <p data-t="doneBody">スタッフにお声がけください。</p>
 </div>
 
-<script src="mensetsu_towns.js?v=1"></script>
+<script src="mensetsu_towns.js?v=2"></script>
 <script>
 var API = 'https://func-employee-portal-7833.azurewebsites.net/api/mensetsu/submit';
 var LANG = 'ja';
@@ -263,6 +272,10 @@ var T = {
   townFirst: { ja:'― タップして町名を選択 ―', pt:'― Toque para selecionar o bairro ―', en:'― Tap to select your town ―' },
   townNeedCity: { ja:'↑ 先に市・区をタップしてください', pt:'↑ Primeiro toque na cidade acima', en:'↑ Tap your city above first' },
   townOther: { ja:'リストにない（自分で入力する）', pt:'Não está na lista (vou digitar)', en:'Not in the list (I will type it)' },
+  camFront: { ja:'表を撮影', pt:'Fotografar a FRENTE', en:'Take photo: FRONT' },
+  camBack: { ja:'裏を撮影', pt:'Fotografar o VERSO', en:'Take photo: BACK' },
+  camLic: { ja:'免許証（表面）を撮影', pt:'Fotografar a carteira de motorista (frente)', en:'Take photo: license (front)' },
+  camDone: { ja:'撮影しました（タップで撮り直し）', pt:'Foto OK (toque para refazer)', en:'Photo saved (tap to retake)' },
   s3: { ja:'3. 在留資格・日本語', pt:'3. Visto e japonês', en:'3. Visa & Japanese' },
   zairyu: { ja:'在留資格', pt:'Tipo de visto (zairyu)', en:'Residence status (visa)' },
   rikai: { ja:'日本語を理解する', pt:'Entender japonês', en:'Understand Japanese' },
@@ -529,7 +542,8 @@ function dateVal(py, pm, pd) {
 }
 
 // 市・区のワンタップ選択 → 住所欄の先頭にセット
-var CITIES = ['浜松市中央区', '浜松市浜名区', '浜松市天竜区', '磐田市', '袋井市', '掛川市', '湖西市'];
+var CITIES = ['浜松市中央区', '浜松市浜名区', '浜松市天竜区', '磐田市', '袋井市', '周智郡森町', '掛川市', '菊川市', '湖西市'];
+var CITY_LABEL = { '周智郡森町': '森町' };   // チップ表示のみ短縮(保存値は正式名)
 function buildCityChips() {
   var box = document.getElementById('g_city');
   if (!box) return;
@@ -537,7 +551,8 @@ function buildCityChips() {
   CITIES.forEach(function(c) {
     var b = document.createElement('button');
     b.type = 'button';
-    b.textContent = (LANG === 'ja') ? c : c + ' ' + ((window.CITY_ROMA || {})[c] || '');
+    var cl = CITY_LABEL[c] || c;
+    b.textContent = (LANG === 'ja') ? cl : cl + ' ' + ((window.CITY_ROMA || {})[c] || '');
     var cur = (document.getElementById('f_addr') || { value: '' }).value;
     b.className = (cur.indexOf(c) === 0) ? 'on' : '';
     b.onclick = function() {
@@ -708,13 +723,24 @@ var _lcImg = null;
 function lcPreview() {
   var inp = document.getElementById('f_lc1');
   var file = inp && inp.files && inp.files[0];
-  if (!file) { _lcImg = null; document.getElementById('lcp1').style.display = 'none'; return; }
+  if (!file) { _lcImg = null; document.getElementById('lcp1').style.display = 'none'; setCamDone('camLc1', 'camLic', false); return; }
   compressImage(file, function(dataUrl) {
     _lcImg = dataUrl;
     var pv = document.getElementById('lcp1');
     pv.src = dataUrl;
     pv.style.display = 'block';
+    setCamDone('camLc1', 'camLic', true);
   });
+}
+
+// 撮影ボタンの状態切替 (done時はラベルをcamDoneへ・data-t差し替えで言語切替にも追従)
+function setCamDone(btnId, baseKey, done) {
+  var btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.className = 'camBtn' + (done ? ' done' : '');
+  if (btn.firstChild && btn.firstChild.nodeType === 3) btn.firstChild.textContent = done ? '✅ ' : '📷 ';
+  var sp = btn.querySelector('span');
+  if (sp) { sp.setAttribute('data-t', done ? 'camDone' : baseKey); sp.textContent = t(done ? 'camDone' : baseKey); }
 }
 
 // 在留カード画像 (最大2枚・クライアント側で縮小圧縮)
@@ -722,7 +748,7 @@ var _zcImgs = {};
 function zcPreview(n) {
   var inp = document.getElementById('f_zc' + n);
   var file = inp && inp.files && inp.files[0];
-  if (!file) { _zcImgs[n] = null; document.getElementById('zcp' + n).style.display = 'none'; return; }
+  if (!file) { _zcImgs[n] = null; document.getElementById('zcp' + n).style.display = 'none'; setCamDone('camZc' + n, n === 1 ? 'camFront' : 'camBack', false); return; }
   var img = new Image();
   var url = URL.createObjectURL(file);
   img.onload = function() {
@@ -737,6 +763,7 @@ function zcPreview(n) {
     var pv = document.getElementById('zcp' + n);
     pv.src = dataUrl;
     pv.style.display = 'block';
+    setCamDone('camZc' + n, n === 1 ? 'camFront' : 'camBack', true);
     URL.revokeObjectURL(url);
   };
   img.src = url;
