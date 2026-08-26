@@ -125,6 +125,7 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
     <select id="f_townSel" onchange="townPicked()"></select>
     <label class="fl"><span data-t="addr">住所（自動で入ります・直接入力もできます）</span> <span class="req">*</span></label>
     <input type="text" id="f_addr" placeholder="浜松市中央区○○町" oninput="buildCityChips();refreshTownSelect()">
+    <div id="addrRomaHint" style="font-size:12px;font-weight:700;color:#7c6aa6;margin-top:3px;min-height:15px;"></div>
     <label class="fl" data-t="zip">郵便番号（わかる場合のみ・入れると住所が自動で入ります）</label>
     <input type="tel" id="f_zip" inputmode="numeric" maxlength="8" placeholder="4300000" oninput="zipLookup()">
     <div class="zip-hint" id="zipHint"></div>
@@ -225,9 +226,10 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
     <p style="font-size:12px;color:#64748b;margin:0 0 6px;" data-t="tantouHint">スタッフに聞いて選んでください</p>
     <select id="f_tantou">
       <option value="">-</option>
-      <option>城かおり</option>
-      <option>吉浦マルセロ</option>
-      <option>森ゆうじ</option>
+      <option value="城かおり">城かおり（Jo Kaori）</option>
+      <option value="吉浦マルセロ">吉浦マルセロ（Yoshiura Marcelo）</option>
+      <option value="森ゆうじ">森ゆうじ（Mori Yuji）</option>
+      <option value="ホームページから" data-t-opt="tantouHp">ホームページから（担当者なし）</option>
     </select>
   </div>
 
@@ -286,6 +288,7 @@ var T = {
   camLic: { ja:'免許証（表面）を撮影', pt:'Fotografar a carteira de motorista (frente)', en:'Take photo: license (front)' },
   camDone: { ja:'撮影しました（タップで撮り直し）', pt:'Foto OK (toque para refazer)', en:'Photo saved (tap to retake)' },
   applyJob: { ja:'📌 応募する求人', pt:'📌 Vaga', en:'📌 Applying for' },
+  tantouHp: { ja:'ホームページから（担当者なし）', pt:'Pelo site (sem responsável)', en:'From the website (no contact staff)' },
   s3: { ja:'3. 在留資格・日本語', pt:'3. Visto e japonês', en:'3. Visa & Japanese' },
   zairyu: { ja:'在留資格', pt:'Tipo de visto (zairyu)', en:'Residence status (visa)' },
   rikai: { ja:'日本語を理解する', pt:'Entender japonês', en:'Understand Japanese' },
@@ -624,6 +627,15 @@ function refreshTownSelect() {
     sel.appendChild(oo);
   }
   sel.disabled = !city;
+  // 住所のローマ字読みを入力欄の下に表示
+  var hint = document.getElementById('addrRomaHint');
+  if (hint) {
+    var roma = city ? ((window.CITY_ROMA || {})[city] || '') : '';
+    if (roma && best) {
+      for (var bi = 0; bi < td.length; bi++) { if (td[bi][0] === best) { roma += ' ' + td[bi][1]; break; } }
+    }
+    hint.textContent = roma;
+  }
 }
 function townPicked() {
   var sel = document.getElementById('f_townSel');
@@ -646,6 +658,11 @@ function townPicked() {
 }
 
 function buildAll() {
+  // option等のdata-t-opt翻訳
+  document.querySelectorAll('[data-t-opt]').forEach(function(el) {
+    var k = el.getAttribute('data-t-opt');
+    if (T[k]) el.textContent = t(k);
+  });
   var ab = document.getElementById('applyJobBanner');
   if (ab) {
     if (APPLY_JOB) { ab.style.display = 'block'; ab.textContent = t('applyJob') + ': ' + APPLY_JOB; }
@@ -893,6 +910,8 @@ buildAll();
 addJob(); addJob(); addJob();
 // デフォルトはポルトガル語(応募者の多数派)。?lang= があればそれを優先
 setLang((URL_LANG === 'ja' || URL_LANG === 'pt' || URL_LANG === 'en') ? URL_LANG : 'pt');
+// HP求人経由なら担当者を「ホームページから」に初期選択
+if (APPLY_JOB) { var _ts = document.getElementById('f_tantou'); if (_ts && !_ts.value) _ts.value = 'ホームページから'; }
 </script>
 </body>
 </html>
