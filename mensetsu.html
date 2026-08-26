@@ -102,9 +102,9 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
     </div>
     <label class="fl"><span data-t="tel">電話番号</span> <span class="req">*</span></label>
     <input type="tel" id="f_tel" inputmode="tel" placeholder="090-0000-0000">
-    <label class="fl" data-t="mail">メールアドレス（任意）</label>
+    <label class="fl" data-t="mail">メールアドレス</label>
     <input type="email" id="f_mail" inputmode="email">
-    <label class="fl" data-t="emg">緊急連絡先（名前と電話・任意）</label>
+    <label class="fl" data-t="emg">緊急連絡先（名前と電話）</label>
     <input type="text" id="f_emergency" placeholder="例: ハナコ 090-1111-2222">
     <input type="text" id="company_hp" style="display:none" tabindex="-1" autocomplete="off">
   </div>
@@ -163,11 +163,11 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
     <h2 data-t="s6">6. 免許・資格・サイズ</h2>
     <label class="fl" data-t="lic">運転免許</label>
     <select id="f_license"></select>
-    <label class="fl" data-t="licExp">免許証有効期限（任意）</label>
+    <label class="fl" data-t="licExp">免許証有効期限</label>
     <input type="date" id="f_licenseExp">
     <label class="fl" data-t="shikaku">資格（複数選択可）</label>
     <div class="chiprow" id="g_shikaku"></div>
-    <label class="fl" data-t="shikakuFree">その他の資格（自由入力・任意）</label>
+    <label class="fl" data-t="shikakuFree">その他の資格（自由入力）</label>
     <input type="text" id="f_shikakuFree">
     <div class="row2">
       <div>
@@ -224,8 +224,8 @@ var T = {
   marital: { ja:'婚姻状況', pt:'Estado civil', en:'Marital status' },
   nat: { ja:'国籍', pt:'Nacionalidade', en:'Nationality' },
   tel: { ja:'電話番号', pt:'Telefone', en:'Phone number' },
-  mail: { ja:'メールアドレス（任意）', pt:'E-mail (opcional)', en:'E-mail (optional)' },
-  emg: { ja:'緊急連絡先（名前と電話・任意）', pt:'Contato de emergência (nome e tel, opcional)', en:'Emergency contact (name & phone, optional)' },
+  mail: { ja:'メールアドレス', pt:'E-mail', en:'E-mail' },
+  emg: { ja:'緊急連絡先（名前と電話）', pt:'Contato de emergência (nome e tel)', en:'Emergency contact (name & phone)' },
   s2: { ja:'2. 住所', pt:'2. Endereço', en:'2. Address' },
   zip: { ja:'郵便番号（7桁・自動で住所が入ります）', pt:'CEP (7 dígitos, endereço automático)', en:'Postal code (7 digits, auto-fill)' },
   addr: { ja:'住所（市区町まで）', pt:'Endereço (cidade e bairro)', en:'Address (city & town)' },
@@ -245,7 +245,7 @@ var T = {
   commute: { ja:'通勤手段', pt:'Meio de transporte', en:'Transportation' },
   s6: { ja:'6. 免許・サイズ', pt:'6. Habilitação e tamanhos', en:'6. License & sizes' },
   lic: { ja:'運転免許', pt:'Carteira de motorista', en:'Driver license' },
-  licExp: { ja:'免許証有効期限（任意）', pt:'Validade da carteira (opcional)', en:'License expiry (optional)' },
+  licExp: { ja:'免許証有効期限', pt:'Validade da carteira', en:'License expiry' },
   uni: { ja:'作業服サイズ', pt:'Tamanho do uniforme', en:'Uniform size' },
   shoes: { ja:'靴のサイズ', pt:'Número do sapato', en:'Shoe size' },
   s7: { ja:'7. 面接担当者', pt:'7. Entrevistador', en:'7. Interviewer' },
@@ -255,12 +255,12 @@ var T = {
   doneBody: { ja:'ありがとうございます。スタッフにお声がけください。', pt:'Obrigado! Avise o staff.', en:'Thank you! Please tell the staff.' },
   jobN: { ja:'職歴', pt:'Experiência', en:'Work history' },
   jcompany: { ja:'会社名', pt:'Nome da fábrica/empresa', en:'Company name' },
-  jhaken: { ja:'派遣会社（任意）', pt:'Empreiteira (opcional)', en:'Staffing agency (optional)' },
-  jjikyu: { ja:'時給（円・任意）', pt:'Salário por hora (ienes, opcional)', en:'Hourly wage (yen, optional)' },
+  jhaken: { ja:'派遣会社', pt:'Empreiteira', en:'Staffing agency' },
+  jjikyu: { ja:'時給（円）', pt:'Salário por hora (ienes)', en:'Hourly wage (yen)' },
   jshoku: { ja:'職種', pt:'Setor', en:'Industry' },
   jnaiyou: { ja:'仕事内容', pt:'Tipo de serviço', en:'Job type' },
   jkikan: { ja:'勤続期間', pt:'Tempo de serviço', en:'Duration' },
-  jriyuu: { ja:'退職した理由（任意）', pt:'Motivo da saída (opcional)', en:'Reason for leaving (optional)' },
+  jriyuu: { ja:'退職した理由', pt:'Motivo da saída', en:'Reason for leaving' },
   years: { ja:'年', pt:'anos', en:'yr' },
   months: { ja:'ヶ月', pt:'meses', en:'mo' },
   other: { ja:'その他（入力）', pt:'Outro (digitar)', en:'Other (type)' },
@@ -275,7 +275,7 @@ var T = {
   zairyu2: { ja:'在留資格（外国籍の方のみ）', pt:'Tipo de visto (apenas estrangeiros)', en:'Residence status (foreigners only)' },
   online: { ja:'オンライン面接の方法', pt:'Entrevista online: como?', en:'Online interview method' },
   shikaku: { ja:'資格（複数選択可）', pt:'Qualificações (múltipla escolha)', en:'Qualifications (multiple)' },
-  shikakuFree: { ja:'その他の資格（自由入力・任意）', pt:'Outras qualificações (opcional)', en:'Other qualifications (optional)' },
+  shikakuFree: { ja:'その他の資格（自由入力）', pt:'Outras qualificações', en:'Other qualifications' },
   s8: { ja:'8. 個人情報の取り扱いについて', pt:'8. Tratamento de dados pessoais', en:'8. Handling of personal information' },
   agree: { ja:'同意します', pt:'Concordo', en:'I agree' },
   needAgree: { ja:'個人情報の取り扱いに同意してください', pt:'Concorde com o tratamento de dados pessoais', en:'Please agree to the privacy policy' },
