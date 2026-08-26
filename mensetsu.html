@@ -411,6 +411,16 @@ function buildSelect(id, optKey) {
   };
 }
 
+// 時給プルダウン: 1,100円以下 → 50円刻み → 1,600円以上
+function jikyuOptions() {
+  var h = '<option value="">-</option><option value="1100円以下">〜1,100円以下</option>';
+  for (var v = 1150; v <= 1550; v += 50) {
+    h += '<option value="' + v + '円">' + v.toLocaleString('ja-JP') + '円</option>';
+  }
+  h += '<option value="1600円以上">1,600円以上〜</option>';
+  return h;
+}
+
 // ===== 職歴カード (初期3件・最大4件) =====
 var jobCount = 0;
 function addJob() {
@@ -428,7 +438,7 @@ function addJob() {
     + (i > 1 ? '<button type="button" class="jobdel" onclick="delJob(' + i + ')">✕</button>' : '')
     + '<label class="fl" data-jt="jcompany">' + t('jcompany') + '</label><input type="text" id="j' + i + '_company">'
     + '<div class="row2"><div><label class="fl" data-jt="jhaken">' + t('jhaken') + '</label><input type="text" id="j' + i + '_haken"></div>'
-    + '<div><label class="fl" data-jt="jjikyu">' + t('jjikyu') + '</label><input type="number" id="j' + i + '_jikyu" inputmode="numeric" placeholder="1300"></div></div>'
+    + '<div><label class="fl" data-jt="jjikyu">' + t('jjikyu') + '</label><select id="j' + i + '_jikyu">' + jikyuOptions() + '</select></div></div>'
     + '<div class="row2"><div><label class="fl" data-jt="jshoku">' + t('jshoku') + '</label><select id="j' + i + '_shokushu"></select></div>'
     + '<div><label class="fl" data-jt="jnaiyou">' + t('jnaiyou') + '</label><select id="j' + i + '_naiyou"></select></div></div>'
     + '<label class="fl" data-jt="jkikan">' + t('jkikan') + '</label>'
@@ -608,7 +618,7 @@ async function submitForm() {
     var kikan = (ky ? ky + '年' : '') + (km ? km + 'ヶ月' : '');
     var haken = val('j' + i + '_haken');
     var jikyu = val('j' + i + '_jikyu');
-    if (jikyu) haken = (haken ? haken + ' ' : '') + '時給' + jikyu + '円';
+    if (jikyu) haken = (haken ? haken + ' ' : '') + '時給' + jikyu;
     var jb = { company: val('j' + i + '_company'), haken: haken,
                shokushu: val('j' + i + '_shokushu'), naiyou: val('j' + i + '_naiyou'),
                kikan: kikan, riyuu: val('j' + i + '_riyuu') };
