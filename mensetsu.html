@@ -51,6 +51,13 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
 .camBtn.done { border-style:solid; background:#ecfdf5; border-color:#10b981; color:#047857; }
 .row2 { display:flex; gap:8px; }
 .row2 > div { flex:1; min-width:0; }
+/* スマホ: 基本は縦積み(.keepの行だけ横並び維持) */
+@media (max-width:520px) {
+  .row2 { flex-wrap:wrap; }
+  .row2 > div { flex:1 1 100%; }
+  .row2.keep { flex-wrap:nowrap; }
+  .row2.keep > div { flex:1 1 0; }
+}
 #done { display:none; text-align:center; padding:60px 20px; }
 #done .big { font-size:52px; }
 #done h2 { color:var(--p); }
@@ -79,7 +86,7 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
     <div class="row2">
       <div style="flex:1.6;">
         <label class="fl"><span data-t="birth">生年月日</span> <span class="req">*</span></label>
-        <div class="row2">
+        <div class="row2 keep">
           <div><select id="f_birth_y"></select></div>
           <div><select id="f_birth_m"></select></div>
           <div><select id="f_birth_d"></select></div>
@@ -139,7 +146,7 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
       <label class="fl" data-t="zairyu">在留資格（外国籍の方のみ）</label>
       <select id="f_zairyu"></select>
       <label class="fl" data-t="zairyuUp">在留カードの写真（表・裏）</label>
-      <div class="row2">
+      <div class="row2 keep">
         <div>
           <input type="file" id="f_zc1" accept="image/*" capture="environment" onchange="zcPreview(1)" style="display:none;">
           <button type="button" class="camBtn" id="camZc1" onclick="document.getElementById('f_zc1').click()">📷 <span data-t="camFront">表を撮影</span></button>
@@ -195,7 +202,7 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
     <label class="fl" data-t="lic">運転免許</label>
     <select id="f_license"></select>
     <label class="fl" data-t="licExp">免許証有効期限</label>
-    <div class="row2">
+    <div class="row2 keep">
       <div><select id="f_lic_y"></select></div>
       <div><select id="f_lic_m"></select></div>
       <div><select id="f_lic_d"></select></div>
@@ -211,7 +218,7 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
     <div class="chiprow" id="g_shikaku"></div>
     <label class="fl" data-t="shikakuFree">その他の資格（自由入力）</label>
     <input type="text" id="f_shikakuFree">
-    <div class="row2">
+    <div class="row2 keep">
       <div>
         <label class="fl" data-t="uni">作業服サイズ</label>
         <select id="f_uniform"></select>
@@ -498,7 +505,7 @@ function addJob() {
     + '<div class="row2"><div><label class="fl" data-jt="jshoku">' + t('jshoku') + '</label><select id="j' + i + '_shokushu"></select></div>'
     + '<div><label class="fl" data-jt="jnaiyou">' + t('jnaiyou') + '</label><select id="j' + i + '_naiyou"></select></div></div>'
     + '<label class="fl" data-jt="jkikan">' + t('jkikan') + '</label>'
-    + '<div class="row2"><div><select id="j' + i + '_ky">' + years + '</select></div><div style="align-self:center;flex:0 0 auto;font-size:13px;" data-jt="years">' + t('years') + '</div>'
+    + '<div class="row2 keep"><div><select id="j' + i + '_ky">' + years + '</select></div><div style="align-self:center;flex:0 0 auto;font-size:13px;" data-jt="years">' + t('years') + '</div>'
     + '<div><select id="j' + i + '_km">' + months + '</select></div><div style="align-self:center;flex:0 0 auto;font-size:13px;" data-jt="months">' + t('months') + '</div></div>'
     + '<label class="fl" data-jt="jriyuu">' + t('jriyuu') + '</label><input type="text" id="j' + i + '_riyuu">';
   document.getElementById('jobs').appendChild(div);
@@ -644,9 +651,10 @@ function townPicked() {
   var ad = document.getElementById('f_addr');
   var city = addrCity();
   if (!city || !sel) return;
-  if (sel.value === '__other__') { ad.value = city; ad.focus(); return; }
+  if (sel.value === '__other__') { ad.value = city; refreshTownSelect(); ad.focus(); return; }
   if (!sel.value) return;
   ad.value = city + sel.value;
+  refreshTownSelect();
   var td = (window.TOWN_DATA || {})[city] || [];
   for (var i = 0; i < td.length; i++) {
     if (td[i][0] === sel.value && td[i][2]) {
