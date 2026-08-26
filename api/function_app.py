@@ -1482,6 +1482,74 @@ def apply_public(req: func.HttpRequest) -> func.HttpResponse:
     return _json_response({"ok": True, "id": new_id}, 200, extra_headers=public_cors)
 
 
+# ============================================================
+# 面接シート受付 (Forms置き換え・2026-08-26)
+#   応募者のスマホ入力 → 既存「面接表」List(ルートサイト)へ直接保存(ID1連番継続)
+#   → スキルシート機能がそのまま新旧データを扱える。通知はメール+Push。
+# ============================================================
+@app.route(route="mensetsu/submit", methods=["POST", "OPTIONS"])
+def mensetsu_submit(req: func.HttpRequest) -> func.HttpResponse:
+    public_cors = {"Access-Control-Allow-Origin": "*"}
+    if req.method == "OPTIONS":
+        return _json_response({}, 204, extra_headers=public_cors)
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400, extra_headers=public_cors)
+    # honeypot
+    if (body.get("company_hp") or "").strip():
+        return _json_response({"ok": True}, 200, extra_headers=public_cors)
+    name = str(body.get("name") or "").strip()
+    tel = str(body.get("tel") or "").strip()
+    if not name or not tel:
+        return _json_response({"error": "missing_required"}, 400, extra_headers=public_cors)
+    import mensetsu as _mn
+    try:
+        tok = _get_sp_token()
+        id1 = _mn.next_id1(tok)
+        tantou = str(body.get("tantou") or "").strip()[:40]
+        row = _mn.build_row(tok, body, id1, tantou=tantou)
+        item_id = _mn.create_row(tok, row)
+    except Exception as e:
+        logging.exception("mensetsu save failed")
+        return _json_response({"error": "save_failed", "detail": str(e)[:300]}, 500,
+                              extra_headers=public_cors)
+    # 通知(メール+Push・best effort)
+    try:
+        token = _get_graph_token()
+        sender = os.environ.get("SHORUI_MAIL_SENDER", "jimusyo1@team-stepup.com").strip() or "jimusyo1@team-stepup.com"
+        html = ('<div style="font-family:Meiryo,sans-serif;">'
+                f'<h3 style="margin:0 0 8px;">📋 面接シートが提出されました (ID {id1})</h3>'
+                '<table style="border-collapse:collapse;">'
+                + "".join(
+                    f'<tr><td style="padding:3px 10px 3px 0;color:#666;">{k}</td>'
+                    f'<td style="padding:3px 0;"><b>{str(v)}</b></td></tr>'
+                    for k, v in [("氏名", name), ("電話", tel),
+                                 ("担当者", tantou or "未指定"),
+                                 ("通勤", body.get("commute") or ""),
+                                 ("日本語", body.get("jpPct") or "")] if v)
+                + "</table>"
+                '<p style="color:#666;font-size:12px;">yukyu-app の 📄スキルシート に反映されています。</p></div>')
+        message = {"subject": f"【面接シート】{name} 様 (ID {id1})",
+                   "body": {"contentType": "HTML", "content": html},
+                   "toRecipients": [{"emailAddress": {"address": a}} for a in APPLY_NOTIFY_EMAILS]}
+        requests.post(f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail",
+                      headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                      json={"message": message, "saveToSentItems": False}, timeout=30)
+    except Exception:
+        logging.warning("mensetsu notify mail failed")
+    try:
+        _push_to_admins(APPLY_PUSH_EMAILS, {
+            "title": "📋 面接シートが提出されました",
+            "body": f"{name} 様 (ID {id1})",
+            "url": YUKYU_APP_URL,
+        })
+    except Exception:
+        logging.warning("mensetsu push failed")
+    return _json_response({"ok": True, "id1": id1, "itemId": item_id}, 200,
+                          extra_headers=public_cors)
+
+
 @app.route(route="jobs/admin", methods=["GET", "OPTIONS"])
 def jobs_admin_list(req: func.HttpRequest) -> func.HttpResponse:
     """役員専用: 全求人(非公開含む)を管理用に返す。"""
@@ -6327,6 +6395,55 @@ YUKYU_STAFF_ALLOWED = {
     "m.yoshiura@team-stepup.com", "y.mori@team-stepup.com",
 }
 
+# スキルシート作成者印: メール → 苗字 (認印スタンプ用)
+YUKYU_STAFF_SURNAME = {
+    "h.yamashita@team-stepup.com": "山下",
+    "a.yamashita@team-stepup.com": "山下",
+    "kaori.j@team-stepup.com": "城",
+    "m.mori@team-stepup.com": "森",
+    "m.yoshiura@team-stepup.com": "吉浦",
+    "y.mori@team-stepup.com": "森",
+}
+
+# ファイル名用フルネーム (応募者名_担当者名.pdf)
+YUKYU_STAFF_FULLNAME = {
+    "h.yamashita@team-stepup.com": "山下浩俊",
+    "a.yamashita@team-stepup.com": "山下亜実",
+    "kaori.j@team-stepup.com": "城かおり",
+    "m.mori@team-stepup.com": "森まこと",
+    "m.yoshiura@team-stepup.com": "吉浦マルセロ",
+    "y.mori@team-stepup.com": "森ゆうじ",
+}
+
+# 生成PDFの自動保存先 (社員ファイル ライブラリ内)
+SKILLSHEET_FOLDER = SHAINFILE_ROOT + "/スキルシート"
+
+
+def _skillsheet_upload_pdf(token, pdf_bytes, name, email):
+    """PDFを 社員ファイル/スキルシート/{応募者名}_{担当者名}.pdf へ保存(上書き)"""
+    from urllib.parse import quote as _q
+    hdr = {"Authorization": f"Bearer {token}",
+           "Accept": "application/json;odata=nometadata"}
+    folder_api = (f"{SITE_TEAMSTEPUP}/_api/web/GetFolderByServerRelativePath"
+                  f"(decodedurl='{_q(SKILLSHEET_FOLDER)}')")
+    r = requests.get(folder_api, headers=hdr, timeout=20)
+    if not r.ok:
+        # フォルダが無ければ作成 (既存なら失敗しても次のアップロードで判明する)
+        requests.post(
+            f"{SITE_TEAMSTEPUP}/_api/web/folders/addusingpath"
+            f"(DecodedUrl='{_q(SKILLSHEET_FOLDER)}')",
+            headers={**hdr, "Content-Type": "application/json;odata=nometadata"},
+            timeout=20)
+    tantou = YUKYU_STAFF_FULLNAME.get(email) or email.split("@")[0]
+    safe = re.sub(r'[\\/:*?"<>|#%]', "", str(name or "応募者")).strip() or "応募者"
+    fname = f"{safe}_{tantou}.pdf"
+    up = requests.post(
+        folder_api + f"/Files/AddUsingPath(DecodedUrl='{_q(fname)}',overwrite=true)",
+        headers={**hdr, "Content-Type": "application/octet-stream"},
+        data=pdf_bytes, timeout=60)
+    up.raise_for_status()
+    return SKILLSHEET_FOLDER + "/" + fname
+
 
 def require_staff_auth(req: func.HttpRequest):
     """yukyu-app 利用者 (役員/担当者) の認証。呼び出し元の SP トークンで本人確認。"""
@@ -7467,3 +7584,262 @@ def kintai_approve(req: func.HttpRequest) -> func.HttpResponse:
             errors.append({"id": i, "error": str(e)[:200]})
     logging.info("kintai approve by %s: %d ok / %d err", user["email"], len(done), len(errors))
     return _json_response({"ok": len(errors) == 0, "approved": done, "errors": errors})
+
+
+# ============================================================
+# スキルシート編集内容の保存 (Storage Table: skillsheet / PK='ss', RK=id1)
+#   fields: フォーム値JSON / status: ''|採用|不採用|ブラック
+# ============================================================
+_skillsheet_table_cache = None
+
+
+def _get_skillsheet_table():
+    global _skillsheet_table_cache
+    if _skillsheet_table_cache is not None:
+        return _skillsheet_table_cache
+    if not _storage_conn:
+        return None
+    try:
+        svc = TableServiceClient.from_connection_string(_storage_conn)
+        svc.create_table_if_not_exists(table_name="skillsheet")
+        _skillsheet_table_cache = svc.get_table_client("skillsheet")
+        return _skillsheet_table_cache
+    except Exception as e:
+        logging.warning("skillsheet table init failed: %s", e)
+        return None
+
+
+def _skillsheet_table_load(id1):
+    """旧保存先(Table Storage)からの読み出し。SP List移行後の引き継ぎ専用。"""
+    table = _get_skillsheet_table()
+    if table is None:
+        return None
+    try:
+        return table.get_entity("ss", str(int(id1)))
+    except ResourceNotFoundError:
+        return None
+    except Exception:
+        return None
+
+
+# 2026-08-25 保存先を SP List「スキルシート」へ移行 (バックアップ対象化・SP画面で閲覧可)
+SKILLSHEET_LIST_GUID = "aca05c60-863d-4ef8-b9b3-46106cc09b63"
+SKILLSHEET_LIST_API = f"{SITE_URL}/_api/web/lists(guid'{SKILLSHEET_LIST_GUID}')"
+
+
+def _ss_sp_headers(token):
+    return {"Authorization": f"Bearer {token}",
+            "Accept": "application/json;odata=nometadata",
+            "Content-Type": "application/json;odata=nometadata"}
+
+
+def _ss_sp_find(token, id1):
+    from urllib.parse import quote as _q
+    q = _q(f"OuboId eq '{int(id1)}'")
+    r = requests.get(f"{SKILLSHEET_LIST_API}/items?$filter={q}&$top=2",
+                     headers=_ss_sp_headers(token), timeout=20)
+    r.raise_for_status()
+    vals = r.json().get("value", [])
+    return vals[0] if vals else None
+
+
+def _skillsheet_save(id1, fields, status, email, token):
+    body = {"Title": str((fields or {}).get("name") or id1),
+            "OuboId": str(int(id1)),
+            "SkillStatus": str(status or ""),
+            "FieldsJson": json.dumps(fields or {}, ensure_ascii=False),
+            "UpdatedBy": email}
+    row = _ss_sp_find(token, id1)
+    if row:
+        r = requests.post(f"{SKILLSHEET_LIST_API}/items({row['Id']})",
+                          headers={**_ss_sp_headers(token), "If-Match": "*", "X-HTTP-Method": "MERGE"},
+                          json=body, timeout=20)
+    else:
+        r = requests.post(f"{SKILLSHEET_LIST_API}/items",
+                          headers=_ss_sp_headers(token), json=body, timeout=20)
+    r.raise_for_status()
+    return True
+
+
+def _skillsheet_load(id1, token):
+    """保存済みデータ {fields: jsonstr, status: str} を返す。SP優先・旧Tableは自動引き継ぎ。"""
+    row = _ss_sp_find(token, id1)
+    if row is not None:
+        return {"fields": row.get("FieldsJson") or "{}",
+                "status": str(row.get("SkillStatus") or "")}
+    old = _skillsheet_table_load(id1)
+    if old is not None:
+        try:
+            fields = json.loads(old.get("fields") or "{}")
+        except Exception:
+            fields = {}
+        status = str(old.get("status") or "")
+        if fields or status:
+            try:
+                _skillsheet_save(id1, fields, status,
+                                 str(old.get("updatedBy") or "migrated"), token)
+                logging.info("skillsheet migrated table->SP: %s", id1)
+            except Exception:
+                logging.exception("skillsheet table->SP migrate failed")
+            return {"fields": json.dumps(fields, ensure_ascii=False), "status": status}
+    return None
+
+
+def _skillsheet_status_map(token):
+    out = {}
+    try:
+        url = f"{SKILLSHEET_LIST_API}/items?$select=OuboId,SkillStatus&$top=500"
+        while url:
+            r = requests.get(url, headers=_ss_sp_headers(token), timeout=20)
+            r.raise_for_status()
+            js = r.json()
+            for it in js.get("value", []):
+                st = str(it.get("SkillStatus") or "")
+                if st:
+                    out[str(it.get("OuboId") or "")] = st
+            url = js.get("odata.nextLink") or js.get("@odata.nextLink")
+            if url and not url.startswith("http"):
+                url = f"{SITE_URL}/_api/" + url
+    except Exception:
+        logging.exception("skillsheet status map failed")
+    return out
+
+
+# ============================================================
+# yukyu-app 向け スキルシート生成 (2026-08-25)
+#   POST /api/yukyu/skillsheet
+#     {action:"list", query?}     -> {candidates:[{id1,name,date}...]}
+#     {action:"pdf", id1, no?}    -> {pdf: base64, name}
+#   認証: require_staff_auth (役員+担当者)。SPアクセスは呼び出し元トークンを転用。
+# ============================================================
+@app.route(route="yukyu/skillsheet", methods=["POST", "OPTIONS"])
+def yukyu_skillsheet(req: func.HttpRequest) -> func.HttpResponse:
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    caller_token = req.headers.get("Authorization", "")[7:].strip()
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    import skillsheet as _ss
+    action = str(body.get("action") or "").strip()
+    try:
+        if action == "debug":
+            import os as _os
+            here = _os.path.dirname(_os.path.abspath(_ss.__file__))
+            info = {"here": here, "cwd": _os.getcwd(),
+                    "here_ls": sorted(_os.listdir(here))[:40]}
+            ap = _os.path.join(here, "skillsheet_assets")
+            info["assets_exists"] = _os.path.isdir(ap)
+            if info["assets_exists"]:
+                info["assets_ls"] = _os.listdir(ap)
+            return _json_response(info)
+        if action == "list":
+            cands = _ss.search_candidates(caller_token, str(body.get("query") or ""))
+            smap = _skillsheet_status_map(caller_token)
+            for c in cands:
+                key = str(c.get("id1"))
+                c["status"] = smap.get(key, "")
+            return _json_response({"candidates": cands})
+        if action == "hakensaki":
+            return _json_response({"sites": _ss.hakensaki_options(caller_token)})
+        if action == "create":
+            # 担当者の手入力新規作成: 面接表List1へ行を作成(呼び出し元トークン)→編集フォームへ
+            import mensetsu as _mn
+            src = body.get("fields") or body
+            c_name = str(src.get("name") or "").strip()
+            if not c_name:
+                return _json_response({"error": "name_required"}, 400)
+            new_id1 = _mn.next_id1(caller_token)
+            row = _mn.build_row(caller_token, src, new_id1,
+                                tantou=YUKYU_STAFF_FULLNAME.get(email, ""))
+            _mn.create_row(caller_token, row)
+            logging.info("mensetsu manual create by %s: %s (ID1=%s)", email, c_name, new_id1)
+            return _json_response({"id1": new_id1})
+        if action == "save-site-addr":
+            # 住所未登録の派遣先に、絞り込みで入力された住所を保存(所在地空欄行のみ)
+            s_name = str(body.get("name") or "").strip()
+            s_addr = str(body.get("addr") or "").strip()
+            if not s_name or not s_addr:
+                return _json_response({"error": "name_addr_required"}, 400)
+            n = _ss.save_hakensaki_addr(caller_token, s_name, s_addr)
+            logging.info("save-site-addr by %s: %s -> %s (%d rows)", email, s_name, s_addr, n)
+            return _json_response({"updated": n})
+        if action == "geocode":
+            addrs = body.get("addresses") or []
+            if not isinstance(addrs, list):
+                return _json_response({"error": "addresses_required"}, 400)
+            return _json_response({"geo": _ss.geocode(addrs)})
+        if action == "data":
+            # 編集フォーム用の初期値(保存済み優先) + 応募シート原文(raw)を返す
+            id1 = body.get("id1")
+            if id1 is None:
+                return _json_response({"error": "id1_required"}, 400)
+            r1, r2 = _ss.fetch_person(caller_token, id1=int(id1))
+            if not r1 and not r2:
+                return _json_response({"error": "not_found"}, 404)
+            raw = _ss.raw_answers(caller_token, r1, r2)
+            saved = _skillsheet_load(id1, caller_token)
+            fields = {}
+            saved_flag = False
+            if saved is not None:
+                try:
+                    fields = json.loads(saved.get("fields") or "{}")
+                except Exception:
+                    fields = {}
+                saved_flag = bool(fields)
+            if not fields:
+                fields = _ss.person_fields(caller_token, r1, r2)
+            if not fields.get("no"):
+                fields["no"] = str(int(id1))   # No.欄は既定で応募ID
+            return _json_response({"fields": fields,
+                                   "status": str((saved or {}).get("status") or ""),
+                                   "saved": saved_flag,
+                                   "raw": raw})
+        if action == "save":
+            id1 = body.get("id1")
+            if id1 is None:
+                return _json_response({"error": "id1_required"}, 400)
+            ok = _skillsheet_save(id1, body.get("fields") or {},
+                                  body.get("status"), email, caller_token)
+            return _json_response({"ok": ok})
+        if action == "pdf":
+            fields = body.get("fields")
+            if isinstance(fields, dict):
+                # 編集フォームからの確定値で描画。id1付きなら同時に保存
+                if body.get("id1") is not None:
+                    try:
+                        _skillsheet_save(body.get("id1"), fields, body.get("status"), email, caller_token)
+                    except Exception:
+                        logging.exception("skillsheet save on pdf failed")
+                pdf = _ss.render_pdf_fields(fields, stamp=YUKYU_STAFF_SURNAME.get(email))
+                name = str(fields.get("name") or "").strip()
+            else:
+                id1 = body.get("id1")
+                if id1 is None:
+                    return _json_response({"error": "id1_required"}, 400)
+                r1, r2 = _ss.fetch_person(caller_token, id1=int(id1))
+                if not r1 and not r2:
+                    return _json_response({"error": "not_found"}, 404)
+                pdf = _ss.render_pdf(caller_token, r1, r2, no=str(body.get("no") or ""))
+                name = ""
+                for r in (r1, r2):
+                    if r and r.get(_ss.K["name"]):
+                        name = str(r.get(_ss.K["name"])).strip()
+                        break
+            saved_path = None
+            try:
+                saved_path = _skillsheet_upload_pdf(caller_token, pdf, name, email)
+            except Exception:
+                logging.exception("skillsheet pdf upload failed")
+            logging.info("skillsheet pdf by %s: %s (%d bytes) saved=%s", email, name, len(pdf), saved_path)
+            return _json_response({"pdf": base64.b64encode(pdf).decode(), "name": name,
+                                   "savedPath": saved_path})
+        return _json_response({"error": "unknown_action"}, 400)
+    except Exception as e:
+        logging.exception("skillsheet failed")
+        return _json_response({"error": "internal", "detail": str(e)[:300]}, 500)

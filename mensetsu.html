@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="robots" content="noindex">
+<title>面接シート | STEP・UP</title>
+<style>
+:root { --p:#5e35b1; --pl:#7c4dff; --bg:#f4f4f8; --line:#cbd5e1; }
+* { box-sizing:border-box; }
+body { margin:0; font-family:'Hiragino Sans','Yu Gothic',Meiryo,sans-serif; background:var(--bg); color:#1e293b; }
+.wrap { max-width:520px; margin:0 auto; padding:14px 14px 60px; }
+.head { text-align:center; padding:16px 0 6px; }
+.head h1 { margin:6px 0 2px; font-size:20px; color:var(--p); }
+.head p { margin:0; font-size:12px; color:#64748b; }
+.langbar { display:flex; gap:8px; justify-content:center; margin:10px 0 14px; }
+.langbar button { padding:7px 22px; border-radius:20px; border:2px solid var(--p); background:#fff; color:var(--p); font-weight:800; font-size:14px; }
+.langbar button.on { background:var(--p); color:#fff; }
+.card { background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:14px; margin-bottom:12px; box-shadow:0 2px 6px rgba(0,0,0,.04); }
+.card h2 { margin:0 0 10px; font-size:14.5px; color:var(--p); border-left:4px solid var(--pl); padding-left:8px; }
+label.fl { display:block; font-size:11.5px; color:#64748b; font-weight:700; margin:10px 0 3px; }
+label.fl .req { color:#e53935; }
+input[type=text], input[type=tel], input[type=email], input[type=date], select {
+  width:100%; padding:11px 10px; font-size:16px; border:1.5px solid var(--line); border-radius:10px; background:#fff; }
+.btnrow { display:flex; flex-wrap:wrap; gap:7px; }
+.btnrow button { flex:1; min-width:70px; padding:10px 4px; font-size:14px; font-weight:700; border:1.5px solid var(--line); border-radius:10px; background:#fff; color:#334155; }
+.btnrow button.on { background:var(--p); color:#fff; border-color:var(--p); }
+.chiprow { display:flex; flex-wrap:wrap; gap:7px; }
+.chiprow button { padding:9px 14px; font-size:14px; font-weight:700; border:1.5px solid var(--line); border-radius:18px; background:#fff; color:#334155; }
+.chiprow button.on { background:var(--pl); color:#fff; border-color:var(--pl); }
+.jobcard { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; margin-bottom:10px; position:relative; }
+.jobcard .jtitle { font-size:12.5px; font-weight:800; color:var(--p); }
+.jobdel { position:absolute; top:8px; right:10px; background:none; border:none; color:#94a3b8; font-size:16px; }
+.addjob { width:100%; padding:11px; border:2px dashed var(--pl); border-radius:12px; background:#faf5ff; color:var(--p); font-weight:800; font-size:14px; }
+.submit { width:100%; margin-top:14px; padding:16px; font-size:17px; font-weight:800; color:#fff; border:none; border-radius:14px;
+  background:linear-gradient(135deg,var(--pl),var(--p)); box-shadow:0 4px 14px rgba(94,53,177,.35); }
+.err { color:#c62828; font-size:13px; font-weight:700; margin-top:8px; display:none; }
+.zip-hint { font-size:12px; color:#0f766e; margin-top:4px; min-height:16px; }
+.row2 { display:flex; gap:8px; }
+.row2 > div { flex:1; min-width:0; }
+#done { display:none; text-align:center; padding:60px 20px; }
+#done .big { font-size:52px; }
+#done h2 { color:var(--p); }
+</style>
+</head>
+<body>
+<div class="wrap" id="formWrap">
+  <div class="head">
+    <div style="font-size:30px;">📋</div>
+    <h1>STEP・UP 面接シート</h1>
+    <p data-t="sub">下の項目を入力してください</p>
+  </div>
+  <div class="langbar">
+    <button id="langJa" class="on" onclick="setLang('ja')">日本語</button>
+    <button id="langPt" onclick="setLang('pt')">Português</button>
+  </div>
+
+  <div class="card">
+    <h2 data-t="s1">1. 基本情報</h2>
+    <label class="fl"><span data-t="name">名前（カタカナ または ローマ字）</span> <span class="req">*</span></label>
+    <input type="text" id="f_name" autocomplete="name">
+    <div class="row2">
+      <div>
+        <label class="fl"><span data-t="birth">生年月日</span> <span class="req">*</span></label>
+        <input type="date" id="f_birth" min="1940-01-01">
+      </div>
+      <div>
+        <label class="fl" data-t="sex">性別</label>
+        <div class="btnrow" id="g_sex"></div>
+      </div>
+    </div>
+    <div class="row2">
+      <div>
+        <label class="fl" data-t="marital">婚姻状況</label>
+        <div class="btnrow" id="g_marital"></div>
+      </div>
+      <div>
+        <label class="fl" data-t="nat">国籍</label>
+        <select id="f_nationality"></select>
+      </div>
+    </div>
+    <label class="fl"><span data-t="tel">電話番号</span> <span class="req">*</span></label>
+    <input type="tel" id="f_tel" inputmode="tel" placeholder="090-0000-0000">
+    <label class="fl" data-t="mail">メールアドレス（任意）</label>
+    <input type="email" id="f_mail" inputmode="email">
+    <label class="fl" data-t="emg">緊急連絡先（名前と電話・任意）</label>
+    <input type="text" id="f_emergency" placeholder="例: ハナコ 090-1111-2222">
+    <input type="text" id="company_hp" style="display:none" tabindex="-1" autocomplete="off">
+  </div>
+
+  <div class="card">
+    <h2 data-t="s2">2. 住所</h2>
+    <label class="fl" data-t="zip">郵便番号（7桁・自動で住所が入ります）</label>
+    <input type="tel" id="f_zip" inputmode="numeric" maxlength="8" placeholder="4300000" oninput="zipLookup()">
+    <div class="zip-hint" id="zipHint"></div>
+    <label class="fl"><span data-t="addr">住所（市区町まで）</span> <span class="req">*</span></label>
+    <input type="text" id="f_addr" placeholder="浜松市中央区○○町">
+  </div>
+
+  <div class="card">
+    <h2 data-t="s3">3. 在留資格・日本語</h2>
+    <label class="fl" data-t="zairyu">在留資格</label>
+    <select id="f_zairyu"></select>
+    <label class="fl" data-t="rikai">日本語を理解する</label>
+    <div class="btnrow" id="g_jpRikai"></div>
+    <label class="fl" data-t="hanasu">日本語を話す</label>
+    <div class="btnrow" id="g_jpHanasu"></div>
+    <label class="fl" data-t="pct">日本語 どのくらい？（％）</label>
+    <div class="btnrow" id="g_jpPct"></div>
+    <label class="fl" data-t="yomeru">読める（複数選択可）</label>
+    <div class="chiprow" id="g_yomeru"></div>
+    <label class="fl" data-t="kakeru">書ける（複数選択可）</label>
+    <div class="chiprow" id="g_kakeru"></div>
+  </div>
+
+  <div class="card">
+    <h2 data-t="s4">4. 職歴（新しい順・最大4件）</h2>
+    <div id="jobs"></div>
+    <button type="button" class="addjob" onclick="addJob()" id="addJobBtn">＋ <span data-t="addjob">職歴を追加</span></button>
+  </div>
+
+  <div class="card">
+    <h2 data-t="s5">5. 希望条件</h2>
+    <label class="fl" data-t="zangyo">残業</label>
+    <div class="btnrow" id="g_zangyo"></div>
+    <label class="fl" data-t="sat">土曜日（休日出勤）</label>
+    <div class="btnrow" id="g_sat"></div>
+    <label class="fl" data-t="kotai">交代勤務</label>
+    <div class="btnrow" id="g_kotai"></div>
+    <label class="fl" data-t="commute">通勤手段</label>
+    <div class="btnrow" id="g_commute"></div>
+  </div>
+
+  <div class="card">
+    <h2 data-t="s6">6. 免許・サイズ</h2>
+    <label class="fl" data-t="lic">運転免許</label>
+    <select id="f_license"></select>
+    <label class="fl" data-t="licExp">免許証有効期限（任意）</label>
+    <input type="date" id="f_licenseExp">
+    <div class="row2">
+      <div>
+        <label class="fl" data-t="uni">作業服サイズ</label>
+        <select id="f_uniform"></select>
+      </div>
+      <div>
+        <label class="fl" data-t="shoes">靴のサイズ</label>
+        <select id="f_shoes"></select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 data-t="s7">7. 面接担当者</h2>
+    <p style="font-size:12px;color:#64748b;margin:0 0 6px;" data-t="tantouHint">スタッフに聞いて選んでください</p>
+    <select id="f_tantou">
+      <option value="">-</option>
+      <option>山下浩俊</option>
+      <option>山下亜実</option>
+      <option>城かおり</option>
+      <option>吉浦マルセロ</option>
+      <option>森ゆうじ</option>
+    </select>
+  </div>
+
+  <div class="err" id="errBox"></div>
+  <button class="submit" id="submitBtn" onclick="submitForm()" data-t="send">送信する</button>
+</div>
+
+<div id="done" class="wrap">
+  <div class="big">✅</div>
+  <h2 data-t="doneTitle">送信しました！</h2>
+  <p data-t="doneBody">スタッフにお声がけください。</p>
+</div>
+
+<script>
+var API = 'https://func-employee-portal-7833.azurewebsites.net/api/mensetsu/submit';
+var LANG = 'ja';
+var T = {
+  sub: { ja:'下の項目を入力してください', pt:'Preencha os campos abaixo' },
+  s1: { ja:'1. 基本情報', pt:'1. Dados pessoais' },
+  name: { ja:'名前（カタカナ または ローマ字）', pt:'Nome (katakana ou alfabeto)' },
+  birth: { ja:'生年月日', pt:'Data de nascimento' },
+  sex: { ja:'性別', pt:'Sexo' },
+  marital: { ja:'婚姻状況', pt:'Estado civil' },
+  nat: { ja:'国籍', pt:'Nacionalidade' },
+  tel: { ja:'電話番号', pt:'Telefone' },
+  mail: { ja:'メールアドレス（任意）', pt:'E-mail (opcional)' },
+  emg: { ja:'緊急連絡先（名前と電話・任意）', pt:'Contato de emergência (nome e tel, opcional)' },
+  s2: { ja:'2. 住所', pt:'2. Endereço' },
+  zip: { ja:'郵便番号（7桁・自動で住所が入ります）', pt:'CEP (7 dígitos, endereço automático)' },
+  addr: { ja:'住所（市区町まで）', pt:'Endereço (cidade e bairro)' },
+  s3: { ja:'3. 在留資格・日本語', pt:'3. Visto e japonês' },
+  zairyu: { ja:'在留資格', pt:'Tipo de visto (zairyu)' },
+  rikai: { ja:'日本語を理解する', pt:'Entender japonês' },
+  hanasu: { ja:'日本語を話す', pt:'Falar japonês' },
+  pct: { ja:'日本語 どのくらい？（％）', pt:'Japonês: quanto? (%)' },
+  yomeru: { ja:'読める（複数選択可）', pt:'Consigo ler (múltipla escolha)' },
+  kakeru: { ja:'書ける（複数選択可）', pt:'Consigo escrever (múltipla escolha)' },
+  s4: { ja:'4. 職歴（新しい順・最大4件）', pt:'4. Experiência (mais recente primeiro, máx. 4)' },
+  addjob: { ja:'職歴を追加', pt:'Adicionar experiência' },
+  s5: { ja:'5. 希望条件', pt:'5. Condições' },
+  zangyo: { ja:'残業', pt:'Hora extra' },
+  sat: { ja:'土曜日（休日出勤）', pt:'Sábado (trabalho em folga)' },
+  kotai: { ja:'交代勤務', pt:'Turnos alternados' },
+  commute: { ja:'通勤手段', pt:'Meio de transporte' },
+  s6: { ja:'6. 免許・サイズ', pt:'6. Habilitação e tamanhos' },
+  lic: { ja:'運転免許', pt:'Carteira de motorista' },
+  licExp: { ja:'免許証有効期限（任意）', pt:'Validade da carteira (opcional)' },
+  uni: { ja:'作業服サイズ', pt:'Tamanho do uniforme' },
+  shoes: { ja:'靴のサイズ', pt:'Número do sapato' },
+  s7: { ja:'7. 面接担当者', pt:'7. Entrevistador' },
+  tantouHint: { ja:'スタッフに聞いて選んでください', pt:'Pergunte ao staff e selecione' },
+  send: { ja:'送信する', pt:'Enviar' },
+  doneTitle: { ja:'送信しました！', pt:'Enviado!' },
+  doneBody: { ja:'ありがとうございます。スタッフにお声がけください。', pt:'Obrigado! Avise o staff.' },
+  jobN: { ja:'職歴', pt:'Experiência' },
+  jcompany: { ja:'会社名', pt:'Nome da fábrica/empresa' },
+  jhaken: { ja:'派遣会社（任意）', pt:'Empreiteira (opcional)' },
+  jshoku: { ja:'職種', pt:'Setor' },
+  jnaiyou: { ja:'仕事内容', pt:'Tipo de serviço' },
+  jkikan: { ja:'勤続期間', pt:'Tempo de serviço' },
+  jriyuu: { ja:'退職した理由（任意）', pt:'Motivo da saída (opcional)' },
+  years: { ja:'年', pt:'anos' },
+  months: { ja:'ヶ月', pt:'meses' },
+  other: { ja:'その他（入力）', pt:'Outro (digitar)' },
+  needName: { ja:'名前を入力してください', pt:'Digite o nome' },
+  needTel: { ja:'電話番号を入力してください', pt:'Digite o telefone' },
+  needAddr: { ja:'住所を入力してください', pt:'Digite o endereço' },
+  needBirth: { ja:'生年月日を入力してください', pt:'Digite a data de nascimento' },
+  sendFail: { ja:'送信に失敗しました。電波の良い場所でもう一度お試しください。', pt:'Falha ao enviar. Tente novamente.' },
+  sending: { ja:'送信中…', pt:'Enviando…' }
+};
+// 選択肢 (保存値は日本語固定 / 表示のみ言語切替)
+var OPT = {
+  sex: [['男', '男', 'Homem'], ['女', '女', 'Mulher']],
+  marital: [['未婚', '未婚', 'Solteiro(a)'], ['既婚', '既婚', 'Casado(a)']],
+  nationality: [['ブラジル','ブラジル','Brasil'],['日本','日本','Japão'],['ペルー','ペルー','Peru'],['フィリピン','フィリピン','Filipinas'],['ベトナム','ベトナム','Vietnã'],['中国','中国','China'],['__other__','その他…','Outro…']],
+  zairyu: [['永住者','永住者','Visto permanente'],['定住者','定住者','Visto de longa permanência (teijusha)'],['日本人の配偶者等','日本人の配偶者等','Cônjuge de japonês'],['永住者の配偶者等','永住者の配偶者等','Cônjuge de permanente'],['家族滞在','家族滞在','Dependente'],['特定技能','特定技能','Habilidades específicas'],['技能実習','技能実習','Estágio técnico'],['日本国籍','日本国籍','Nacionalidade japonesa'],['__other__','その他…','Outro…']],
+  jpLevel: [['良い','良い','Bom'],['普通','普通','Médio'],['少し','少し','Um pouco'],['不可','不可','Não']],
+  jpPct: [['80％~100％','80〜100%','80〜100%'],['60％~80％','60〜80%','60〜80%'],['40％~60％','40〜60%','40〜60%'],['20％~40％','20〜40%','20〜40%'],['0％~20％','0〜20%','0〜20%']],
+  kana: [['カタカナ','カタカナ','Katakana'],['ひらがな','ひらがな','Hiragana'],['漢字','漢字','Kanji'],['不可','不可','Não']],
+  zangyo: [['不可','不可','Não posso'],['1時間まで','1時間まで','Até 1h'],['2時間まで','2時間まで','Até 2h'],['3時間以上','3時間以上','3h ou mais']],
+  sat: [['可','可','Posso'],['ときどき可','ときどき可','Às vezes'],['不可','不可','Não posso']],
+  kotai: [['可','可','Posso'],['不可','不可','Não posso']],
+  commute: [['車','車','Carro'],['バイク','バイク','Moto'],['自転車','自転車','Bicicleta'],['送迎希望','送迎希望','Transporte da empresa'],['徒歩','徒歩','A pé']],
+  license: [['普通自動車','普通自動車','Carro (comum)'],['普通自動車（AT限定）','普通自動車（AT限定）','Carro (AT)'],['原付','原付','Moto 50cc'],['フォークリフト','フォークリフト','Empilhadeira'],['なし','なし','Não tenho'],['__other__','その他…','Outro…']],
+  uniform: [['S','S','S'],['M','M','M'],['L','L','L'],['LL','LL','LL'],['3L','3L','3L'],['4L','4L','4L']],
+  shokushu: [['自動車部品','自動車部品','Auto peças'],['電子部品','電子部品','Eletrônicos'],['食品','食品','Alimentos'],['プラスチック','プラスチック','Plástico'],['金属加工','金属加工','Metalurgia'],['物流・倉庫','物流・倉庫','Logística'],['事務','事務','Escritório'],['__other__','その他…','Outro…']],
+  naiyou: [['組立','組立','Montagem'],['検査','検査','Inspeção'],['梱包','梱包','Embalagem'],['旋盤','旋盤','Torno'],['溶接','溶接','Solda'],['塗装','塗装','Pintura'],['プレス','プレス','Prensa'],['成形','成形','Moldagem'],['運搬','運搬','Transporte'],['ピッキング','ピッキング','Picking'],['事務','事務','Escritório'],['__other__','その他…','Outro…']]
+};
+var picked = {};   // 単一選択ボタングループの値
+var multi = { yomeru: [], kakeru: [] };
+
+function t(key) { return (T[key] || {})[LANG] || (T[key] || {}).ja || ''; }
+
+function setLang(l) {
+  LANG = l;
+  document.getElementById('langJa').className = (l === 'ja') ? 'on' : '';
+  document.getElementById('langPt').className = (l === 'pt') ? 'on' : '';
+  document.querySelectorAll('[data-t]').forEach(function(el) {
+    var k = el.getAttribute('data-t');
+    if (T[k]) el.textContent = t(k);
+  });
+  buildAll();
+}
+
+function buildBtnGroup(id, optKey, group) {
+  var box = document.getElementById(id);
+  if (!box) return;
+  box.innerHTML = '';
+  OPT[optKey].forEach(function(o) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = (LANG === 'pt') ? o[2] : o[1];
+    b.className = (picked[group] === o[0]) ? 'on' : '';
+    b.onclick = function() {
+      picked[group] = (picked[group] === o[0]) ? '' : o[0];
+      buildBtnGroup(id, optKey, group);
+    };
+    box.appendChild(b);
+  });
+}
+
+function buildChips(id, optKey, group) {
+  var box = document.getElementById(id);
+  if (!box) return;
+  box.innerHTML = '';
+  OPT[optKey].forEach(function(o) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = (LANG === 'pt') ? o[2] : o[1];
+    b.className = (multi[group].indexOf(o[0]) >= 0) ? 'on' : '';
+    b.onclick = function() {
+      var i = multi[group].indexOf(o[0]);
+      if (i >= 0) multi[group].splice(i, 1); else multi[group].push(o[0]);
+      buildChips(id, optKey, group);
+    };
+    box.appendChild(b);
+  });
+}
+
+function buildSelect(id, optKey) {
+  var sel = document.getElementById(id);
+  if (!sel) return;
+  var cur = sel.dataset.val || '';
+  sel.innerHTML = '<option value="">-</option>';
+  OPT[optKey].forEach(function(o) {
+    var op = document.createElement('option');
+    op.value = o[0];
+    op.textContent = (LANG === 'pt') ? o[2] : o[1];
+    sel.appendChild(op);
+  });
+  sel.value = cur;
+  sel.onchange = function() {
+    if (sel.value === '__other__') {
+      var v = prompt(t('other'));
+      if (v && v.trim()) {
+        var op = document.createElement('option');
+        op.value = v.trim();
+        op.textContent = v.trim();
+        sel.appendChild(op);
+        sel.value = v.trim();
+      } else {
+        sel.value = '';
+      }
+    }
+    sel.dataset.val = sel.value;
+  };
+}
+
+// ===== 職歴カード =====
+var jobCount = 0;
+function addJob() {
+  if (jobCount >= 4) return;
+  jobCount++;
+  var i = jobCount;
+  var div = document.createElement('div');
+  div.className = 'jobcard';
+  div.id = 'job' + i;
+  var years = '';
+  for (var y = 0; y <= 30; y++) years += '<option value="' + y + '">' + y + '</option>';
+  var months = '';
+  for (var m = 0; m <= 11; m++) months += '<option value="' + m + '">' + m + '</option>';
+  div.innerHTML = '<div class="jtitle">🏭 ' + t('jobN') + ' ' + i + '</div>'
+    + (i > 1 ? '<button type="button" class="jobdel" onclick="delJob(' + i + ')">✕</button>' : '')
+    + '<label class="fl">' + t('jcompany') + '</label><input type="text" id="j' + i + '_company">'
+    + '<label class="fl">' + t('jhaken') + '</label><input type="text" id="j' + i + '_haken">'
+    + '<div class="row2"><div><label class="fl">' + t('jshoku') + '</label><select id="j' + i + '_shokushu"></select></div>'
+    + '<div><label class="fl">' + t('jnaiyou') + '</label><select id="j' + i + '_naiyou"></select></div></div>'
+    + '<label class="fl">' + t('jkikan') + '</label>'
+    + '<div class="row2"><div><select id="j' + i + '_ky">' + years + '</select></div><div style="align-self:center;flex:0 0 auto;font-size:13px;">' + t('years') + '</div>'
+    + '<div><select id="j' + i + '_km">' + months + '</select></div><div style="align-self:center;flex:0 0 auto;font-size:13px;">' + t('months') + '</div></div>'
+    + '<label class="fl">' + t('jriyuu') + '</label><input type="text" id="j' + i + '_riyuu">';
+  document.getElementById('jobs').appendChild(div);
+  buildSelect('j' + i + '_shokushu', 'shokushu');
+  buildSelect('j' + i + '_naiyou', 'naiyou');
+  if (jobCount >= 4) document.getElementById('addJobBtn').style.display = 'none';
+}
+function delJob(i) {
+  var el = document.getElementById('job' + i);
+  if (el) el.remove();
+}
+
+function buildAll() {
+  buildBtnGroup('g_sex', 'sex', 'sex');
+  buildBtnGroup('g_marital', 'marital', 'marital');
+  buildBtnGroup('g_jpRikai', 'jpLevel', 'jpRikai');
+  buildBtnGroup('g_jpHanasu', 'jpLevel', 'jpHanasu');
+  buildBtnGroup('g_jpPct', 'jpPct', 'jpPct');
+  buildBtnGroup('g_zangyo', 'zangyo', 'zangyo');
+  buildBtnGroup('g_sat', 'sat', 'sat');
+  buildBtnGroup('g_kotai', 'kotai', 'kotai');
+  buildBtnGroup('g_commute', 'commute', 'commute');
+  buildChips('g_yomeru', 'kana', 'yomeru');
+  buildChips('g_kakeru', 'kana', 'kakeru');
+  buildSelect('f_nationality', 'nationality');
+  buildSelect('f_zairyu', 'zairyu');
+  buildSelect('f_license', 'license');
+  buildSelect('f_uniform', 'uniform');
+  var sh = document.getElementById('f_shoes');
+  if (sh && sh.options.length <= 1) {
+    sh.innerHTML = '<option value="">-</option>';
+    for (var s = 21.5; s <= 30; s += 0.5) {
+      var op = document.createElement('option');
+      op.value = s + '㎝';
+      op.textContent = s + ' ㎝';
+      sh.appendChild(op);
+    }
+  }
+}
+
+// 郵便番号 → 住所 (zipcloud)
+async function zipLookup() {
+  var z = document.getElementById('f_zip').value.replace(/[^0-9]/g, '');
+  if (z.length !== 7) return;
+  try {
+    var r = await fetch('https://zipcloud.ibsnet.co.jp/api/search?zipcode=' + z);
+    var d = await r.json();
+    if (d.results && d.results[0]) {
+      var a = d.results[0];
+      document.getElementById('f_addr').value = (a.address1 || '') + (a.address2 || '') + (a.address3 || '');
+      document.getElementById('zipHint').textContent = '✔ ' + a.address1 + a.address2 + a.address3;
+    }
+  } catch (e) {}
+}
+
+function val(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
+
+async function submitForm() {
+  var err = document.getElementById('errBox');
+  err.style.display = 'none';
+  var name = val('f_name'), tel = val('f_tel'), addr = val('f_addr'), birth = val('f_birth');
+  var msg = !name ? t('needName') : (!tel ? t('needTel') : (!birth ? t('needBirth') : (!addr ? t('needAddr') : '')));
+  if (msg) {
+    err.textContent = '⚠ ' + msg;
+    err.style.display = 'block';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  var jobs = [];
+  for (var i = 1; i <= 4; i++) {
+    if (!document.getElementById('job' + i)) continue;
+    var ky = Number(val('j' + i + '_ky') || 0), km = Number(val('j' + i + '_km') || 0);
+    var kikan = (ky ? ky + '年' : '') + (km ? km + 'ヶ月' : '');
+    var jb = { company: val('j' + i + '_company'), haken: val('j' + i + '_haken'),
+               shokushu: val('j' + i + '_shokushu'), naiyou: val('j' + i + '_naiyou'),
+               kikan: kikan, riyuu: val('j' + i + '_riyuu') };
+    if (jb.company || jb.shokushu || jb.naiyou || kikan) jobs.push(jb);
+  }
+  var body = {
+    name: name, tel: tel, addr: addr, birth: birth,
+    mail: val('f_mail'), emergency: val('f_emergency'),
+    sex: picked.sex || '', marital: picked.marital || '',
+    nationality: val('f_nationality'), zairyu: val('f_zairyu'),
+    jpRikai: picked.jpRikai || '', jpHanasu: picked.jpHanasu || '', jpPct: picked.jpPct || '',
+    yomeru: multi.yomeru, kakeru: multi.kakeru,
+    zangyo: picked.zangyo || '', sat: picked.sat || '', kotai: picked.kotai || '',
+    commute: picked.commute || '', license: val('f_license'), licenseExp: val('f_licenseExp'),
+    uniform: val('f_uniform'), shoes: val('f_shoes'),
+    tantou: val('f_tantou'), jobs: jobs, lang: LANG,
+    company_hp: val('company_hp')
+  };
+  var btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = t('sending');
+  try {
+    var resp = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify(body) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    document.getElementById('formWrap').style.display = 'none';
+    var dn = document.getElementById('done');
+    dn.style.display = 'block';
+    dn.querySelector('[data-t="doneTitle"]').textContent = t('doneTitle');
+    dn.querySelector('[data-t="doneBody"]').textContent = t('doneBody');
+    window.scrollTo(0, 0);
+  } catch (e) {
+    err.textContent = '⚠ ' + t('sendFail');
+    err.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = t('send');
+  }
+}
+
+buildAll();
+addJob();
+</script>
+</body>
+</html>
