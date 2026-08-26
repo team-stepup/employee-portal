@@ -1482,6 +1482,11 @@ def apply_public(req: func.HttpRequest) -> func.HttpResponse:
     return _json_response({"ok": True, "id": new_id}, 200, extra_headers=public_cors)
 
 
+# Teams「General - 応募者 oubosya mennsetu」チャネルのメール投稿アドレス
+MENSETSU_TEAMS_CHANNEL_MAIL = os.environ.get(
+    "MENSETSU_TEAMS_CHANNEL_MAIL", "12ca472d.team-stepup.com@jp.teams.ms").strip()
+
+
 # ============================================================
 # 面接シート受付 (Forms置き換え・2026-08-26)
 #   応募者のスマホ入力 → 既存「面接表」List(ルートサイト)へ直接保存(ID1連番継続)
@@ -1531,25 +1536,35 @@ def mensetsu_submit(req: func.HttpRequest) -> func.HttpResponse:
             logging.info("mensetsu images: %d attached, %d failed", len(files) - ng, ng)
     except Exception:
         logging.exception("mensetsu attach failed")
-    # 通知(メール+Push・best effort)
+    # 通知(メール+Teamsチャネル(メール投稿)+Push・best effort)
     try:
         token = _get_graph_token()
         sender = os.environ.get("SHORUI_MAIL_SENDER", "jimusyo1@team-stepup.com").strip() or "jimusyo1@team-stepup.com"
+        rows = [("ID", f"{id1}　{tantou or '担当者未指定'}"),
+                ("氏名", f"{name}" + (f"（{body.get('age') or ''}歳）" if body.get("age") else "")),
+                ("性別・国籍", "　".join(x for x in [body.get("sex"), body.get("nationality")] if x)),
+                ("生年月日", str(body.get("birth") or "")),
+                ("住所", str(body.get("addr") or "")),
+                ("日本語", str(body.get("jpPct") or "")),
+                ("通勤", str(body.get("commute") or "")),
+                ("オンライン", str(body.get("online") or "")),
+                ("在留資格", str(body.get("zairyu") or "")),
+                ("学歴", str(body.get("gakureki") or "")),
+                ("TEL", tel)]
         html = ('<div style="font-family:Meiryo,sans-serif;">'
                 f'<h3 style="margin:0 0 8px;">📋 面接シートが提出されました (ID {id1})</h3>'
                 '<table style="border-collapse:collapse;">'
                 + "".join(
-                    f'<tr><td style="padding:3px 10px 3px 0;color:#666;">{k}</td>'
-                    f'<td style="padding:3px 0;"><b>{str(v)}</b></td></tr>'
-                    for k, v in [("氏名", name), ("電話", tel),
-                                 ("担当者", tantou or "未指定"),
-                                 ("通勤", body.get("commute") or ""),
-                                 ("日本語", body.get("jpPct") or "")] if v)
+                    f'<tr><td style="padding:3px 10px 3px 0;color:#666;white-space:nowrap;">{k}</td>'
+                    f'<td style="padding:3px 0;"><b>{v}</b></td></tr>'
+                    for k, v in rows if str(v).strip())
                 + "</table>"
-                '<p style="color:#666;font-size:12px;">yukyu-app の 📄スキルシート に反映されています。</p></div>')
+                '<p style="color:#666;font-size:12px;">詳細・スキルシート作成は yukyu-app の 📄スキルシート へ。</p></div>')
+        # 宛先: 採用担当メール + Teams「応募者」チャネル(メール投稿)
+        recipients = list(APPLY_NOTIFY_EMAILS) + [MENSETSU_TEAMS_CHANNEL_MAIL]
         message = {"subject": f"【面接シート】{name} 様 (ID {id1})",
                    "body": {"contentType": "HTML", "content": html},
-                   "toRecipients": [{"emailAddress": {"address": a}} for a in APPLY_NOTIFY_EMAILS]}
+                   "toRecipients": [{"emailAddress": {"address": a}} for a in recipients if a]}
         requests.post(f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail",
                       headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
                       json={"message": message, "saveToSentItems": False}, timeout=30)
