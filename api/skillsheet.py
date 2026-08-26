@@ -266,6 +266,28 @@ def raw_answers(token, r1, r2):
     return []
 
 
+def row_attachments(token, r1, r2):
+    """行の添付ファイル(在留カード画像等) [{name, url}] を返す"""
+    out = []
+    for base, guid, row in ((SP_HOST, LIST1, r1), (SITE_PA, LIST2, r2)):
+        if not row or not row.get("Attachments"):
+            continue
+        try:
+            js = _sp_get(f"{base}/_api/web/lists(guid'{guid}')/items({row['Id']})"
+                         "/AttachmentFiles?$select=FileName,ServerRelativeUrl", token)
+            from urllib.parse import quote as _q
+            for f in js.get("value", []):
+                sru = f.get("ServerRelativeUrl") or ""
+                if sru:
+                    # Bearerトークンで取得できるREST形式のURLを返す(直パスはcookie認証のみで401)
+                    out.append({"name": f.get("FileName") or "",
+                                "url": f"{base}/_api/web/GetFileByServerRelativePath"
+                                       f"(decodedurl='{_q(sru)}')/$value"})
+        except Exception:
+            pass
+    return out
+
+
 # ============================================================
 # 職歴: 列ラベルの①②③④/末尾数字で行単位に組む (位置ズレ防止)
 # ============================================================

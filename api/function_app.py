@@ -1514,6 +1514,18 @@ def mensetsu_submit(req: func.HttpRequest) -> func.HttpResponse:
         logging.exception("mensetsu save failed")
         return _json_response({"error": "save_failed", "detail": str(e)[:300]}, 500,
                               extra_headers=public_cors)
+    # 在留カード画像の添付 (任意・最大2枚・各4MBまで・best effort)
+    try:
+        imgs = []
+        for b64s in (body.get("zairyuImages") or [])[:2]:
+            raw = base64.b64decode(_strip_data_url(b64s))
+            if len(raw) <= 4 * 1024 * 1024:
+                imgs.append(raw)
+        if imgs:
+            ng = _mn.attach_images(tok, item_id, imgs)
+            logging.info("mensetsu zairyu images: %d attached, %d failed", len(imgs) - ng, ng)
+    except Exception:
+        logging.exception("mensetsu attach failed")
     # 通知(メール+Push・best effort)
     try:
         token = _get_graph_token()
@@ -7799,7 +7811,8 @@ def yukyu_skillsheet(req: func.HttpRequest) -> func.HttpResponse:
             return _json_response({"fields": fields,
                                    "status": str((saved or {}).get("status") or ""),
                                    "saved": saved_flag,
-                                   "raw": raw})
+                                   "raw": raw,
+                                   "attachments": _ss.row_attachments(caller_token, r1, r2)})
         if action == "save":
             id1 = body.get("id1")
             if id1 is None:
