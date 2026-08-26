@@ -161,13 +161,13 @@ def build_row(token, d, id1, tantou=""):
     return row
 
 
-def attach_images(token, item_id, images):
-    """作成した行に画像を添付する。images=[bytes,...] (最大2枚)。失敗枚数を返す。"""
+def attach_images(token, item_id, files):
+    """作成した行に画像を添付する。files=[(filename, bytes), ...] (最大4)。失敗数を返す。"""
     ng = 0
-    for i, data in enumerate(images[:2], start=1):
+    for fname, data in files[:4]:
         try:
             url = (f"{SAVE_BASE}/_api/web/lists(guid'{SAVE_LIST}')/items({item_id})"
-                   f"/AttachmentFiles/add(FileName='zairyucard_{i}.jpg')")
+                   f"/AttachmentFiles/add(FileName='{fname}')")
             r = requests.post(url, headers=_hdr(token), data=data, timeout=60)
             r.raise_for_status()
         except Exception:

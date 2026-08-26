@@ -1514,16 +1514,21 @@ def mensetsu_submit(req: func.HttpRequest) -> func.HttpResponse:
         logging.exception("mensetsu save failed")
         return _json_response({"error": "save_failed", "detail": str(e)[:300]}, 500,
                               extra_headers=public_cors)
-    # 在留カード画像の添付 (任意・最大2枚・各4MBまで・best effort)
+    # 在留カード/免許証画像の添付 (任意・各4MBまで・best effort)
     try:
-        imgs = []
-        for b64s in (body.get("zairyuImages") or [])[:2]:
+        files = []
+        for i, b64s in enumerate((body.get("zairyuImages") or [])[:2], start=1):
             raw = base64.b64decode(_strip_data_url(b64s))
             if len(raw) <= 4 * 1024 * 1024:
-                imgs.append(raw)
-        if imgs:
-            ng = _mn.attach_images(tok, item_id, imgs)
-            logging.info("mensetsu zairyu images: %d attached, %d failed", len(imgs) - ng, ng)
+                files.append((f"zairyucard_{i}.jpg", raw))
+        lic_b64 = body.get("licenseImage")
+        if lic_b64:
+            raw = base64.b64decode(_strip_data_url(lic_b64))
+            if len(raw) <= 4 * 1024 * 1024:
+                files.append(("menkyosho_1.jpg", raw))
+        if files:
+            ng = _mn.attach_images(tok, item_id, files)
+            logging.info("mensetsu images: %d attached, %d failed", len(files) - ng, ng)
     except Exception:
         logging.exception("mensetsu attach failed")
     # 通知(メール+Push・best effort)
