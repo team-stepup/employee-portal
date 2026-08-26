@@ -908,8 +908,8 @@ async function submitForm() {
 
 buildAll();
 addJob(); addJob(); addJob();
-// デフォルトはポルトガル語(応募者の多数派)。?lang= があればそれを優先
-setLang((URL_LANG === 'ja' || URL_LANG === 'pt' || URL_LANG === 'en') ? URL_LANG : 'pt');
+// デフォルト言語: ?lang=指定が最優先 / HP求人経由(?job=あり)は日本語 / それ以外はポルトガル語
+setLang((URL_LANG === 'ja' || URL_LANG === 'pt' || URL_LANG === 'en') ? URL_LANG : (APPLY_JOB ? 'ja' : 'pt'));
 // HP求人経由なら担当者を「ホームページから」に初期選択
 if (APPLY_JOB) { var _ts = document.getElementById('f_tantou'); if (_ts && !_ts.value) _ts.value = 'ホームページから'; }
 </script>
