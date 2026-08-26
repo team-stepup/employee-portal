@@ -109,6 +109,8 @@ def build_row(token, d, id1, tantou=""):
         put(K["age"], str(d.get("age")))
     # 動的解決の列
     put(_title_key(token, "国籍"), d.get("nationality"))
+    put(_title_key(token, "学歴"), d.get("gakureki"))
+    put(_title_key(token, "オンライン面接"), d.get("online"))
     put(_title_key(token, "電話番号"), str(d.get("tel") or "").strip()[:40])
     put(_title_key(token, "メールアドレス"), str(d.get("mail") or "").strip()[:120])
     put(_title_key(token, "緊急連絡先"), str(d.get("emergency") or "").strip()[:200])

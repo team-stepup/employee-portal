@@ -556,6 +556,11 @@ def person_fields(token, r1, r2):
     age = _getv("age", r1, r2)
     uni = _getv("uniform", r1, r2)
     nm = _getv("name", r1, r2)
+    edu = ""
+    for r in (r1, r2):
+        if r and _clean(r.get("Gakureki")):
+            edu = _clean(r.get("Gakureki"))   # 新面接シートの学歴列(旧データは空=手入力)
+            break
     return {
         "furigana": to_katakana(nm),
         "name": nm,
@@ -564,7 +569,7 @@ def person_fields(token, r1, r2):
         "marital": jp_clean(_first(_getv("marital", r1, r2))),
         "commute": jp_clean(_getv("commute", r1, r2)),
         "addr": addr_short(_getv("addr", r1, r2)),
-        "edu": "",   # Formsは学校の国しか聞いていない→初期値空欄(手入力運用)
+        "edu": edu,   # 新面接シートは学歴列あり/旧Forms分は空欄(手入力運用)
         "zangyo": jp_clean(_getv("zangyo", r1, r2)),
         "sat": jp_clean(_first(_getv("sat", r1, r2))),
         "hayade": "",

@@ -90,6 +90,16 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
         <select id="f_nationality"></select>
       </div>
     </div>
+    <div class="row2">
+      <div>
+        <label class="fl" data-t="gakureki">最終学歴</label>
+        <select id="f_gakureki"></select>
+      </div>
+      <div>
+        <label class="fl" data-t="schoolCountry">学校の国</label>
+        <select id="f_schoolCountry"></select>
+      </div>
+    </div>
     <label class="fl"><span data-t="tel">電話番号</span> <span class="req">*</span></label>
     <input type="tel" id="f_tel" inputmode="tel" placeholder="090-0000-0000">
     <label class="fl" data-t="mail">メールアドレス（任意）</label>
@@ -110,8 +120,10 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
 
   <div class="card">
     <h2 data-t="s3">3. 在留資格・日本語</h2>
-    <label class="fl" data-t="zairyu">在留資格</label>
-    <select id="f_zairyu"></select>
+    <div id="zairyuBlock">
+      <label class="fl" data-t="zairyu">在留資格（外国籍の方のみ）</label>
+      <select id="f_zairyu"></select>
+    </div>
     <label class="fl" data-t="rikai">日本語を理解する</label>
     <div class="btnrow" id="g_jpRikai"></div>
     <label class="fl" data-t="hanasu">日本語を話す</label>
@@ -140,14 +152,23 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
     <div class="btnrow" id="g_kotai"></div>
     <label class="fl" data-t="commute">通勤手段</label>
     <div class="btnrow" id="g_commute"></div>
+    <label class="fl" data-t="online">オンライン面接の方法</label>
+    <div class="row2">
+      <div><select id="f_online"></select></div>
+      <div><input type="text" id="f_onlineId" placeholder="ID / 番号"></div>
+    </div>
   </div>
 
   <div class="card">
-    <h2 data-t="s6">6. 免許・サイズ</h2>
+    <h2 data-t="s6">6. 免許・資格・サイズ</h2>
     <label class="fl" data-t="lic">運転免許</label>
     <select id="f_license"></select>
     <label class="fl" data-t="licExp">免許証有効期限（任意）</label>
     <input type="date" id="f_licenseExp">
+    <label class="fl" data-t="shikaku">資格（複数選択可）</label>
+    <div class="chiprow" id="g_shikaku"></div>
+    <label class="fl" data-t="shikakuFree">その他の資格（自由入力・任意）</label>
+    <input type="text" id="f_shikakuFree">
     <div class="row2">
       <div>
         <label class="fl" data-t="uni">作業服サイズ</label>
@@ -169,6 +190,15 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
       <option>吉浦マルセロ</option>
       <option>森ゆうじ</option>
     </select>
+  </div>
+
+  <div class="card" style="background:#fbfaff;border-color:#d9ccf5;">
+    <h2 data-t="s8">8. 個人情報の取り扱いについて</h2>
+    <p id="privacyText" style="font-size:12px;color:#475569;line-height:1.7;margin:0 0 10px;"></p>
+    <label style="display:flex;align-items:center;gap:10px;font-size:14.5px;font-weight:800;color:var(--p);cursor:pointer;">
+      <input type="checkbox" id="f_agree" style="width:22px;height:22px;accent-color:var(--p);">
+      <span data-t="agree">同意します</span>
+    </label>
   </div>
 
   <div class="err" id="errBox"></div>
@@ -239,7 +269,21 @@ var T = {
   needAddr: { ja:'住所を入力してください', pt:'Digite o endereço', en:'Please enter your address' },
   needBirth: { ja:'生年月日を入力してください', pt:'Digite a data de nascimento', en:'Please enter your date of birth' },
   sendFail: { ja:'送信に失敗しました。電波の良い場所でもう一度お試しください。', pt:'Falha ao enviar. Tente novamente.', en:'Failed to send. Please try again.' },
-  sending: { ja:'送信中…', pt:'Enviando…', en:'Sending…' }
+  sending: { ja:'送信中…', pt:'Enviando…', en:'Sending…' },
+  gakureki: { ja:'最終学歴', pt:'Escolaridade', en:'Education' },
+  schoolCountry: { ja:'学校の国', pt:'País da escola', en:'School country' },
+  zairyu2: { ja:'在留資格（外国籍の方のみ）', pt:'Tipo de visto (apenas estrangeiros)', en:'Residence status (foreigners only)' },
+  online: { ja:'オンライン面接の方法', pt:'Entrevista online: como?', en:'Online interview method' },
+  shikaku: { ja:'資格（複数選択可）', pt:'Qualificações (múltipla escolha)', en:'Qualifications (multiple)' },
+  shikakuFree: { ja:'その他の資格（自由入力・任意）', pt:'Outras qualificações (opcional)', en:'Other qualifications (optional)' },
+  s8: { ja:'8. 個人情報の取り扱いについて', pt:'8. Tratamento de dados pessoais', en:'8. Handling of personal information' },
+  agree: { ja:'同意します', pt:'Concordo', en:'I agree' },
+  needAgree: { ja:'個人情報の取り扱いに同意してください', pt:'Concorde com o tratamento de dados pessoais', en:'Please agree to the privacy policy' },
+  privacy: {
+    ja:'ご入力いただいた個人情報は、有限会社ステップ・アップが採用選考および労働者派遣の就業手続きの目的にのみ使用し、法令に基づく場合を除き、ご本人の同意なく第三者へ提供することはありません。お問い合わせ: 有限会社ステップ・アップ 総務部',
+    pt:'Os dados pessoais informados serão usados pela Step-Up Ltda. somente para seleção e procedimentos de trabalho temporário, e não serão fornecidos a terceiros sem o seu consentimento, exceto quando exigido por lei. Contato: Step-Up (Soumu).',
+    en:'Your personal information will be used by Step-Up Ltd. only for recruitment screening and temporary staffing procedures, and will not be shared with third parties without your consent except as required by law. Contact: Step-Up (Soumu).'
+  }
 };
 // 選択肢 [保存値(日本語固定), 日本語表示, ポルトガル語表示, 英語表示]
 var OPT = {
@@ -254,13 +298,17 @@ var OPT = {
   sat: [['可','可','Posso','Yes'],['ときどき可','ときどき可','Às vezes','Sometimes'],['不可','不可','Não posso','No']],
   kotai: [['可','可','Posso','Yes'],['不可','不可','Não posso','No']],
   commute: [['車','車','Carro','Car'],['バイク','バイク','Moto','Motorbike'],['自転車','自転車','Bicicleta','Bicycle'],['送迎希望','送迎希望','Transporte da empresa','Company shuttle'],['徒歩','徒歩','A pé','Walk']],
-  license: [['普通自動車','普通自動車','Carro (comum)','Car (standard)'],['普通自動車（AT限定）','普通自動車（AT限定）','Carro (AT)','Car (AT only)'],['原付','原付','Moto 50cc','Moped'],['フォークリフト','フォークリフト','Empilhadeira','Forklift'],['なし','なし','Não tenho','None'],['__other__','その他…','Outro…','Other…']],
+  license: [['普通自動車','普通自動車','Carro (comum)','Car (standard)'],['普通自動車（AT限定）','普通自動車（AT限定）','Carro (AT)','Car (AT only)'],['原付','原付','Moto 50cc','Moped'],['なし','なし','Não tenho','None'],['__other__','その他…','Outro…','Other…']],
+  shikaku: [['フォークリフト','フォークリフト','Empilhadeira','Forklift'],['玉掛け','玉掛け','Tamagake (içamento)','Slinging'],['クレーン','クレーン','Guindaste','Crane'],['溶接','溶接','Solda','Welding'],['危険物取扱','危険物取扱','Produtos perigosos','Hazardous materials']],
+  gakureki: [['中学卒業','中学卒業','Ensino fundamental','Junior high school'],['高校卒業','高校卒業','Ensino médio','High school'],['専門学校卒業','専門学校卒業','Escola técnica','Technical school'],['短大卒業','短大卒業','Faculdade (2 anos)','Junior college'],['大学卒業','大学卒業','Universidade','University'],['__other__','その他…','Outro…','Other…']],
+  schoolCountry: [['日本','日本','Japão','Japan'],['ブラジル','ブラジル','Brasil','Brazil'],['ペルー','ペルー','Peru','Peru'],['フィリピン','フィリピン','Filipinas','Philippines'],['__other__','その他…','Outro…','Other…']],
+  online: [['WhatsApp','WhatsApp','WhatsApp','WhatsApp'],['LINE','LINE','LINE','LINE'],['Teams','Teams','Teams','Teams'],['Zoom','Zoom','Zoom','Zoom'],['電話のみ','電話のみ','Só telefone','Phone only'],['不可','不可','Não posso','Not possible']],
   uniform: [['S','S','S','S'],['M','M','M','M'],['L','L','L','L'],['LL','LL','LL','LL'],['3L','3L','3L','3L'],['4L','4L','4L','4L']],
   shokushu: [['自動車部品','自動車部品','Auto peças','Auto parts'],['電子部品','電子部品','Eletrônicos','Electronics'],['食品','食品','Alimentos','Food'],['プラスチック','プラスチック','Plástico','Plastics'],['金属加工','金属加工','Metalurgia','Metal work'],['物流・倉庫','物流・倉庫','Logística','Logistics'],['事務','事務','Escritório','Office'],['__other__','その他…','Outro…','Other…']],
   naiyou: [['組立','組立','Montagem','Assembly'],['検査','検査','Inspeção','Inspection'],['梱包','梱包','Embalagem','Packing'],['旋盤','旋盤','Torno','Lathe'],['溶接','溶接','Solda','Welding'],['塗装','塗装','Pintura','Painting'],['プレス','プレス','Prensa','Press'],['成形','成形','Moldagem','Molding'],['運搬','運搬','Transporte','Transport'],['ピッキング','ピッキング','Picking','Picking'],['事務','事務','Escritório','Office'],['__other__','その他…','Outro…','Other…']]
 };
 var picked = {};
-var multi = { yomeru: [], kakeru: [] };
+var multi = { yomeru: [], kakeru: [], shikaku: [] };
 
 function t(key) { return (T[key] || {})[LANG] || (T[key] || {}).ja || ''; }
 function optLabel(o) { return LANG === 'pt' ? o[2] : (LANG === 'en' ? (o[3] || o[1]) : o[1]); }
@@ -405,10 +453,29 @@ function buildAll() {
   buildBtnGroup('g_commute', 'commute', 'commute');
   buildChips('g_yomeru', 'kana', 'yomeru');
   buildChips('g_kakeru', 'kana', 'kakeru');
+  buildChips('g_shikaku', 'shikaku', 'shikaku');
   buildSelect('f_nationality', 'nationality');
   buildSelect('f_zairyu', 'zairyu');
   buildSelect('f_license', 'license');
   buildSelect('f_uniform', 'uniform');
+  buildSelect('f_gakureki', 'gakureki');
+  buildSelect('f_schoolCountry', 'schoolCountry');
+  buildSelect('f_online', 'online');
+  // 在留資格ラベル(外国籍のみ)の翻訳 + 国籍=日本なら非表示
+  var zl = document.querySelector('#zairyuBlock label span, #zairyuBlock label');
+  var zlab = document.querySelector('#zairyuBlock label');
+  if (zlab) zlab.textContent = t('zairyu2');
+  var natSel = document.getElementById('f_nationality');
+  if (natSel && !natSel.dataset.zhook) {
+    natSel.dataset.zhook = '1';
+    natSel.addEventListener('change', function() {
+      var zb = document.getElementById('zairyuBlock');
+      if (zb) zb.style.display = (natSel.value === '日本') ? 'none' : '';
+    });
+  }
+  // 個人情報テキスト
+  var pv = document.getElementById('privacyText');
+  if (pv) pv.textContent = t('privacy');
   for (var i = 1; i <= 4; i++) {
     if (document.getElementById('j' + i + '_shokushu')) {
       buildSelect('j' + i + '_shokushu', 'shokushu');
@@ -448,7 +515,9 @@ async function submitForm() {
   var err = document.getElementById('errBox');
   err.style.display = 'none';
   var name = val('f_name'), tel = val('f_tel'), addr = val('f_addr'), birth = val('f_birth');
-  var msg = !name ? t('needName') : (!tel ? t('needTel') : (!birth ? t('needBirth') : (!addr ? t('needAddr') : '')));
+  var agree = document.getElementById('f_agree');
+  var msg = !name ? t('needName') : (!tel ? t('needTel') : (!birth ? t('needBirth') : (!addr ? t('needAddr')
+    : (!(agree && agree.checked) ? t('needAgree') : ''))));
   if (msg) {
     err.textContent = '⚠ ' + msg;
     err.style.display = 'block';
@@ -468,15 +537,30 @@ async function submitForm() {
                kikan: kikan, riyuu: val('j' + i + '_riyuu') };
     if (jb.company || jb.shokushu || jb.naiyou || kikan) jobs.push(jb);
   }
+  // 学歴: レベル + 学校の国 を結合 (例: 高校卒業（ブラジルの学校）)
+  var gk = val('f_gakureki');
+  var gc = val('f_schoolCountry');
+  var gakureki = gk ? (gc ? gk + '（' + gc + 'の学校）' : gk) : '';
+  // 免許 + 資格を結合して保存 (スキルシートの資格欄にそのまま出る)
+  var licParts = [];
+  if (val('f_license') && val('f_license') !== 'なし') licParts.push(val('f_license'));
+  multi.shikaku.forEach(function(s) { licParts.push(s); });
+  if (val('f_shikakuFree')) licParts.push(val('f_shikakuFree'));
+  var license = licParts.join('・') || val('f_license');
+  // オンライン面接: 方法 + ID
+  var online = val('f_online');
+  if (online && val('f_onlineId')) online += ': ' + val('f_onlineId');
+  var zairyuVal = (val('f_nationality') === '日本') ? '日本国籍' : val('f_zairyu');
   var body = {
     name: name, tel: tel, addr: addr, birth: birth,
     mail: val('f_mail'), emergency: val('f_emergency'),
     sex: picked.sex || '', marital: picked.marital || '',
-    nationality: val('f_nationality'), zairyu: val('f_zairyu'),
+    nationality: val('f_nationality'), zairyu: zairyuVal,
+    gakureki: gakureki, online: online,
     jpRikai: picked.jpRikai || '', jpHanasu: picked.jpHanasu || '', jpPct: picked.jpPct || '',
     yomeru: multi.yomeru, kakeru: multi.kakeru,
     zangyo: picked.zangyo || '', sat: picked.sat || '', kotai: picked.kotai || '',
-    commute: picked.commute || '', license: val('f_license'), licenseExp: val('f_licenseExp'),
+    commute: picked.commute || '', license: license, licenseExp: val('f_licenseExp'),
     uniform: val('f_uniform'), shoes: val('f_shoes'),
     tantou: val('f_tantou'), jobs: jobs, lang: LANG,
     company_hp: val('company_hp')
