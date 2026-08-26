@@ -128,7 +128,7 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
     <div class="zip-hint" id="zipHint"></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="card_s3">
     <h2 data-t="s3">3. 在留資格・日本語</h2>
     <div id="zairyuBlock">
       <label class="fl" data-t="zairyu">在留資格（外国籍の方のみ）</label>
@@ -666,10 +666,14 @@ function buildAll() {
   if (natSel && !natSel.dataset.zhook) {
     natSel.dataset.zhook = '1';
     natSel.addEventListener('change', function() {
-      var zb = document.getElementById('zairyuBlock');
-      if (zb) zb.style.display = (natSel.value === '日本') ? 'none' : '';
+      // 国籍=日本ならセクション3(在留資格・日本語)まるごと不要
+      var c3 = document.getElementById('card_s3');
+      if (c3) c3.style.display = (natSel.value === '日本') ? 'none' : '';
     });
   }
+  // 言語切替等での再構築時も国籍=日本なら非表示を維持
+  var c3s = document.getElementById('card_s3');
+  if (c3s && natSel) c3s.style.display = (natSel.value === '日本') ? 'none' : '';
   // 個人情報テキスト
   var pv = document.getElementById('privacyText');
   if (pv) pv.textContent = t('privacy');
@@ -872,6 +876,7 @@ async function submitForm() {
 
 buildAll();
 addJob(); addJob(); addJob();
+setLang('pt');   // デフォルトはポルトガル語(応募者の多数派)
 </script>
 </body>
 </html>
