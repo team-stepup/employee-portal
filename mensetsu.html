@@ -49,6 +49,7 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
 .zip-hint { font-size:12px; color:#0f766e; margin-top:4px; min-height:16px; }
 .camBtn { display:flex; align-items:center; justify-content:center; gap:6px; width:100%; padding:13px 10px; font-size:15px; font-weight:800; border:2px dashed var(--pl); border-radius:12px; background:#f6f2fc; color:#5e35b1; cursor:pointer; }
 .camBtn.done { border-style:solid; background:#ecfdf5; border-color:#10b981; color:#047857; }
+.missmark { border-color:#dc2626 !important; background:#fef2f2 !important; border-radius:10px; }
 .row2 { display:flex; gap:8px; }
 .row2 > div { flex:1; min-width:0; }
 /* スマホ: 基本は縦積み(.keepの行だけ横並び維持) */
@@ -298,6 +299,8 @@ var T = {
   camDone: { ja:'撮影しました（タップで撮り直し）', pt:'Foto OK (toque para refazer)', en:'Photo saved (tap to retake)' },
   applyJob: { ja:'📌 応募する求人', pt:'📌 Vaga', en:'📌 Applying for' },
   tantouHp: { ja:'ホームページから（担当者なし）', pt:'Pelo site (sem responsável)', en:'From the website (no contact staff)' },
+  missTitle: { ja:'次の必須項目が入力されていません', pt:'Faltam os seguintes campos obrigatórios', en:'The following required fields are missing' },
+  agreeItem: { ja:'個人情報の取り扱いに「同意します」のチェック', pt:'Marcar "Concordo" no tratamento de dados pessoais', en:'Check "I agree" for personal data handling' },
   s3: { ja:'3. 在留資格・日本語', pt:'3. Visto e japonês', en:'3. Visa & Japanese' },
   zairyu: { ja:'在留資格', pt:'Tipo de visto (zairyu)', en:'Residence status (visa)' },
   rikai: { ja:'日本語を理解する', pt:'Entender japonês', en:'Understand Japanese' },
@@ -667,6 +670,16 @@ function townPicked() {
   }
 }
 
+// セクション3(在留資格・日本語)の表示判定:
+//  国籍=外国籍→常に表示 / 国籍=日本→常に非表示 / 国籍未選択→日本語UIなら非表示・葡英UIなら表示
+function updateS3() {
+  var c3 = document.getElementById('card_s3');
+  if (!c3) return;
+  var nat = (document.getElementById('f_nationality') || { value: '' }).value;
+  var show = nat ? (nat !== '日本') : (LANG !== 'ja');
+  c3.style.display = show ? '' : 'none';
+}
+
 function buildAll() {
   // option等のdata-t-opt翻訳
   document.querySelectorAll('[data-t-opt]').forEach(function(el) {
@@ -707,15 +720,9 @@ function buildAll() {
   var natSel = document.getElementById('f_nationality');
   if (natSel && !natSel.dataset.zhook) {
     natSel.dataset.zhook = '1';
-    natSel.addEventListener('change', function() {
-      // 国籍=日本ならセクション3(在留資格・日本語)まるごと不要
-      var c3 = document.getElementById('card_s3');
-      if (c3) c3.style.display = (natSel.value === '日本') ? 'none' : '';
-    });
+    natSel.addEventListener('change', updateS3);
   }
-  // 言語切替等での再構築時も国籍=日本なら非表示を維持
-  var c3s = document.getElementById('card_s3');
-  if (c3s && natSel) c3s.style.display = (natSel.value === '日本') ? 'none' : '';
+  updateS3();
   // 個人情報テキスト
   var pv = document.getElementById('privacyText');
   if (pv) pv.textContent = t('privacy');
@@ -843,12 +850,31 @@ async function submitForm() {
   var name = val('f_name'), tel = val('f_tel'), addr = val('f_addr');
   var birth = dateVal('f_birth_y', 'f_birth_m', 'f_birth_d');
   var agree = document.getElementById('f_agree');
-  var msg = !name ? t('needName') : (!tel ? t('needTel') : (!birth ? t('needBirth') : (!addr ? t('needAddr')
-    : (!(agree && agree.checked) ? t('needAgree') : ''))));
-  if (msg) {
-    err.textContent = '⚠ ' + msg;
+  // 必須チェック: 足りない項目を全部リスト表示(現在の言語)+赤枠+エラー位置へスクロール
+  ['f_name', 'f_tel', 'f_addr', 'f_birth_y', 'f_birth_m', 'f_birth_d'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.classList.remove('missmark');
+  });
+  var agLabel = agree ? agree.closest('label') : null;
+  if (agLabel) agLabel.classList.remove('missmark');
+  var missing = [];
+  if (!name) missing.push({ ids: ['f_name'], label: t('name') });
+  if (!birth) missing.push({ ids: ['f_birth_y', 'f_birth_m', 'f_birth_d'], label: t('birth') });
+  if (!tel) missing.push({ ids: ['f_tel'], label: t('tel') });
+  if (!addr) missing.push({ ids: ['f_addr'], label: t('addr') });
+  if (!(agree && agree.checked)) missing.push({ ids: [], el: agLabel, label: t('agreeItem') });
+  if (missing.length) {
+    err.innerHTML = '<b>⚠ ' + t('missTitle') + '</b><ul style="margin:6px 0 0;padding-left:20px;">'
+      + missing.map(function(m) { return '<li>' + m.label + '</li>'; }).join('') + '</ul>';
     err.style.display = 'block';
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    missing.forEach(function(m) {
+      m.ids.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.classList.add('missmark');
+      });
+      if (m.el) m.el.classList.add('missmark');
+    });
+    err.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
   var jobs = [];
