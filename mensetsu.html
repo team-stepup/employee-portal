@@ -10,17 +10,26 @@
 * { box-sizing:border-box; }
 body { margin:0; font-family:'Hiragino Sans','Yu Gothic',Meiryo,sans-serif; background:var(--bg); color:#1e293b; }
 .wrap { max-width:520px; margin:0 auto; padding:14px 14px 60px; }
-.head { text-align:center; padding:16px 0 6px; }
-.head h1 { margin:6px 0 2px; font-size:20px; color:var(--p); }
-.head p { margin:0; font-size:12px; color:#64748b; }
-.langbar { display:flex; gap:8px; justify-content:center; margin:10px 0 14px; }
-.langbar button { padding:7px 22px; border-radius:20px; border:2px solid var(--p); background:#fff; color:var(--p); font-weight:800; font-size:14px; }
+.hero { position:relative; background:linear-gradient(135deg,#7c4dff 0%,#5e35b1 55%,#4527a0 100%);
+  border-radius:20px; padding:26px 18px 22px; margin:4px 0 14px; text-align:center; color:#fff;
+  box-shadow:0 8px 24px rgba(94,53,177,.35); overflow:hidden; }
+.hero::before { content:''; position:absolute; top:-40px; right:-40px; width:160px; height:160px;
+  border-radius:50%; background:rgba(255,255,255,.08); }
+.hero::after { content:''; position:absolute; bottom:-60px; left:-30px; width:140px; height:140px;
+  border-radius:50%; background:rgba(255,255,255,.07); }
+.hero .emblem { width:64px; height:64px; border-radius:16px; background:#fff; padding:8px;
+  box-shadow:0 4px 12px rgba(0,0,0,.25); }
+.hero h1 { margin:10px 0 4px; font-size:22px; letter-spacing:.06em; font-weight:800; }
+.hero .sub { margin:0; font-size:12.5px; opacity:.92; letter-spacing:.04em; }
+.hero .brand { margin-top:8px; font-size:11px; opacity:.8; letter-spacing:.18em; font-weight:700; }
+.langbar { display:flex; gap:7px; justify-content:center; margin:0 0 14px; }
+.langbar button { flex:1; max-width:130px; padding:9px 6px; border-radius:22px; border:2px solid var(--p); background:#fff; color:var(--p); font-weight:800; font-size:13.5px; }
 .langbar button.on { background:var(--p); color:#fff; }
 .card { background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:14px; margin-bottom:12px; box-shadow:0 2px 6px rgba(0,0,0,.04); }
 .card h2 { margin:0 0 10px; font-size:14.5px; color:var(--p); border-left:4px solid var(--pl); padding-left:8px; }
 label.fl { display:block; font-size:11.5px; color:#64748b; font-weight:700; margin:10px 0 3px; }
 label.fl .req { color:#e53935; }
-input[type=text], input[type=tel], input[type=email], input[type=date], select {
+input[type=text], input[type=tel], input[type=email], input[type=date], input[type=number], select {
   width:100%; padding:11px 10px; font-size:16px; border:1.5px solid var(--line); border-radius:10px; background:#fff; }
 .btnrow { display:flex; flex-wrap:wrap; gap:7px; }
 .btnrow button { flex:1; min-width:70px; padding:10px 4px; font-size:14px; font-weight:700; border:1.5px solid var(--line); border-radius:10px; background:#fff; color:#334155; }
@@ -45,14 +54,16 @@ input[type=text], input[type=tel], input[type=email], input[type=date], select {
 </head>
 <body>
 <div class="wrap" id="formWrap">
-  <div class="head">
-    <div style="font-size:30px;">📋</div>
-    <h1>STEP・UP 面接シート</h1>
-    <p data-t="sub">下の項目を入力してください</p>
+  <div class="hero">
+    <img class="emblem" src="emblem.png" alt="" onerror="this.style.display='none'">
+    <h1 data-t="title">面接シート</h1>
+    <p class="sub" data-t="sub">下の項目を入力してください</p>
+    <div class="brand">STEP・UP　有限会社ステップ・アップ</div>
   </div>
   <div class="langbar">
     <button id="langJa" class="on" onclick="setLang('ja')">日本語</button>
     <button id="langPt" onclick="setLang('pt')">Português</button>
+    <button id="langEn" onclick="setLang('en')">English</button>
   </div>
 
   <div class="card">
@@ -154,8 +165,6 @@ input[type=text], input[type=tel], input[type=email], input[type=date], select {
     <p style="font-size:12px;color:#64748b;margin:0 0 6px;" data-t="tantouHint">スタッフに聞いて選んでください</p>
     <select id="f_tantou">
       <option value="">-</option>
-      <option>山下浩俊</option>
-      <option>山下亜実</option>
       <option>城かおり</option>
       <option>吉浦マルセロ</option>
       <option>森ゆうじ</option>
@@ -176,92 +185,97 @@ input[type=text], input[type=tel], input[type=email], input[type=date], select {
 var API = 'https://func-employee-portal-7833.azurewebsites.net/api/mensetsu/submit';
 var LANG = 'ja';
 var T = {
-  sub: { ja:'下の項目を入力してください', pt:'Preencha os campos abaixo' },
-  s1: { ja:'1. 基本情報', pt:'1. Dados pessoais' },
-  name: { ja:'名前（カタカナ または ローマ字）', pt:'Nome (katakana ou alfabeto)' },
-  birth: { ja:'生年月日', pt:'Data de nascimento' },
-  sex: { ja:'性別', pt:'Sexo' },
-  marital: { ja:'婚姻状況', pt:'Estado civil' },
-  nat: { ja:'国籍', pt:'Nacionalidade' },
-  tel: { ja:'電話番号', pt:'Telefone' },
-  mail: { ja:'メールアドレス（任意）', pt:'E-mail (opcional)' },
-  emg: { ja:'緊急連絡先（名前と電話・任意）', pt:'Contato de emergência (nome e tel, opcional)' },
-  s2: { ja:'2. 住所', pt:'2. Endereço' },
-  zip: { ja:'郵便番号（7桁・自動で住所が入ります）', pt:'CEP (7 dígitos, endereço automático)' },
-  addr: { ja:'住所（市区町まで）', pt:'Endereço (cidade e bairro)' },
-  s3: { ja:'3. 在留資格・日本語', pt:'3. Visto e japonês' },
-  zairyu: { ja:'在留資格', pt:'Tipo de visto (zairyu)' },
-  rikai: { ja:'日本語を理解する', pt:'Entender japonês' },
-  hanasu: { ja:'日本語を話す', pt:'Falar japonês' },
-  pct: { ja:'日本語 どのくらい？（％）', pt:'Japonês: quanto? (%)' },
-  yomeru: { ja:'読める（複数選択可）', pt:'Consigo ler (múltipla escolha)' },
-  kakeru: { ja:'書ける（複数選択可）', pt:'Consigo escrever (múltipla escolha)' },
-  s4: { ja:'4. 職歴（新しい順・最大4件）', pt:'4. Experiência (mais recente primeiro, máx. 4)' },
-  addjob: { ja:'職歴を追加', pt:'Adicionar experiência' },
-  s5: { ja:'5. 希望条件', pt:'5. Condições' },
-  zangyo: { ja:'残業', pt:'Hora extra' },
-  sat: { ja:'土曜日（休日出勤）', pt:'Sábado (trabalho em folga)' },
-  kotai: { ja:'交代勤務', pt:'Turnos alternados' },
-  commute: { ja:'通勤手段', pt:'Meio de transporte' },
-  s6: { ja:'6. 免許・サイズ', pt:'6. Habilitação e tamanhos' },
-  lic: { ja:'運転免許', pt:'Carteira de motorista' },
-  licExp: { ja:'免許証有効期限（任意）', pt:'Validade da carteira (opcional)' },
-  uni: { ja:'作業服サイズ', pt:'Tamanho do uniforme' },
-  shoes: { ja:'靴のサイズ', pt:'Número do sapato' },
-  s7: { ja:'7. 面接担当者', pt:'7. Entrevistador' },
-  tantouHint: { ja:'スタッフに聞いて選んでください', pt:'Pergunte ao staff e selecione' },
-  send: { ja:'送信する', pt:'Enviar' },
-  doneTitle: { ja:'送信しました！', pt:'Enviado!' },
-  doneBody: { ja:'ありがとうございます。スタッフにお声がけください。', pt:'Obrigado! Avise o staff.' },
-  jobN: { ja:'職歴', pt:'Experiência' },
-  jcompany: { ja:'会社名', pt:'Nome da fábrica/empresa' },
-  jhaken: { ja:'派遣会社（任意）', pt:'Empreiteira (opcional)' },
-  jshoku: { ja:'職種', pt:'Setor' },
-  jnaiyou: { ja:'仕事内容', pt:'Tipo de serviço' },
-  jkikan: { ja:'勤続期間', pt:'Tempo de serviço' },
-  jriyuu: { ja:'退職した理由（任意）', pt:'Motivo da saída (opcional)' },
-  years: { ja:'年', pt:'anos' },
-  months: { ja:'ヶ月', pt:'meses' },
-  other: { ja:'その他（入力）', pt:'Outro (digitar)' },
-  needName: { ja:'名前を入力してください', pt:'Digite o nome' },
-  needTel: { ja:'電話番号を入力してください', pt:'Digite o telefone' },
-  needAddr: { ja:'住所を入力してください', pt:'Digite o endereço' },
-  needBirth: { ja:'生年月日を入力してください', pt:'Digite a data de nascimento' },
-  sendFail: { ja:'送信に失敗しました。電波の良い場所でもう一度お試しください。', pt:'Falha ao enviar. Tente novamente.' },
-  sending: { ja:'送信中…', pt:'Enviando…' }
+  title: { ja:'面接シート', pt:'Ficha de Entrevista', en:'Interview Sheet' },
+  sub: { ja:'下の項目を入力してください', pt:'Preencha os campos abaixo', en:'Please fill in the form below' },
+  s1: { ja:'1. 基本情報', pt:'1. Dados pessoais', en:'1. Personal information' },
+  name: { ja:'名前（カタカナ または ローマ字）', pt:'Nome (katakana ou alfabeto)', en:'Name (katakana or alphabet)' },
+  birth: { ja:'生年月日', pt:'Data de nascimento', en:'Date of birth' },
+  sex: { ja:'性別', pt:'Sexo', en:'Sex' },
+  marital: { ja:'婚姻状況', pt:'Estado civil', en:'Marital status' },
+  nat: { ja:'国籍', pt:'Nacionalidade', en:'Nationality' },
+  tel: { ja:'電話番号', pt:'Telefone', en:'Phone number' },
+  mail: { ja:'メールアドレス（任意）', pt:'E-mail (opcional)', en:'E-mail (optional)' },
+  emg: { ja:'緊急連絡先（名前と電話・任意）', pt:'Contato de emergência (nome e tel, opcional)', en:'Emergency contact (name & phone, optional)' },
+  s2: { ja:'2. 住所', pt:'2. Endereço', en:'2. Address' },
+  zip: { ja:'郵便番号（7桁・自動で住所が入ります）', pt:'CEP (7 dígitos, endereço automático)', en:'Postal code (7 digits, auto-fill)' },
+  addr: { ja:'住所（市区町まで）', pt:'Endereço (cidade e bairro)', en:'Address (city & town)' },
+  s3: { ja:'3. 在留資格・日本語', pt:'3. Visto e japonês', en:'3. Visa & Japanese' },
+  zairyu: { ja:'在留資格', pt:'Tipo de visto (zairyu)', en:'Residence status (visa)' },
+  rikai: { ja:'日本語を理解する', pt:'Entender japonês', en:'Understand Japanese' },
+  hanasu: { ja:'日本語を話す', pt:'Falar japonês', en:'Speak Japanese' },
+  pct: { ja:'日本語 どのくらい？（％）', pt:'Japonês: quanto? (%)', en:'Japanese level (%)' },
+  yomeru: { ja:'読める（複数選択可）', pt:'Consigo ler (múltipla escolha)', en:'Can read (multiple)' },
+  kakeru: { ja:'書ける（複数選択可）', pt:'Consigo escrever (múltipla escolha)', en:'Can write (multiple)' },
+  s4: { ja:'4. 職歴（新しい順・最大4件）', pt:'4. Experiência (mais recente primeiro, máx. 4)', en:'4. Work history (newest first, max 4)' },
+  addjob: { ja:'職歴を追加', pt:'Adicionar experiência', en:'Add work history' },
+  s5: { ja:'5. 希望条件', pt:'5. Condições', en:'5. Work conditions' },
+  zangyo: { ja:'残業', pt:'Hora extra', en:'Overtime' },
+  sat: { ja:'土曜日（休日出勤）', pt:'Sábado (trabalho em folga)', en:'Saturday (holiday work)' },
+  kotai: { ja:'交代勤務', pt:'Turnos alternados', en:'Shift work' },
+  commute: { ja:'通勤手段', pt:'Meio de transporte', en:'Transportation' },
+  s6: { ja:'6. 免許・サイズ', pt:'6. Habilitação e tamanhos', en:'6. License & sizes' },
+  lic: { ja:'運転免許', pt:'Carteira de motorista', en:'Driver license' },
+  licExp: { ja:'免許証有効期限（任意）', pt:'Validade da carteira (opcional)', en:'License expiry (optional)' },
+  uni: { ja:'作業服サイズ', pt:'Tamanho do uniforme', en:'Uniform size' },
+  shoes: { ja:'靴のサイズ', pt:'Número do sapato', en:'Shoe size' },
+  s7: { ja:'7. 面接担当者', pt:'7. Entrevistador', en:'7. Interviewer' },
+  tantouHint: { ja:'スタッフに聞いて選んでください', pt:'Pergunte ao staff e selecione', en:'Ask the staff and select' },
+  send: { ja:'送信する', pt:'Enviar', en:'Submit' },
+  doneTitle: { ja:'送信しました！', pt:'Enviado!', en:'Submitted!' },
+  doneBody: { ja:'ありがとうございます。スタッフにお声がけください。', pt:'Obrigado! Avise o staff.', en:'Thank you! Please tell the staff.' },
+  jobN: { ja:'職歴', pt:'Experiência', en:'Work history' },
+  jcompany: { ja:'会社名', pt:'Nome da fábrica/empresa', en:'Company name' },
+  jhaken: { ja:'派遣会社（任意）', pt:'Empreiteira (opcional)', en:'Staffing agency (optional)' },
+  jjikyu: { ja:'時給（円・任意）', pt:'Salário por hora (ienes, opcional)', en:'Hourly wage (yen, optional)' },
+  jshoku: { ja:'職種', pt:'Setor', en:'Industry' },
+  jnaiyou: { ja:'仕事内容', pt:'Tipo de serviço', en:'Job type' },
+  jkikan: { ja:'勤続期間', pt:'Tempo de serviço', en:'Duration' },
+  jriyuu: { ja:'退職した理由（任意）', pt:'Motivo da saída (opcional)', en:'Reason for leaving (optional)' },
+  years: { ja:'年', pt:'anos', en:'yr' },
+  months: { ja:'ヶ月', pt:'meses', en:'mo' },
+  other: { ja:'その他（入力）', pt:'Outro (digitar)', en:'Other (type)' },
+  needName: { ja:'名前を入力してください', pt:'Digite o nome', en:'Please enter your name' },
+  needTel: { ja:'電話番号を入力してください', pt:'Digite o telefone', en:'Please enter your phone number' },
+  needAddr: { ja:'住所を入力してください', pt:'Digite o endereço', en:'Please enter your address' },
+  needBirth: { ja:'生年月日を入力してください', pt:'Digite a data de nascimento', en:'Please enter your date of birth' },
+  sendFail: { ja:'送信に失敗しました。電波の良い場所でもう一度お試しください。', pt:'Falha ao enviar. Tente novamente.', en:'Failed to send. Please try again.' },
+  sending: { ja:'送信中…', pt:'Enviando…', en:'Sending…' }
 };
-// 選択肢 (保存値は日本語固定 / 表示のみ言語切替)
+// 選択肢 [保存値(日本語固定), 日本語表示, ポルトガル語表示, 英語表示]
 var OPT = {
-  sex: [['男', '男', 'Homem'], ['女', '女', 'Mulher']],
-  marital: [['未婚', '未婚', 'Solteiro(a)'], ['既婚', '既婚', 'Casado(a)']],
-  nationality: [['ブラジル','ブラジル','Brasil'],['日本','日本','Japão'],['ペルー','ペルー','Peru'],['フィリピン','フィリピン','Filipinas'],['ベトナム','ベトナム','Vietnã'],['中国','中国','China'],['__other__','その他…','Outro…']],
-  zairyu: [['永住者','永住者','Visto permanente'],['定住者','定住者','Visto de longa permanência (teijusha)'],['日本人の配偶者等','日本人の配偶者等','Cônjuge de japonês'],['永住者の配偶者等','永住者の配偶者等','Cônjuge de permanente'],['家族滞在','家族滞在','Dependente'],['特定技能','特定技能','Habilidades específicas'],['技能実習','技能実習','Estágio técnico'],['日本国籍','日本国籍','Nacionalidade japonesa'],['__other__','その他…','Outro…']],
-  jpLevel: [['良い','良い','Bom'],['普通','普通','Médio'],['少し','少し','Um pouco'],['不可','不可','Não']],
-  jpPct: [['80％~100％','80〜100%','80〜100%'],['60％~80％','60〜80%','60〜80%'],['40％~60％','40〜60%','40〜60%'],['20％~40％','20〜40%','20〜40%'],['0％~20％','0〜20%','0〜20%']],
-  kana: [['カタカナ','カタカナ','Katakana'],['ひらがな','ひらがな','Hiragana'],['漢字','漢字','Kanji'],['不可','不可','Não']],
-  zangyo: [['不可','不可','Não posso'],['1時間まで','1時間まで','Até 1h'],['2時間まで','2時間まで','Até 2h'],['3時間以上','3時間以上','3h ou mais']],
-  sat: [['可','可','Posso'],['ときどき可','ときどき可','Às vezes'],['不可','不可','Não posso']],
-  kotai: [['可','可','Posso'],['不可','不可','Não posso']],
-  commute: [['車','車','Carro'],['バイク','バイク','Moto'],['自転車','自転車','Bicicleta'],['送迎希望','送迎希望','Transporte da empresa'],['徒歩','徒歩','A pé']],
-  license: [['普通自動車','普通自動車','Carro (comum)'],['普通自動車（AT限定）','普通自動車（AT限定）','Carro (AT)'],['原付','原付','Moto 50cc'],['フォークリフト','フォークリフト','Empilhadeira'],['なし','なし','Não tenho'],['__other__','その他…','Outro…']],
-  uniform: [['S','S','S'],['M','M','M'],['L','L','L'],['LL','LL','LL'],['3L','3L','3L'],['4L','4L','4L']],
-  shokushu: [['自動車部品','自動車部品','Auto peças'],['電子部品','電子部品','Eletrônicos'],['食品','食品','Alimentos'],['プラスチック','プラスチック','Plástico'],['金属加工','金属加工','Metalurgia'],['物流・倉庫','物流・倉庫','Logística'],['事務','事務','Escritório'],['__other__','その他…','Outro…']],
-  naiyou: [['組立','組立','Montagem'],['検査','検査','Inspeção'],['梱包','梱包','Embalagem'],['旋盤','旋盤','Torno'],['溶接','溶接','Solda'],['塗装','塗装','Pintura'],['プレス','プレス','Prensa'],['成形','成形','Moldagem'],['運搬','運搬','Transporte'],['ピッキング','ピッキング','Picking'],['事務','事務','Escritório'],['__other__','その他…','Outro…']]
+  sex: [['男','男','Homem','Male'],['女','女','Mulher','Female']],
+  marital: [['未婚','未婚','Solteiro(a)','Single'],['既婚','既婚','Casado(a)','Married']],
+  nationality: [['ブラジル','ブラジル','Brasil','Brazil'],['日本','日本','Japão','Japan'],['ペルー','ペルー','Peru','Peru'],['フィリピン','フィリピン','Filipinas','Philippines'],['ベトナム','ベトナム','Vietnã','Vietnam'],['中国','中国','China','China'],['__other__','その他…','Outro…','Other…']],
+  zairyu: [['永住者','永住者','Visto permanente','Permanent resident'],['定住者','定住者','Longa permanência (teijusha)','Long-term resident'],['日本人の配偶者等','日本人の配偶者等','Cônjuge de japonês','Spouse of Japanese'],['永住者の配偶者等','永住者の配偶者等','Cônjuge de permanente','Spouse of permanent resident'],['家族滞在','家族滞在','Dependente','Dependent'],['特定技能','特定技能','Habilidades específicas','Specified skilled worker'],['技能実習','技能実習','Estágio técnico','Technical intern'],['日本国籍','日本国籍','Nacionalidade japonesa','Japanese national'],['__other__','その他…','Outro…','Other…']],
+  jpLevel: [['良い','良い','Bom','Good'],['普通','普通','Médio','Average'],['少し','少し','Um pouco','A little'],['不可','不可','Não','No']],
+  jpPct: [['80％~100％','80〜100%','80〜100%','80〜100%'],['60％~80％','60〜80%','60〜80%','60〜80%'],['40％~60％','40〜60%','40〜60%','40〜60%'],['20％~40％','20〜40%','20〜40%','20〜40%'],['0％~20％','0〜20%','0〜20%','0〜20%']],
+  kana: [['カタカナ','カタカナ','Katakana','Katakana'],['ひらがな','ひらがな','Hiragana','Hiragana'],['漢字','漢字','Kanji','Kanji'],['不可','不可','Não','No']],
+  zangyo: [['不可','不可','Não posso','No'],['1時間まで','1時間まで','Até 1h','Up to 1h'],['2時間まで','2時間まで','Até 2h','Up to 2h'],['3時間以上','3時間以上','3h ou mais','3h or more']],
+  sat: [['可','可','Posso','Yes'],['ときどき可','ときどき可','Às vezes','Sometimes'],['不可','不可','Não posso','No']],
+  kotai: [['可','可','Posso','Yes'],['不可','不可','Não posso','No']],
+  commute: [['車','車','Carro','Car'],['バイク','バイク','Moto','Motorbike'],['自転車','自転車','Bicicleta','Bicycle'],['送迎希望','送迎希望','Transporte da empresa','Company shuttle'],['徒歩','徒歩','A pé','Walk']],
+  license: [['普通自動車','普通自動車','Carro (comum)','Car (standard)'],['普通自動車（AT限定）','普通自動車（AT限定）','Carro (AT)','Car (AT only)'],['原付','原付','Moto 50cc','Moped'],['フォークリフト','フォークリフト','Empilhadeira','Forklift'],['なし','なし','Não tenho','None'],['__other__','その他…','Outro…','Other…']],
+  uniform: [['S','S','S','S'],['M','M','M','M'],['L','L','L','L'],['LL','LL','LL','LL'],['3L','3L','3L','3L'],['4L','4L','4L','4L']],
+  shokushu: [['自動車部品','自動車部品','Auto peças','Auto parts'],['電子部品','電子部品','Eletrônicos','Electronics'],['食品','食品','Alimentos','Food'],['プラスチック','プラスチック','Plástico','Plastics'],['金属加工','金属加工','Metalurgia','Metal work'],['物流・倉庫','物流・倉庫','Logística','Logistics'],['事務','事務','Escritório','Office'],['__other__','その他…','Outro…','Other…']],
+  naiyou: [['組立','組立','Montagem','Assembly'],['検査','検査','Inspeção','Inspection'],['梱包','梱包','Embalagem','Packing'],['旋盤','旋盤','Torno','Lathe'],['溶接','溶接','Solda','Welding'],['塗装','塗装','Pintura','Painting'],['プレス','プレス','Prensa','Press'],['成形','成形','Moldagem','Molding'],['運搬','運搬','Transporte','Transport'],['ピッキング','ピッキング','Picking','Picking'],['事務','事務','Escritório','Office'],['__other__','その他…','Outro…','Other…']]
 };
-var picked = {};   // 単一選択ボタングループの値
+var picked = {};
 var multi = { yomeru: [], kakeru: [] };
 
 function t(key) { return (T[key] || {})[LANG] || (T[key] || {}).ja || ''; }
+function optLabel(o) { return LANG === 'pt' ? o[2] : (LANG === 'en' ? (o[3] || o[1]) : o[1]); }
 
 function setLang(l) {
   LANG = l;
   document.getElementById('langJa').className = (l === 'ja') ? 'on' : '';
   document.getElementById('langPt').className = (l === 'pt') ? 'on' : '';
+  document.getElementById('langEn').className = (l === 'en') ? 'on' : '';
   document.querySelectorAll('[data-t]').forEach(function(el) {
     var k = el.getAttribute('data-t');
     if (T[k]) el.textContent = t(k);
   });
   buildAll();
+  relabelJobs();
 }
 
 function buildBtnGroup(id, optKey, group) {
@@ -271,7 +285,7 @@ function buildBtnGroup(id, optKey, group) {
   OPT[optKey].forEach(function(o) {
     var b = document.createElement('button');
     b.type = 'button';
-    b.textContent = (LANG === 'pt') ? o[2] : o[1];
+    b.textContent = optLabel(o);
     b.className = (picked[group] === o[0]) ? 'on' : '';
     b.onclick = function() {
       picked[group] = (picked[group] === o[0]) ? '' : o[0];
@@ -288,7 +302,7 @@ function buildChips(id, optKey, group) {
   OPT[optKey].forEach(function(o) {
     var b = document.createElement('button');
     b.type = 'button';
-    b.textContent = (LANG === 'pt') ? o[2] : o[1];
+    b.textContent = optLabel(o);
     b.className = (multi[group].indexOf(o[0]) >= 0) ? 'on' : '';
     b.onclick = function() {
       var i = multi[group].indexOf(o[0]);
@@ -307,10 +321,17 @@ function buildSelect(id, optKey) {
   OPT[optKey].forEach(function(o) {
     var op = document.createElement('option');
     op.value = o[0];
-    op.textContent = (LANG === 'pt') ? o[2] : o[1];
+    op.textContent = optLabel(o);
     sel.appendChild(op);
   });
   sel.value = cur;
+  if (cur && sel.value !== cur) {   // その他で追加した自由入力値
+    var op = document.createElement('option');
+    op.value = cur;
+    op.textContent = cur;
+    sel.appendChild(op);
+    sel.value = cur;
+  }
   sel.onchange = function() {
     if (sel.value === '__other__') {
       var v = prompt(t('other'));
@@ -328,7 +349,7 @@ function buildSelect(id, optKey) {
   };
 }
 
-// ===== 職歴カード =====
+// ===== 職歴カード (初期3件・最大4件) =====
 var jobCount = 0;
 function addJob() {
   if (jobCount >= 4) return;
@@ -341,16 +362,17 @@ function addJob() {
   for (var y = 0; y <= 30; y++) years += '<option value="' + y + '">' + y + '</option>';
   var months = '';
   for (var m = 0; m <= 11; m++) months += '<option value="' + m + '">' + m + '</option>';
-  div.innerHTML = '<div class="jtitle">🏭 ' + t('jobN') + ' ' + i + '</div>'
+  div.innerHTML = '<div class="jtitle" id="j' + i + '_title">🏭 ' + t('jobN') + ' ' + i + '</div>'
     + (i > 1 ? '<button type="button" class="jobdel" onclick="delJob(' + i + ')">✕</button>' : '')
-    + '<label class="fl">' + t('jcompany') + '</label><input type="text" id="j' + i + '_company">'
-    + '<label class="fl">' + t('jhaken') + '</label><input type="text" id="j' + i + '_haken">'
-    + '<div class="row2"><div><label class="fl">' + t('jshoku') + '</label><select id="j' + i + '_shokushu"></select></div>'
-    + '<div><label class="fl">' + t('jnaiyou') + '</label><select id="j' + i + '_naiyou"></select></div></div>'
-    + '<label class="fl">' + t('jkikan') + '</label>'
-    + '<div class="row2"><div><select id="j' + i + '_ky">' + years + '</select></div><div style="align-self:center;flex:0 0 auto;font-size:13px;">' + t('years') + '</div>'
-    + '<div><select id="j' + i + '_km">' + months + '</select></div><div style="align-self:center;flex:0 0 auto;font-size:13px;">' + t('months') + '</div></div>'
-    + '<label class="fl">' + t('jriyuu') + '</label><input type="text" id="j' + i + '_riyuu">';
+    + '<label class="fl" data-jt="jcompany">' + t('jcompany') + '</label><input type="text" id="j' + i + '_company">'
+    + '<div class="row2"><div><label class="fl" data-jt="jhaken">' + t('jhaken') + '</label><input type="text" id="j' + i + '_haken"></div>'
+    + '<div><label class="fl" data-jt="jjikyu">' + t('jjikyu') + '</label><input type="number" id="j' + i + '_jikyu" inputmode="numeric" placeholder="1300"></div></div>'
+    + '<div class="row2"><div><label class="fl" data-jt="jshoku">' + t('jshoku') + '</label><select id="j' + i + '_shokushu"></select></div>'
+    + '<div><label class="fl" data-jt="jnaiyou">' + t('jnaiyou') + '</label><select id="j' + i + '_naiyou"></select></div></div>'
+    + '<label class="fl" data-jt="jkikan">' + t('jkikan') + '</label>'
+    + '<div class="row2"><div><select id="j' + i + '_ky">' + years + '</select></div><div style="align-self:center;flex:0 0 auto;font-size:13px;" data-jt="years">' + t('years') + '</div>'
+    + '<div><select id="j' + i + '_km">' + months + '</select></div><div style="align-self:center;flex:0 0 auto;font-size:13px;" data-jt="months">' + t('months') + '</div></div>'
+    + '<label class="fl" data-jt="jriyuu">' + t('jriyuu') + '</label><input type="text" id="j' + i + '_riyuu">';
   document.getElementById('jobs').appendChild(div);
   buildSelect('j' + i + '_shokushu', 'shokushu');
   buildSelect('j' + i + '_naiyou', 'naiyou');
@@ -359,6 +381,16 @@ function addJob() {
 function delJob(i) {
   var el = document.getElementById('job' + i);
   if (el) el.remove();
+}
+function relabelJobs() {
+  document.querySelectorAll('[data-jt]').forEach(function(el) {
+    var k = el.getAttribute('data-jt');
+    if (T[k]) el.textContent = t(k);
+  });
+  for (var i = 1; i <= 4; i++) {
+    var tt = document.getElementById('j' + i + '_title');
+    if (tt) tt.textContent = '🏭 ' + t('jobN') + ' ' + i;
+  }
 }
 
 function buildAll() {
@@ -377,6 +409,12 @@ function buildAll() {
   buildSelect('f_zairyu', 'zairyu');
   buildSelect('f_license', 'license');
   buildSelect('f_uniform', 'uniform');
+  for (var i = 1; i <= 4; i++) {
+    if (document.getElementById('j' + i + '_shokushu')) {
+      buildSelect('j' + i + '_shokushu', 'shokushu');
+      buildSelect('j' + i + '_naiyou', 'naiyou');
+    }
+  }
   var sh = document.getElementById('f_shoes');
   if (sh && sh.options.length <= 1) {
     sh.innerHTML = '<option value="">-</option>';
@@ -422,7 +460,10 @@ async function submitForm() {
     if (!document.getElementById('job' + i)) continue;
     var ky = Number(val('j' + i + '_ky') || 0), km = Number(val('j' + i + '_km') || 0);
     var kikan = (ky ? ky + '年' : '') + (km ? km + 'ヶ月' : '');
-    var jb = { company: val('j' + i + '_company'), haken: val('j' + i + '_haken'),
+    var haken = val('j' + i + '_haken');
+    var jikyu = val('j' + i + '_jikyu');
+    if (jikyu) haken = (haken ? haken + ' ' : '') + '時給' + jikyu + '円';
+    var jb = { company: val('j' + i + '_company'), haken: haken,
                shokushu: val('j' + i + '_shokushu'), naiyou: val('j' + i + '_naiyou'),
                kikan: kikan, riyuu: val('j' + i + '_riyuu') };
     if (jb.company || jb.shokushu || jb.naiyou || kikan) jobs.push(jb);
@@ -462,7 +503,7 @@ async function submitForm() {
 }
 
 buildAll();
-addJob();
+addJob(); addJob(); addJob();
 </script>
 </body>
 </html>
