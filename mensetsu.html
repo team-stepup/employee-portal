@@ -552,7 +552,10 @@ function buildCityChips() {
     var b = document.createElement('button');
     b.type = 'button';
     var cl = CITY_LABEL[c] || c;
-    b.textContent = (LANG === 'ja') ? cl : cl + ' ' + ((window.CITY_ROMA || {})[c] || '');
+    var roma = (window.CITY_ROMA || {})[c] || '';
+    // 常にローマ字併記(2段表示)
+    b.innerHTML = '<span style="display:block;line-height:1.25;">' + cl + '</span>'
+      + (roma ? '<span style="display:block;font-size:10px;font-weight:600;opacity:.8;line-height:1.2;">' + roma + '</span>' : '');
     var cur = (document.getElementById('f_addr') || { value: '' }).value;
     b.className = (cur.indexOf(c) === 0) ? 'on' : '';
     b.onclick = function() {
