@@ -1135,7 +1135,7 @@
 
   <div class="card">
     <h2>③ <span data-i18n="step3">理由 (任意)</span></h2>
-    <textarea id="apply-reason" placeholder="例: 医療費のため (記入不要)"></textarea>
+    <textarea id="apply-reason" data-i18n-ph="applyReasonPh" placeholder="例: 医療費のため (記入不要)"></textarea>
   </div>
 
   <button id="apply-submit-btn" class="btn btn-primary" data-i18n="submit">この内容で申請する</button>
@@ -1749,6 +1749,8 @@ const I18N = {
     rejectReason: "却下理由",
     salaryWeek: "⚠ 給料日週",
     companyHoliday: "⚠ 会社休日",
+    fridayShort: "(金)",
+    applyReasonPh: "例: 医療費のため (記入不要)",
     selectAmountFirst: "金額を選択してください",
     selectDateFirst: "希望日を選択してください",
     missingLoginFields: "社員番号・生年月日・電話番号下4桁をすべて入力してください。",
@@ -1834,6 +1836,8 @@ const I18N = {
     rejectReason: "Motivo",
     salaryWeek: "⚠ Semana do salário",
     companyHoliday: "⚠ Feriado",
+    fridayShort: "(sex)",
+    applyReasonPh: "Ex: despesas médicas (opcional)",
     selectAmountFirst: "Selecione o valor primeiro",
     selectDateFirst: "Selecione a data primeiro",
     missingLoginFields: "Preencha número, data de nascimento e últimos 4 dígitos do telefone.",
@@ -1924,6 +1928,8 @@ const I18N = {
     rejectReason: "Reason",
     salaryWeek: "⚠ Salary week",
     companyHoliday: "⚠ Company holiday",
+    fridayShort: "(Fri)",
+    applyReasonPh: "e.g. medical expenses (optional)",
     selectAmountFirst: "Please select an amount.",
     selectDateFirst: "Please select a preferred date.",
     missingLoginFields: "Please enter employee no., date of birth, and last 4 digits of phone.",
@@ -5058,13 +5064,21 @@ function renderDates(data) {
   document.getElementById('dates-loading').classList.add('hidden');
   list.innerHTML = '';
   if (!data || !data.dates) return;
-  data.dates.forEach(d => {
+  // 次回申請できる金曜日だけを選択肢にする。
+  // 1ヶ月以内に申請できない金曜日がある場合は、理由付きでそれも表示して「その日は不可」と分かるようにする。
+  const firstAvail = data.dates.find(x => x.available);
+  const limit = new Date(); limit.setMonth(limit.getMonth() + 1);
+  const shown = data.dates.filter(d =>
+    (firstAvail && d.date === firstAvail.date) ||
+    (!d.available && new Date(d.date + 'T00:00:00') <= limit)
+  );
+  shown.forEach(d => {
     const btn = document.createElement('button');
     btn.type = 'button';
     const isSelected = state.selectedDate === d.date;
     btn.className = 'friday-btn' + (d.available ? (isSelected ? ' selected' : '') : ' disabled');
     const dateObj = new Date(d.date + 'T00:00:00');
-    const label = dateObj.getFullYear() + '/' + String(dateObj.getMonth()+1).padStart(2,'0') + '/' + String(dateObj.getDate()).padStart(2,'0') + ' (金)';
+    const label = dateObj.getFullYear() + '/' + String(dateObj.getMonth()+1).padStart(2,'0') + '/' + String(dateObj.getDate()).padStart(2,'0') + ' ' + t('fridayShort');
     const span1 = document.createElement('span'); span1.textContent = label;
     btn.appendChild(span1);
     if (d.reasons && d.reasons.length) {
@@ -5862,7 +5876,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v54';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v55';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available
