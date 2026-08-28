@@ -1751,6 +1751,7 @@ const I18N = {
     companyHoliday: "⚠ 会社休日",
     fridayShort: "(金)",
     applyReasonPh: "例: 医療費のため (記入不要)",
+    notNextDate: "前払いは次回の前払い日のみ申請できます。日付を選び直してください。",
     selectAmountFirst: "金額を選択してください",
     selectDateFirst: "希望日を選択してください",
     missingLoginFields: "社員番号・生年月日・電話番号下4桁をすべて入力してください。",
@@ -1838,6 +1839,7 @@ const I18N = {
     companyHoliday: "⚠ Feriado",
     fridayShort: "(sex)",
     applyReasonPh: "Ex: despesas médicas (opcional)",
+    notNextDate: "O adiantamento só pode ser pedido para a próxima data disponível. Selecione a data novamente.",
     selectAmountFirst: "Selecione o valor primeiro",
     selectDateFirst: "Selecione a data primeiro",
     missingLoginFields: "Preencha número, data de nascimento e últimos 4 dígitos do telefone.",
@@ -1930,6 +1932,7 @@ const I18N = {
     companyHoliday: "⚠ Company holiday",
     fridayShort: "(Fri)",
     applyReasonPh: "e.g. medical expenses (optional)",
+    notNextDate: "You can only apply for the next available advance date. Please select the date again.",
     selectAmountFirst: "Please select an amount.",
     selectDateFirst: "Please select a preferred date.",
     missingLoginFields: "Please enter employee no., date of birth, and last 4 digits of phone.",
@@ -5145,6 +5148,16 @@ async function submitApply() {
     if (e.status === 409 && e.data && e.data.error === 'duplicate_application') {
       const stKey = 'status' + (e.data.existingStatus || 'pending').charAt(0).toUpperCase() + (e.data.existingStatus || 'pending').slice(1);
       showAlert(t('duplicateApplication').replace('{status}', t(stKey)), 'warning');
+    } else if (e.status === 400 && e.data && (e.data.error === 'not_next_date' || e.data.error === 'date_not_available')) {
+      // 次回の前払い日以外は申請不可 (古い画面のまま申請した場合など)。最新の次回日を出し直す
+      let nd = '';
+      if (e.data.nextDate) {
+        const dt = new Date(e.data.nextDate + 'T00:00:00');
+        nd = dt.getFullYear() + '/' + String(dt.getMonth()+1).padStart(2,'0') + '/' + String(dt.getDate()).padStart(2,'0') + ' ' + t('fridayShort');
+      }
+      showAlert(t('notNextDate') + (nd ? '\n→ ' + nd : ''), 'warning');
+      state.selectedDate = null;
+      initRequestScreen();
     } else if (e.status === 429) {
       const sec = (e.data && e.data.retryAfterSeconds) || 60;
       showAlert(t('rateLimited').replace('{sec}', sec), 'warning');
@@ -5876,7 +5889,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v55';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v56';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available

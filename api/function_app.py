@@ -1861,6 +1861,16 @@ def maebarai_apply(req: func.HttpRequest) -> func.HttpResponse:
         next_payday = get_next_payday_for_friday(haraibi, d)
         if is_in_kaisha_kyujitsu_week(d, kyujitsu) or (next_payday and is_in_payday_week(d, next_payday)):
             return _json_response({"error": "date_not_available"}, 400)
+        # 次回の前払い可能日のみ申請可 (2026-08-28): フロントの表示絞り込みと同じ基準をサーバー側でも強制。
+        # 古い画面を開いたままの申請や直APIコールで、次回日以外の金曜が通るのを防ぐ。
+        next_ok = None
+        for f in upcoming_fridays(weeks=6):
+            npd = get_next_payday_for_friday(haraibi, f)
+            if not is_in_kaisha_kyujitsu_week(f, kyujitsu) and not (npd and is_in_payday_week(f, npd)):
+                next_ok = f
+                break
+        if next_ok and d != next_ok:
+            return _json_response({"error": "not_next_date", "nextDate": next_ok.isoformat()}, 400)
         # 重複チェック: 同じ社員番号 + 同じ希望日 で status が pending または approved の申請があれば拒否
         dup_filter = (
             f"OData__x793e__x54e1__x756a__x53f7_ eq {shain_no} and "
@@ -7620,6 +7630,169 @@ def kintai_approve(req: func.HttpRequest) -> func.HttpResponse:
     return _json_response({"ok": len(errors) == 0, "approved": done, "errors": errors})
 
 
+# ---- 事務所有給 (残数計算) ----
+# 会社休日List(LIST_KAISHA_KYUJITSU=先頭で定義済)の種別=指定半日有給 行も参照する
+KINTAI_YUKYU_TC_START = "2026-09-01"   # この日以降のタイムカード有給/指定半日有給を消化にカウント (それ以前はExcel取込分に含まれる)
+_jimusho_yukyu_guid_cache: Dict[str, Any] = {"guid": None}
+
+
+def _jimusho_yukyu_guid() -> Optional[str]:
+    """List「事務所有給」のGUID (タイトル解決・キャッシュ)。未作成なら None。"""
+    if _jimusho_yukyu_guid_cache["guid"]:
+        return _jimusho_yukyu_guid_cache["guid"]
+    try:
+        r = requests.get(f"{SITE_URL}/_api/web/lists/GetByTitle('事務所有給')?$select=Id",
+                         headers=_sp_headers(), timeout=20)
+        if r.status_code == 200:
+            _jimusho_yukyu_guid_cache["guid"] = r.json().get("Id")
+    except Exception:
+        logging.exception("jimusho yukyu list resolve failed")
+    return _jimusho_yukyu_guid_cache["guid"]
+
+
+def _kintai_yukyu_calc(emp_no: str) -> Dict[str, Any]:
+    """付与(2年有効)×取得FIFOで残数計算。
+    消化 = 事務所有給List「取得」+ (9/1以降) タイムカード有給 + 経過済みの指定半日有給(0.5日)。"""
+    guid = _jimusho_yukyu_guid()
+    if not guid:
+        return {"available": False, "reason": "list_not_found"}
+    rows = sp_get_items(guid, select="EmpNo,Kind,YDate,Days,Note",
+                        filter_=f"EmpNo eq '{emp_no}'")
+    grants = sorted([r for r in rows if str(r.get("Kind")) == "付与"], key=lambda r: str(r.get("YDate")))
+    if not grants:
+        return {"available": False, "reason": "no_grants"}
+    # 基準日が来たら自動付与 (最終付与から毎年・法定テーブルで日数を継続。再入社の再起算にも安全)
+    _NEXT_DAYS = {10: 11, 11: 12, 12: 14, 14: 16, 16: 18, 18: 20}
+    today_auto = _kintai_jst_now().strftime("%Y-%m-%d")
+    have_dates = {str(g.get("YDate")) for g in grants}
+    last_d = str(grants[-1].get("YDate"))
+    last_days = float(grants[-1].get("Days") or 0)
+    next_grant = None
+    for _ in range(30):
+        try:
+            nd = f"{int(last_d[:4]) + 1}{last_d[4:]}"
+        except Exception:
+            break
+        ndays = _NEXT_DAYS.get(int(last_days) if last_days == int(last_days) else 0, 20)
+        if nd > today_auto:
+            next_grant = {"date": nd, "days": ndays}
+            break
+        if nd not in have_dates:
+            grants.append({"EmpNo": emp_no, "Kind": "付与", "YDate": nd, "Days": ndays, "Note": "自動付与"})
+            have_dates.add(nd)
+        last_d, last_days = nd, ndays
+    grants.sort(key=lambda r: str(r.get("YDate")))
+    usages = [{"date": str(r.get("YDate")), "days": float(r.get("Days") or 0),
+               "src": "管理簿", "note": str(r.get("Note") or "")}
+              for r in rows if str(r.get("Kind")) == "取得"]
+    today_s = _kintai_jst_now().strftime("%Y-%m-%d")
+    # 9/1以降: タイムカードの有給区分 (承認済/自動確定のみ)
+    tc = sp_get_items(LIST_JIMUSHO_TC,
+                      select="KinmuDate,Kubun,Status",
+                      filter_=(f"EmpNo eq '{emp_no}' and KinmuDate ge '{KINTAI_YUKYU_TC_START}'"
+                               f" and KinmuDate le '{today_s}'"))
+    pending_days = 0.0
+    for r in tc:
+        kubun = str(r.get("Kubun") or "")
+        v = 1.0 if kubun == "有給1日" else (0.5 if kubun in ("AM有給", "PM有給") else 0.0)
+        if v <= 0:
+            continue
+        if str(r.get("Status")) in ("承認済", "自動確定"):
+            usages.append({"date": str(r.get("KinmuDate")), "days": v, "src": "勤怠", "note": kubun})
+        else:
+            pending_days += v
+    # 経過済みの指定半日有給 (会社カレンダー) → 各0.5日
+    try:
+        cal = sp_get_items(LIST_KAISHA_KYUJITSU, select="Title,OData__x7a2e__x5225_")
+        for r in cal:
+            if str(r.get("OData__x7a2e__x5225_") or "") != "指定半日有給":
+                continue
+            d = str(r.get("Title") or "")[:10]
+            if KINTAI_YUKYU_TC_START <= d <= today_s:
+                usages.append({"date": d, "days": 0.5, "src": "指定", "note": "指定半日有給"})
+    except Exception:
+        logging.exception("kintai yukyu: calendar read failed")
+    usages.sort(key=lambda u: u["date"])
+
+    def _plus2y(s: str) -> str:
+        try:
+            y, m, d = int(s[:4]), int(s[5:7]), int(s[8:10])
+            try:
+                return _dt.date(y + 2, m, d).isoformat()
+            except ValueError:
+                return _dt.date(y + 2, m, d - 1).isoformat()   # うるう日
+        except Exception:
+            return "9999-12-31"
+
+    gs = [{"date": str(g.get("YDate")), "days": float(g.get("Days") or 0),
+           "expire": _plus2y(str(g.get("YDate"))), "used": 0.0} for g in grants]
+    unmatched = 0.0
+    for u in usages:
+        rest = u["days"]
+        for g in gs:
+            if rest <= 0:
+                break
+            if g["date"] <= u["date"] < g["expire"]:
+                free = g["days"] - g["used"]
+                if free <= 0:
+                    continue
+                take = min(free, rest)
+                g["used"] += take
+                rest -= take
+        unmatched += rest
+    total_remain = 0.0
+    carry = 0.0
+    current = 0.0
+    cur_grant = None
+    for g in gs:
+        g["left"] = g["days"] - g["used"]
+        g["active"] = g["date"] <= today_s < g["expire"]
+        g["expired"] = today_s >= g["expire"]
+        if g["active"]:
+            total_remain += g["left"]
+            if cur_grant is None or g["date"] > cur_grant["date"]:
+                cur_grant = g
+    if cur_grant:
+        current = cur_grant["left"]
+        carry = total_remain - current
+    # 取得履歴 (昇順・累計付き)
+    cum = 0.0
+    hist = []
+    for u in usages:
+        cum += u["days"]
+        hist.append({**u, "cum": round(cum, 1)})
+    return {"available": True, "grants": gs, "remain": round(total_remain, 1),
+            "carry": round(carry, 1), "current": round(current, 1),
+            "currentGrant": ({"date": cur_grant["date"], "days": cur_grant["days"],
+                              "expire": cur_grant["expire"]} if cur_grant else None),
+            "nextGrant": next_grant,
+            "usedTotal": round(sum(u["days"] for u in usages), 1),
+            "pending": round(pending_days, 1),
+            "unmatched": round(unmatched, 1),
+            "history": hist}
+
+
+@app.route(route="kintai/yukyu", methods=["GET", "OPTIONS"])
+def kintai_yukyu(req: func.HttpRequest) -> func.HttpResponse:
+    """有給残数 (スタッフ=自分のみ / 役員=?empNo=指定可)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    user, err = require_kintai_auth(req)
+    if err:
+        return err
+    emp_no = str(req.params.get("empNo") or user["empNo"]).strip()
+    if emp_no != user["empNo"] and not user["yakuin"]:
+        return _json_response({"error": "forbidden"}, 403)
+    try:
+        out = _kintai_yukyu_calc(emp_no)
+    except Exception as e:
+        logging.exception("kintai yukyu failed")
+        return _json_response({"error": "sp_error", "detail": str(e)[:300]}, 502)
+    out["empNo"] = emp_no
+    return _json_response(out)
+
+
 # ============================================================
 # スキルシート編集内容の保存 (Storage Table: skillsheet / PK='ss', RK=id1)
 #   fields: フォーム値JSON / status: ''|採用|不採用|ブラック
@@ -7834,6 +8007,8 @@ def yukyu_skillsheet(req: func.HttpRequest) -> func.HttpResponse:
                                    "status": str((saved or {}).get("status") or ""),
                                    "saved": saved_flag,
                                    "raw": raw,
+                                   "birth": _ss.birth_of(caller_token, r1, r2),
+                                   "nationality": _ss.nationality_of(caller_token, r1, r2),
                                    "attachments": _ss.row_attachments(caller_token, r1, r2)})
         if action == "save":
             id1 = body.get("id1")
