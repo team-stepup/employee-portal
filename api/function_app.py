@@ -558,14 +558,31 @@ def sp_post_item(list_guid: str, fields: Dict[str, Any]) -> int:
 
 
 # ====== JWT ======
-def jwt_issue(shain_no: int) -> str:
+def jwt_issue(shain_no: int, imp_by: Optional[int] = None) -> str:
     payload = {
         "sub": str(shain_no),
         "shainNo": shain_no,
         "iat": int(time.time()),
         "exp": int(time.time()) + JWT_EXP_HOURS * 3600,
     }
+    # 管理者なりすまし時は、なりすまし元(管理者)の社員番号を監査用に埋める
+    if imp_by is not None:
+        payload["impBy"] = imp_by
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
+
+
+def _is_portal_admin(shain_no: Any) -> bool:
+    """ポータル全権管理者(なりすましログイン可)かどうか。
+    App Setting PORTAL_ADMIN_SHAINS (カンマ区切りの社員番号) で指定。未設定なら誰も管理者でない。
+    共有マスターPINは作らず、管理者本人のアカウント(本人PIN)でログインした人だけに権限を与える。"""
+    raw = (os.environ.get("PORTAL_ADMIN_SHAINS") or "").strip()
+    if not raw:
+        return False
+    try:
+        sn = str(int(float(shain_no)))
+    except (TypeError, ValueError):
+        return False
+    return sn in {s.strip() for s in raw.split(",") if s.strip()}
 
 
 def jwt_verify(token: str) -> Dict[str, Any]:
@@ -1168,6 +1185,8 @@ def _employee_to_profile(emp: Dict[str, Any]) -> Dict[str, Any]:
         "jibaiKigen": _iso_or_none(_utc_to_jst_date(emp.get(F_JIBAI_KIGEN))),
         "niniKigen": _iso_or_none(_utc_to_jst_date(emp.get(F_NINI_KIGEN))),
         "zairyuRenewPlan": _iso_or_none(_utc_to_jst_date(emp.get(F_RENEW_PLAN))),
+        # 全権管理者(なりすましログイン可)。本人のアカウントでログインした時のみ true
+        "isAdmin": _is_portal_admin(emp.get(F_SHAIN_NO)),
     }
 
 
@@ -1187,6 +1206,54 @@ def profile_get(req: func.HttpRequest) -> func.HttpResponse:
     if not emp:
         return _json_response({"error": "not_active"}, 403)
     return _json_response({"profile": _employee_to_profile(emp)})
+
+
+# 注意: ルートを "admin/..." にするとAzure Functionsの予約プレフィックスと衝突し
+# 登録はされるのに404になる (2026-08-28に実地で確認)。manage/ を使うこと。
+@app.route(route="manage/impersonate", methods=["POST", "OPTIONS"])
+def admin_impersonate(req: func.HttpRequest) -> func.HttpResponse:
+    """全権管理者が「別の社員として」ログインするためのなりすましトークン発行。
+    - 呼出元は自分自身のアカウントで正規ログイン済み(有効なJWT必須)
+    - その社員番号が PORTAL_ADMIN_SHAINS に含まれる場合のみ許可 (共有秘密なし)
+    - 対象社員の在職レコードに対して通常のポータルJWTを発行して返す
+    - 発行トークンには impBy(なりすまし元)を埋め、監査ログに残す
+    段階公開ゲートは対象社員には適用しない(管理者は誰でも確認・サポートできる)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    payload, err = require_auth(req)
+    if err:
+        return err
+    caller = payload.get("shainNo")
+    if not _is_portal_admin(caller):
+        logging.warning("impersonate denied: caller=%s not admin", caller)
+        return _json_response({"error": "not_admin"}, 403)
+    try:
+        body = req.get_json()
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    target = body.get("targetShainNo")
+    try:
+        target = int(target)
+    except (TypeError, ValueError):
+        return _json_response({"error": "invalid_target"}, 400)
+    try:
+        emp = find_active_employee_by_shain(target)
+    except Exception as e:
+        logging.exception("impersonate lookup failed")
+        return _json_response({"error": "lookup_failed", "detail": str(e)}, 500)
+    if not emp:
+        return _json_response({"error": "target_not_active"}, 404)
+    # 監査ログ (Application Insights / Log Stream に残る)
+    logging.warning("IMPERSONATE admin=%s -> target=%s (%s)",
+                    caller, target, emp.get(F_SHAIN_NAME))
+    token = jwt_issue(target, imp_by=int(float(caller)))
+    return _json_response({
+        "token": token,
+        "profile": _employee_to_profile(emp),
+        "impersonated": True,
+        "adminShainNo": caller,
+    })
 
 
 def find_active_employee_by_shain(shain_no: int) -> Optional[Dict[str, Any]]:

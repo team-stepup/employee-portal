@@ -782,6 +782,12 @@
     <p class="meta" id="home-vehicle" style="display:none; font-weight:600;"></p>
   </div>
 
+  <!-- 管理者なりすまし中バナー -->
+  <div id="impersonate-banner" style="display:none; background:#fff3cd; border:1px solid #e0b400; border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:0.9em;">
+    <div style="font-weight:700; color:#8a6d00;">🔑 <span data-i18n="impActive">管理者として表示中</span>: <span id="impersonate-name"></span></div>
+    <button type="button" onclick="returnToAdmin()" class="btn btn-secondary" style="margin-top:8px; padding:8px;" data-i18n="impReturn">自分の画面に戻る</button>
+  </div>
+
   <!-- お知らせバナー (却下 / 期限) -->
   <div id="home-notices"></div>
 
@@ -871,6 +877,17 @@
     <div id="push-hint" class="push-hint hidden" data-i18n="pushIosHint">
       ※ iPhoneは「ホーム画面に追加」してから開くと通知を受け取れます。
     </div>
+  </div>
+
+  <!-- 管理者パネル (全権管理者のみ表示): 別の社員として開く -->
+  <div id="admin-panel" style="display:none; background:#eef3fb; border:1px solid #b9cbe8; border-radius:10px; padding:12px; margin-top:16px;">
+    <div style="font-weight:700; color:#274a7a; margin-bottom:8px;">🔑 <span data-i18n="adminTitle">別の社員として開く（管理者）</span></div>
+    <div style="display:flex; gap:8px;">
+      <input id="admin-target-shain" type="number" inputmode="numeric" placeholder="社員番号"
+             data-i18n-ph="adminTargetPh" style="flex:1; padding:10px; border:1px solid #b9cbe8; border-radius:8px;">
+      <button type="button" onclick="doImpersonate()" class="btn btn-primary" style="width:auto; padding:10px 16px;" data-i18n="adminOpen">開く</button>
+    </div>
+    <div style="font-size:0.78em; color:#6b7b90; margin-top:6px;" data-i18n="adminHint">※ 操作は記録されます。個人情報の閲覧に注意してください。</div>
   </div>
 
   <div class="lang-picker" style="text-align: center; margin-top: 16px;">
@@ -1752,6 +1769,15 @@ const I18N = {
     fridayShort: "(金)",
     applyReasonPh: "例: 医療費のため (記入不要)",
     notNextDate: "前払いは次回の前払い日のみ申請できます。日付を選び直してください。",
+    adminTitle: "別の社員として開く（管理者）",
+    adminTargetPh: "社員番号",
+    adminOpen: "開く",
+    adminHint: "※ 操作は記録されます。個人情報の閲覧に注意してください。",
+    adminNeedTarget: "社員番号を入力してください。",
+    adminTargetNotFound: "その社員番号の在職者が見つかりません。",
+    adminNotAllowed: "この操作の権限がありません。",
+    impActive: "管理者として表示中",
+    impReturn: "自分の画面に戻る",
     selectAmountFirst: "金額を選択してください",
     selectDateFirst: "希望日を選択してください",
     missingLoginFields: "社員番号・生年月日・電話番号下4桁をすべて入力してください。",
@@ -1840,6 +1866,15 @@ const I18N = {
     fridayShort: "(sex)",
     applyReasonPh: "Ex: despesas médicas (opcional)",
     notNextDate: "O adiantamento só pode ser pedido para a próxima data disponível. Selecione a data novamente.",
+    adminTitle: "Abrir como outro funcionário (admin)",
+    adminTargetPh: "Nº do funcionário",
+    adminOpen: "Abrir",
+    adminHint: "※ As ações são registradas. Cuidado ao visualizar dados pessoais.",
+    adminNeedTarget: "Informe o número do funcionário.",
+    adminTargetNotFound: "Funcionário ativo com esse número não encontrado.",
+    adminNotAllowed: "Você não tem permissão para esta ação.",
+    impActive: "Visualizando como admin",
+    impReturn: "Voltar à minha conta",
     selectAmountFirst: "Selecione o valor primeiro",
     selectDateFirst: "Selecione a data primeiro",
     missingLoginFields: "Preencha número, data de nascimento e últimos 4 dígitos do telefone.",
@@ -1933,6 +1968,15 @@ const I18N = {
     fridayShort: "(Fri)",
     applyReasonPh: "e.g. medical expenses (optional)",
     notNextDate: "You can only apply for the next available advance date. Please select the date again.",
+    adminTitle: "Open as another employee (admin)",
+    adminTargetPh: "Employee no.",
+    adminOpen: "Open",
+    adminHint: "* Actions are logged. Be careful when viewing personal data.",
+    adminNeedTarget: "Please enter an employee number.",
+    adminTargetNotFound: "No active employee found with that number.",
+    adminNotAllowed: "You do not have permission for this action.",
+    impActive: "Viewing as admin",
+    impReturn: "Return to my account",
     selectAmountFirst: "Please select an amount.",
     selectDateFirst: "Please select a preferred date.",
     missingLoginFields: "Please enter employee no., date of birth, and last 4 digits of phone.",
@@ -2398,6 +2442,9 @@ const state = {
   selectedDate: null,
   datesCache: null,
   historyCache: null,
+  // 管理者なりすまし: adminToken=管理者本人のトークン退避 / impersonating=なりすまし中
+  adminToken: localStorage.getItem("adminToken") || null,
+  impersonating: !!localStorage.getItem("adminToken"),
 };
 
 // ====== API ======
@@ -4154,12 +4201,70 @@ function logout() {
   state.profile = null;
   state.datesCache = null;
   state.historyCache = null;
+  state.adminToken = null;
+  state.impersonating = false;
   updateAppBadge(0);
   localStorage.removeItem("token");
+  localStorage.removeItem("adminToken");
   // 言語の明示選択フラグもリセット (次の人がログインしたら推奨言語で開く)
   localStorage.removeItem("langExplicit");
   showLoginMode('pin');
   showScreen('login');
+}
+
+// ====== 管理者なりすまし ======
+async function doImpersonate() {
+  const el = document.getElementById('admin-target-shain');
+  const target = (el && el.value || '').trim();
+  if (!target) { showAlert(t('adminNeedTarget'), 'warning'); return; }
+  showLoading(true);
+  try {
+    const data = await callApi('POST', '/manage/impersonate', { targetShainNo: Number(target) });
+    // 管理者本人のトークンを退避 (なりすまし中の多段切替でも本人トークンを保持)
+    if (!state.impersonating) {
+      state.adminToken = state.token;
+      localStorage.setItem('adminToken', state.token);
+    }
+    state.token = data.token;
+    state.profile = data.profile;
+    state.impersonating = true;
+    localStorage.setItem('token', data.token);
+    state.datesCache = null;
+    state.historyCache = null;
+    if (el) el.value = '';
+    showScreen('home');
+  } catch (e) {
+    if (e.status === 404) showAlert(t('adminTargetNotFound'), 'warning');
+    else if (e.status === 403) showAlert(t('adminNotAllowed'), 'error');
+    else {
+      const d = (e.data && (e.data.detail || e.data.error)) ? '\n(' + (e.data.detail || e.data.error) + ')' : '';
+      showAlert(t('networkError') + d, 'error');
+    }
+  } finally {
+    showLoading(false);
+  }
+}
+
+async function returnToAdmin() {
+  const at = state.adminToken || localStorage.getItem('adminToken');
+  if (!at) { logout(); return; }
+  showLoading(true);
+  try {
+    state.token = at;
+    localStorage.setItem('token', at);
+    state.impersonating = false;
+    state.adminToken = null;
+    localStorage.removeItem('adminToken');
+    state.datesCache = null;
+    state.historyCache = null;
+    const data = await callApi('GET', '/profile');
+    state.profile = data.profile;
+    showScreen('home');
+  } catch (e) {
+    logout();
+  } finally {
+    showLoading(false);
+  }
 }
 
 // プロフィール取得後、ユーザーが明示的に言語を選んでいない場合のみ
@@ -4240,6 +4345,19 @@ function renderHome() {
     });
   }
   if (kyuyuCard) kyuyuCard.classList.toggle('kyuyu-only-big', kyuyuOnly);
+  // 管理者パネル (本人ログイン時のみ) / なりすまし中バナー
+  const adminPanel = document.getElementById('admin-panel');
+  if (adminPanel) adminPanel.style.display = (state.profile.isAdmin && !state.impersonating) ? '' : 'none';
+  const impBanner = document.getElementById('impersonate-banner');
+  if (impBanner) {
+    if (state.impersonating) {
+      impBanner.style.display = '';
+      const nmEl = document.getElementById('impersonate-name');
+      if (nmEl) nmEl.textContent = (state.profile.name || state.profile.shainNo || '');
+    } else {
+      impBanner.style.display = 'none';
+    }
+  }
   // 期限お知らせを即時表示 (履歴取得を待たず profile から)
   renderHomeNotices(state.historyCache ? state.historyCache.items : null);
   // プッシュ通知の設定UI
@@ -5889,7 +6007,7 @@ async function submitRenewPlan() {
 }
 
 // ====== Service Worker (PWA) ======
-const APP_VERSION = 'v56';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
+const APP_VERSION = 'v57';  // ★デプロイ毎にバンプ + version.json と service-worker.js(CACHE_NAME)も同じ値に揃える
 let _swRegistration = null;
 let _swUpdateAvailable = false;
 let _updateState = 'idle';   // idle | checking | latest | available
