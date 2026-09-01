@@ -299,6 +299,7 @@ var T = {
   camDone: { ja:'撮影しました（タップで撮り直し）', pt:'Foto OK (toque para refazer)', en:'Photo saved (tap to retake)' },
   applyJob: { ja:'📌 応募する求人', pt:'📌 Vaga', en:'📌 Applying for' },
   tantouHp: { ja:'ホームページから（担当者なし）', pt:'Pelo site (sem responsável)', en:'From the website (no contact staff)' },
+  photoErr: { ja:'写真を読み込めませんでした。もう一度撮影してください。', pt:'Não foi possível carregar a foto. Tire a foto novamente.', en:'Could not load the photo. Please take it again.' },
   missTitle: { ja:'次の必須項目が入力されていません', pt:'Faltam os seguintes campos obrigatórios', en:'The following required fields are missing' },
   agreeItem: { ja:'個人情報の取り扱いに「同意します」のチェック', pt:'Marcar "Concordo" no tratamento de dados pessoais', en:'Check "I agree" for personal data handling' },
   s3: { ja:'3. 在留資格・日本語', pt:'3. Visto e japonês', en:'3. Visa & Japanese' },
@@ -759,19 +760,41 @@ function licUpToggle() {
 }
 
 // 画像を縮小圧縮してdataURL化する共通処理
-function compressImage(file, cb) {
+function compressImage(file, cb, failCb) {
+  // 端末で画像がデコードできない場合(HEIC等)は 4MB以下なら原本をそのまま送るフォールバック。
+  // それでも駄目なら failCb (再撮影を促す)。以前は失敗が無言でスキルシートに写真が届かなかった (2026-08-28 実害)
   var img = new Image();
   var url = URL.createObjectURL(file);
+  var done = false;
+  function fallback() {
+    if (done) return;
+    done = true;
+    try { URL.revokeObjectURL(url); } catch (e) {}
+    if (file.size <= 4 * 1024 * 1024) {
+      var fr = new FileReader();
+      fr.onload = function() { cb(fr.result); };
+      fr.onerror = function() { if (failCb) failCb(); };
+      fr.readAsDataURL(file);
+    } else if (failCb) failCb();
+  }
   img.onload = function() {
-    var MAX = 1600;
-    var scale = Math.min(1, MAX / Math.max(img.width, img.height));
-    var cv = document.createElement('canvas');
-    cv.width = Math.round(img.width * scale);
-    cv.height = Math.round(img.height * scale);
-    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-    cb(cv.toDataURL('image/jpeg', 0.82));
-    URL.revokeObjectURL(url);
+    if (done) return;
+    try {
+      var MAX = 1600;
+      var scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      var cv = document.createElement('canvas');
+      cv.width = Math.round(img.width * scale);
+      cv.height = Math.round(img.height * scale);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      var out = cv.toDataURL('image/jpeg', 0.82);
+      if (!out || out.length < 100) { fallback(); return; }
+      done = true;
+      URL.revokeObjectURL(url);
+      cb(out);
+    } catch (e) { fallback(); }
   };
+  img.onerror = fallback;
+  setTimeout(function() { if (!done && !img.complete) fallback(); }, 8000);
   img.src = url;
 }
 
@@ -786,6 +809,11 @@ function lcPreview() {
     pv.src = dataUrl;
     pv.style.display = 'block';
     setCamDone('camLc1', 'camLic', true);
+  }, function() {
+    _lcImg = null;
+    if (inp) inp.value = '';
+    setCamDone('camLc1', 'camLic', false);
+    alert(t('photoErr'));
   });
 }
 
@@ -804,25 +832,20 @@ var _zcImgs = {};
 function zcPreview(n) {
   var inp = document.getElementById('f_zc' + n);
   var file = inp && inp.files && inp.files[0];
-  if (!file) { _zcImgs[n] = null; document.getElementById('zcp' + n).style.display = 'none'; setCamDone('camZc' + n, n === 1 ? 'camFront' : 'camBack', false); return; }
-  var img = new Image();
-  var url = URL.createObjectURL(file);
-  img.onload = function() {
-    var MAX = 1600;
-    var scale = Math.min(1, MAX / Math.max(img.width, img.height));
-    var cv = document.createElement('canvas');
-    cv.width = Math.round(img.width * scale);
-    cv.height = Math.round(img.height * scale);
-    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-    var dataUrl = cv.toDataURL('image/jpeg', 0.82);
+  var baseKey = (n === 1) ? 'camFront' : 'camBack';
+  if (!file) { _zcImgs[n] = null; document.getElementById('zcp' + n).style.display = 'none'; setCamDone('camZc' + n, baseKey, false); return; }
+  compressImage(file, function(dataUrl) {
     _zcImgs[n] = dataUrl;
     var pv = document.getElementById('zcp' + n);
     pv.src = dataUrl;
     pv.style.display = 'block';
-    setCamDone('camZc' + n, n === 1 ? 'camFront' : 'camBack', true);
-    URL.revokeObjectURL(url);
-  };
-  img.src = url;
+    setCamDone('camZc' + n, baseKey, true);
+  }, function() {
+    _zcImgs[n] = null;
+    if (inp) inp.value = '';
+    setCamDone('camZc' + n, baseKey, false);
+    alert(t('photoErr'));
+  });
 }
 
 // 郵便番号 → 住所 (zipcloud)

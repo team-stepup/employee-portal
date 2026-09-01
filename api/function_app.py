@@ -1608,8 +1608,10 @@ def mensetsu_submit(req: func.HttpRequest) -> func.HttpResponse:
         token = _get_graph_token()
         # 送信者は本人名義NG(自己発言扱いでTeams通知が鳴らない・給油と同じ罠)→jimusyo1固定
         sender = os.environ.get("MENSETSU_MAIL_SENDER", "").strip() or "jimusyo1@team-stepup.com"
+        n_img = len([x for x in (body.get("zairyuImages") or []) if x]) + (1 if body.get("licenseImage") else 0)
         rows = [("応募求人", str(body.get("applyJob") or "")),
                 ("ID", f"{id1}　{tantou or '担当者未指定'}"),
+                ("添付写真", f"{n_img}枚" if n_img else "なし"),
                 ("氏名", f"{name}" + (f"（{body.get('age') or ''}歳）" if body.get("age") else "")),
                 ("性別・国籍", "　".join(x for x in [body.get("sex"), body.get("nationality")] if x)),
                 ("生年月日", str(body.get("birth") or "")),
