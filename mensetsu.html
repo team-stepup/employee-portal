@@ -81,7 +81,20 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
   <div id="applyJobBanner" style="display:none;margin:10px 14px 0;padding:10px 14px;background:#fffbeb;border:1.5px solid #f59e0b;border-radius:10px;font-size:14px;font-weight:700;color:#92400e;"></div>
 
   <div class="card">
-    <h2 data-t="s1">1. 基本情報</h2>
+    <h2 data-t="s7">1. 面接担当者</h2>
+    <p style="font-size:12px;color:#64748b;margin:0 0 6px;" data-t="tantouHint">スタッフに聞いて選んでください</p>
+    <select id="f_tantou">
+      <option value="">-</option>
+      <option value="城かおり">城かおり（Jo Kaori）</option>
+      <option value="吉浦マルセロ">吉浦マルセロ（Yoshiura Marcelo）</option>
+      <option value="森ゆうじ">森ゆうじ（Mori Yuji）</option>
+      <option value="ホームページから" data-t-opt="tantouHp">ホームページから（担当者なし）</option>
+      <option value="Indeedから" data-t-opt="tantouIndeed">Indeedから（担当者なし）</option>
+    </select>
+  </div>
+
+  <div class="card">
+    <h2 data-t="s1">2. 基本情報</h2>
     <label class="fl"><span data-t="name">名前（カタカナ または ローマ字）</span> <span class="req">*</span></label>
     <input type="text" id="f_name" autocomplete="name">
     <div class="row2">
@@ -128,7 +141,7 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
   </div>
 
   <div class="card">
-    <h2 data-t="s2">2. 住所</h2>
+    <h2 data-t="s2">3. 住所</h2>
     <label class="fl" data-t="cityPick">住んでいる市・区をタップしてください</label>
     <div class="chiprow" id="g_city" style="margin-bottom:4px;"></div>
     <label class="fl" data-t="townPick">町名を選んでください（番地は不要）</label>
@@ -142,7 +155,7 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
   </div>
 
   <div class="card" id="card_s3">
-    <h2 data-t="s3">3. 在留資格・日本語</h2>
+    <h2 data-t="s3">4. 在留資格・日本語</h2>
     <div id="zairyuBlock">
       <label class="fl" data-t="zairyu">在留資格（外国籍の方のみ）</label>
       <select id="f_zairyu"></select>
@@ -176,13 +189,13 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
   </div>
 
   <div class="card">
-    <h2 data-t="s4">4. 職歴（新しい順・最大4件）</h2>
+    <h2 data-t="s4">5. 職歴（新しい順・最大4件）</h2>
     <div id="jobs"></div>
     <button type="button" class="addjob" onclick="addJob()" id="addJobBtn">＋ <span data-t="addjob">職歴を追加</span></button>
   </div>
 
   <div class="card">
-    <h2 data-t="s5">5. 希望条件</h2>
+    <h2 data-t="s5">6. 希望条件</h2>
     <label class="fl" data-t="zangyo">残業</label>
     <div class="btnrow" id="g_zangyo"></div>
     <label class="fl" data-t="sat">土曜日（休日出勤）</label>
@@ -199,7 +212,7 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
   </div>
 
   <div class="card">
-    <h2 data-t="s6">6. 免許・資格・サイズ</h2>
+    <h2 data-t="s6">7. 免許・資格・サイズ</h2>
     <label class="fl" data-t="lic">運転免許</label>
     <select id="f_license"></select>
     <label class="fl" data-t="licExp">免許証有効期限</label>
@@ -229,19 +242,6 @@ input[type=text], input[type=tel], input[type=email], input[type=date], input[ty
         <select id="f_shoes"></select>
       </div>
     </div>
-  </div>
-
-  <div class="card">
-    <h2 data-t="s7">7. 面接担当者</h2>
-    <p style="font-size:12px;color:#64748b;margin:0 0 6px;" data-t="tantouHint">スタッフに聞いて選んでください</p>
-    <select id="f_tantou">
-      <option value="">-</option>
-      <option value="城かおり">城かおり（Jo Kaori）</option>
-      <option value="吉浦マルセロ">吉浦マルセロ（Yoshiura Marcelo）</option>
-      <option value="森ゆうじ">森ゆうじ（Mori Yuji）</option>
-      <option value="ホームページから" data-t-opt="tantouHp">ホームページから（担当者なし）</option>
-      <option value="Indeedから" data-t-opt="tantouIndeed">Indeedから（担当者なし）</option>
-    </select>
   </div>
 
   <div class="card" style="background:#fbfaff;border-color:#d9ccf5;">
@@ -277,7 +277,7 @@ try {
 var T = {
   title: { ja:'面接シート', pt:'Ficha de Entrevista', en:'Interview Sheet' },
   sub: { ja:'下の項目を入力してください', pt:'Preencha os campos abaixo', en:'Please fill in the form below' },
-  s1: { ja:'1. 基本情報', pt:'1. Dados pessoais', en:'1. Personal information' },
+  s1: { ja:'2. 基本情報', pt:'2. Dados pessoais', en:'2. Personal information' },
   name: { ja:'名前（カタカナ または ローマ字）', pt:'Nome (katakana ou alfabeto)', en:'Name (katakana or alphabet)' },
   birth: { ja:'生年月日', pt:'Data de nascimento', en:'Date of birth' },
   sex: { ja:'性別', pt:'Sexo', en:'Sex' },
@@ -286,7 +286,7 @@ var T = {
   tel: { ja:'電話番号', pt:'Telefone', en:'Phone number' },
   mail: { ja:'メールアドレス', pt:'E-mail', en:'E-mail' },
   emg: { ja:'緊急連絡先（名前と電話）', pt:'Contato de emergência (nome e tel)', en:'Emergency contact (name & phone)' },
-  s2: { ja:'2. 住所', pt:'2. Endereço', en:'2. Address' },
+  s2: { ja:'3. 住所', pt:'3. Endereço', en:'3. Address' },
   cityPick: { ja:'住んでいる市・区をタップしてください', pt:'Toque na sua cidade', en:'Tap your city' },
   zip: { ja:'郵便番号（わかる場合のみ・入れると住所が自動で入ります）', pt:'CEP (se souber; preenche o endereço automaticamente)', en:'Postal code (if known; auto-fills address)' },
   addr: { ja:'住所（自動で入ります・直接入力もできます）', pt:'Endereço (preenchido automaticamente; pode digitar também)', en:'Address (auto-filled; you can also type)' },
@@ -304,26 +304,26 @@ var T = {
   photoErr: { ja:'写真を読み込めませんでした。もう一度撮影してください。', pt:'Não foi possível carregar a foto. Tire a foto novamente.', en:'Could not load the photo. Please take it again.' },
   missTitle: { ja:'次の必須項目が入力されていません', pt:'Faltam os seguintes campos obrigatórios', en:'The following required fields are missing' },
   agreeItem: { ja:'個人情報の取り扱いに「同意します」のチェック', pt:'Marcar "Concordo" no tratamento de dados pessoais', en:'Check "I agree" for personal data handling' },
-  s3: { ja:'3. 在留資格・日本語', pt:'3. Visto e japonês', en:'3. Visa & Japanese' },
+  s3: { ja:'4. 在留資格・日本語', pt:'4. Visto e japonês', en:'4. Visa & Japanese' },
   zairyu: { ja:'在留資格', pt:'Tipo de visto (zairyu)', en:'Residence status (visa)' },
   rikai: { ja:'日本語を理解する', pt:'Entender japonês', en:'Understand Japanese' },
   hanasu: { ja:'日本語を話す', pt:'Falar japonês', en:'Speak Japanese' },
   pct: { ja:'日本語 どのくらい？（％）', pt:'Japonês: quanto? (%)', en:'Japanese level (%)' },
   yomeru: { ja:'読める（複数選択可）', pt:'Consigo ler (múltipla escolha)', en:'Can read (multiple)' },
   kakeru: { ja:'書ける（複数選択可）', pt:'Consigo escrever (múltipla escolha)', en:'Can write (multiple)' },
-  s4: { ja:'4. 職歴（新しい順・最大4件）', pt:'4. Experiência (mais recente primeiro, máx. 4)', en:'4. Work history (newest first, max 4)' },
+  s4: { ja:'5. 職歴（新しい順・最大4件）', pt:'5. Experiência (mais recente primeiro, máx. 4)', en:'5. Work history (newest first, max 4)' },
   addjob: { ja:'職歴を追加', pt:'Adicionar experiência', en:'Add work history' },
-  s5: { ja:'5. 希望条件', pt:'5. Condições', en:'5. Work conditions' },
+  s5: { ja:'6. 希望条件', pt:'6. Condições', en:'6. Work conditions' },
   zangyo: { ja:'残業', pt:'Hora extra', en:'Overtime' },
   sat: { ja:'土曜日（休日出勤）', pt:'Sábado (trabalho em folga)', en:'Saturday (holiday work)' },
   kotai: { ja:'交代勤務', pt:'Turnos alternados', en:'Shift work' },
   commute: { ja:'通勤手段', pt:'Meio de transporte', en:'Transportation' },
-  s6: { ja:'6. 免許・サイズ', pt:'6. Habilitação e tamanhos', en:'6. License & sizes' },
+  s6: { ja:'7. 免許・サイズ', pt:'7. Habilitação e tamanhos', en:'7. License & sizes' },
   lic: { ja:'運転免許', pt:'Carteira de motorista', en:'Driver license' },
   licExp: { ja:'免許証有効期限', pt:'Validade da carteira', en:'License expiry' },
   uni: { ja:'作業服サイズ', pt:'Tamanho do uniforme', en:'Uniform size' },
   shoes: { ja:'靴のサイズ', pt:'Número do sapato', en:'Shoe size' },
-  s7: { ja:'7. 面接担当者', pt:'7. Entrevistador', en:'7. Interviewer' },
+  s7: { ja:'1. 面接担当者', pt:'1. Entrevistador', en:'1. Interviewer' },
   tantouHint: { ja:'スタッフに聞いて選んでください', pt:'Pergunte ao staff e selecione', en:'Ask the staff and select' },
   send: { ja:'送信する', pt:'Enviar', en:'Submit' },
   doneTitle: { ja:'送信しました！', pt:'Enviado!', en:'Submitted!' },
