@@ -430,6 +430,32 @@ def handle_deliver(req: func.HttpRequest) -> func.HttpResponse:
     return fa._json_response({"ok": True, "to": addr})
 
 
+def handle_diag(req: func.HttpRequest) -> func.HttpResponse:
+    """署名ページからの診断情報(最初のタッチの座標・表示状態)を依頼レコードへ記録 (最大5件)。"""
+    fa = _fa()
+    try:
+        body = req.get_json()
+    except Exception:
+        return fa._json_response({"error": "invalid_json"}, 400)
+    rec = _load_rec(str(body.get("t") or ""))
+    if not rec:
+        return fa._json_response({"error": "not_found"}, 404)
+    info = body.get("info")
+    if not isinstance(info, dict):
+        return fa._json_response({"error": "invalid_info"}, 400)
+    s = json.dumps(info, ensure_ascii=False)
+    if len(s) > 4000:
+        s = s[:4000]
+    lst = rec.get("diag") or []
+    lst.append(s)
+    rec["diag"] = lst[-5:]
+    try:
+        _save_rec(rec)
+    except Exception:
+        logging.exception("esign diag save failed")
+    return fa._json_response({"ok": True})
+
+
 def handle_page(req: func.HttpRequest) -> func.HttpResponse:
     """本人向け署名ページ (認証なし・トークンのみ)。"""
     token = str(req.params.get("t") or "").strip()
