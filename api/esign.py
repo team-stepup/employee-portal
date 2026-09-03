@@ -375,8 +375,8 @@ def _signed_page(rec: Dict[str, Any], token: str) -> str:
         '<div class="note" style="text-align:center">自分のスマホのカメラでこのQRを読むと、控えのPDFを開いて保存できます。<br>Leia o QR com a câmera do seu celular para abrir e salvar o PDF.</div>'
         '<div id="qr"></div>'
         f'<div style="text-align:center;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">'
-        f'<a class="btn" href="{signed_url}&dl=1" rel="noopener">📥 この端末に保存 / Salvar neste aparelho</a>'
-        f'<a class="btn gray" href="{signed_url}" target="_blank" rel="noopener">📄 開いて見る / Abrir</a></div>'
+        f'<a class="btn gray" href="/api/esign/view?t={token}">📄 内容を見る / Ver o documento</a>'
+        f'<a class="btn" href="{signed_url}&dl=1" rel="noopener">📥 この端末に保存 / Salvar neste aparelho</a></div>'
         '<div class="note" style="text-align:center">iPhone は保存後「ファイル」アプリに入ります。WhatsApp や LINE の中のブラウザで開いている場合は、右上のメニューから Safari / Chrome で開くと保存しやすくなります。<br>'
         'No iPhone o arquivo fica no app "Arquivos". Se abriu dentro do WhatsApp/LINE, use o menu para abrir no Safari/Chrome.</div>'
         '<h3>🔒 終了 / Encerrar</h3>'
@@ -402,6 +402,44 @@ def _signed_page(rec: Dict[str, Any], token: str) -> str:
         '["click","touchstart","keydown","scroll"].forEach(function(ev){document.addEventListener(ev,touch,{passive:true});});'
         '</script></body></html>'
     )
+
+
+def _viewer_page(rec: Dict[str, Any], token: str) -> str:
+    """署名済PDFの閲覧ページ: pdf.js でページを画像描画 (iPad/スマホのアプリ内ブラウザでも PDF の
+    ダウンロード確認なしに読める)。ページ下に 保存/戻る。"""
+    signed_url = f"/api/esign/signed?t={token}"
+    label = rec.get("docLabel") or "労働契約書"
+    return (
+        '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1"><title>' + label + '</title>'
+        '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;'
+        'background:#e8e8ee;margin:0;padding:0;color:#222}.hd{position:sticky;top:0;z-index:5;background:#1565c0;color:#fff;padding:10px 14px;'
+        'display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px}.hd b{font-size:14px}.hd a{color:#fff;font-weight:700;text-decoration:none;'
+        'background:rgba(255,255,255,.18);padding:7px 12px;border-radius:8px}#pages{padding:10px}#pages canvas{display:block;width:100%;max-width:900px;'
+        'margin:0 auto 12px;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.15)}#st{text-align:center;color:#555;font-size:13px;padding:16px}</style></head><body>'
+        f'<div class="hd"><b>📄 {label}</b><span style="flex:1"></span>'
+        f'<a href="{signed_url}&dl=1">📥 保存 / Salvar</a><a href="/api/esign/page?t={token}">← 戻る / Voltar</a></div>'
+        '<div id="st">読み込み中… / Carregando…</div><div id="pages"></div>'
+        '<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>'
+        '<script>'
+        f'var URL_="{signed_url}";'
+        '(async function(){try{pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";'
+        'var pdf=await pdfjsLib.getDocument({url:URL_}).promise;var st=document.getElementById("st");var box=document.getElementById("pages");'
+        'for(var i=1;i<=pdf.numPages;i++){st.textContent="読み込み中 "+i+"/"+pdf.numPages+" … / Carregando";var pg=await pdf.getPage(i);'
+        'var vp=pg.getViewport({scale:1});var scale=Math.min(2,Math.max(1,1400/vp.width));var v2=pg.getViewport({scale:scale});'
+        'var c=document.createElement("canvas");c.width=v2.width;c.height=v2.height;box.appendChild(c);'
+        'await pg.render({canvasContext:c.getContext("2d"),viewport:v2}).promise;}st.textContent="全 "+pdf.numPages+" ページ / "+pdf.numPages+" páginas";}'
+        'catch(e){document.getElementById("st").innerHTML="表示できませんでした / Não foi possível exibir: "+(e.message||e)+"<br><a href=\\""+URL_+"\\">PDFを直接開く / Abrir o PDF</a>";}})();'
+        '</script></body></html>'
+    )
+
+
+def handle_view(req: func.HttpRequest) -> func.HttpResponse:
+    token = str(req.params.get("t") or "").strip()
+    rec = _load_rec(token)
+    if not rec or rec.get("status") != "signed" or not rec.get("savedUrl"):
+        return _html_response(_simple_page("見つかりません / Não encontrado", "署名済の書類が見つかりません。", "Documento não encontrado."), 404)
+    return _html_response(_viewer_page(rec, token))
 
 
 def handle_deliver(req: func.HttpRequest) -> func.HttpResponse:
