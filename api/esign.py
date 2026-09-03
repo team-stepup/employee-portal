@@ -127,7 +127,7 @@ def _ensure_esign_folder() -> None:
 
 def _public(rec: Dict[str, Any]) -> Dict[str, Any]:
     keys = ("token", "syainNo", "name", "docLabel", "fileName", "folderPath", "createdAt", "expiresAt",
-            "status", "signedAt", "requester", "empEmail", "empPhone", "savedUrl")
+            "status", "signedAt", "requester", "empEmail", "empPhone", "savedUrl", "deliveredTo")
     out = {k: rec.get(k) for k in keys}
     out["url"] = _page_url(rec["token"])
     out["expired"] = _is_expired(rec)
@@ -297,6 +297,135 @@ def handle_send(req: func.HttpRequest, requester_email: str) -> func.HttpRespons
     return fa._json_response({"ok": True, "to": addr})
 
 
+COPY_MAIL_ATTACH_MAX = 2_500_000   # Graph sendMail(JSON) の実用上限 ≈4MB → 添付は 2.5MB まで、超えたらリンクのみ
+
+
+def _send_copy_mail(rec: Dict[str, Any], addr: str, pdf: Optional[bytes] = None) -> bool:
+    """本人へ控え(署名済PDF)を送付: 添付(小さい時) + 30日有効のダウンロードリンク。"""
+    fa = _fa()
+    if not os.environ.get("SHORUI_MAIL_SENDER", "").strip():
+        return False
+    token = rec["token"]
+    url = f"https://{_func_host()}/api/esign/signed?t={token}"
+    label = rec.get("docLabel") or "労働契約書"
+    html = (
+        '<div style="font-family:Segoe UI,Meiryo,sans-serif;font-size:14px;color:#222;line-height:1.7">'
+        f'<p>{rec["name"]} 様</p>'
+        f'<p>有限会社ステップ・アップです。電子署名いただいた <b>{label}</b> の控え(署名済PDF)をお送りします。<br>'
+        f'署名日時: {_jst(rec.get("signedAt", ""))}</p>'
+        f'<p><a href="{url}" style="display:inline-block;background:#1565c0;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">📄 署名済PDFを開く / Abrir PDF</a></p>'
+        f'<p style="font-size:12px;color:#666">このリンクは {SIGNED_DL_DAYS} 日間有効です。スマホに保存するか印刷して保管してください。</p>'
+        '<hr style="border:none;border-top:1px solid #ddd;margin:14px 0">'
+        f'<p style="color:#444">Sr(a). {rec["name"]},<br>Segue a cópia (PDF assinado) do <b>{label}</b>. '
+        f'O link é válido por {SIGNED_DL_DAYS} dias. Salve no seu celular ou imprima para guardar.</p></div>'
+    )
+    attachments = None
+    if pdf and len(pdf) <= COPY_MAIL_ATTACH_MAX:
+        attachments = [{
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": rec.get("fileName") or "signed.pdf",
+            "contentType": "application/pdf",
+            "contentBytes": base64.b64encode(pdf).decode("ascii"),
+        }]
+    try:
+        fa._send_notification_mail(f"【控え / Cópia】{label} — {rec['name']} 様", html, to_addr=addr, html=True,
+                                   attachments=attachments)
+        return True
+    except Exception:
+        logging.exception("esign copy mail failed")
+        return False
+
+
+def _record_delivery(rec: Dict[str, Any], addr: str, how: str) -> None:
+    lst = rec.get("deliveredTo") or []
+    lst.append({"to": addr, "how": how, "at": _iso(_now())})
+    rec["deliveredTo"] = lst[-10:]
+
+
+def _signed_page(rec: Dict[str, Any], token: str) -> str:
+    """署名完了画面 (共用 iPad 想定): 書類は表示しない。控えの受け取り(メール/自分のスマホQR/この端末) + 🔒終了(画面と履歴から消す)。"""
+    signed_url = f"https://{_func_host()}/api/esign/signed?t={token}"
+    delivered = rec.get("deliveredTo") or []
+    dl_html = "".join(f'<div class="ok">📧 {d.get("to")} へ控えを送信済み（{_jst(d.get("at",""))}）</div>' for d in delivered if d.get("how") == "mail")
+    emp_email = rec.get("empEmail") or ""
+    return (
+        '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1"><title>署名完了 / Concluído</title>'
+        '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;'
+        'background:#f0f2f5;margin:0;padding:16px;color:#222;-webkit-text-size-adjust:100%}.box{max-width:560px;margin:16px auto;background:#fff;'
+        'border-radius:14px;padding:22px 20px;box-shadow:0 2px 14px rgba(0,0,0,.08)}.t{font-size:20px;font-weight:800;color:#2e7d32;text-align:center}'
+        '.p{font-size:14px;line-height:1.7;color:#444;text-align:center;margin-top:6px}.pt{font-size:12.5px;color:#777;text-align:center}'
+        'h3{font-size:14.5px;margin:22px 0 8px;color:#1565c0;border-left:4px solid #1565c0;padding-left:8px}'
+        '.row{display:flex;gap:8px;flex-wrap:wrap}input[type=email]{flex:1;min-width:200px;padding:12px;border:1.5px solid #cfd8dc;border-radius:8px;font-size:15px}'
+        '.btn{display:inline-block;background:#1565c0;color:#fff;border:none;padding:12px 18px;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;text-decoration:none}'
+        '.btn.gray{background:#546e7a}.btn.red{background:#c62828;width:100%;font-size:16px;padding:15px}.ok{background:#e8f5e9;color:#1b5e20;border-radius:8px;padding:8px 10px;font-size:13px;margin:6px 0}'
+        '.err{color:#c62828;font-size:13px}#qr{width:150px;height:150px;margin:8px auto;background:#fff;border:1px solid #ddd;padding:5px;box-sizing:border-box}'
+        '.note{font-size:11.5px;color:#888;line-height:1.6;margin-top:6px}</style></head><body>'
+        '<div class="box" id="main">'
+        '<div class="t">✅ 署名が完了しました</div><div class="p">ありがとうございました。署名済みの書類は会社で保管します。</div>'
+        '<div class="pt">Assinatura concluída. Obrigado! O documento assinado ficará guardado na empresa.</div>'
+        '<h3>📄 控え（署名済PDF）の受け取り / Receber a cópia</h3>'
+        f'<div id="dlv">{dl_html}</div>'
+        '<div class="row" style="margin-top:6px">'
+        f'<input type="email" id="mailAddr" placeholder="メールアドレス / e-mail" value="{emp_email}" autocomplete="email" inputmode="email">'
+        '<button class="btn" onclick="sendMail()" id="mailBtn">📧 メールで受け取る</button></div>'
+        '<div id="mailMsg" class="note"></div>'
+        '<div class="note">Enviar a cópia por e-mail (válido por 30 dias).</div>'
+        '<h3>📱 自分のスマホで受け取る / Receber no seu celular</h3>'
+        '<div class="note" style="text-align:center">自分のスマホのカメラでこのQRを読むと、控えのPDFを開いて保存できます。<br>Leia o QR com a câmera do seu celular para abrir e salvar o PDF.</div>'
+        '<div id="qr"></div>'
+        f'<div style="text-align:center"><a class="btn gray" href="{signed_url}" target="_blank" rel="noopener">📄 この端末で開く / Abrir neste aparelho</a></div>'
+        '<h3>🔒 終了 / Encerrar</h3>'
+        '<div class="note">共用のiPad等では、受け取りが済んだら必ず「終了」を押してください。画面と履歴からこの書類を消します。<br>Em aparelhos compartilhados, toque em "Encerrar" ao terminar.</div>'
+        '<button class="btn red" style="margin-top:8px" onclick="finish()">🔒 終了して画面を消す / Encerrar</button>'
+        '<div class="note" style="text-align:center;margin-top:8px">3分間操作がないと自動で画面を消します / A tela será apagada após 3 min sem uso.</div>'
+        '</div>'
+        '<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>'
+        '<script>'
+        f'var T={json.dumps(token)};var SIGNED={json.dumps(signed_url)};'
+        'try{new QRCode(document.getElementById("qr"),{text:SIGNED,width:140,height:140});}catch(e){}'
+        'async function sendMail(){var a=document.getElementById("mailAddr").value.trim();var m=document.getElementById("mailMsg");var b=document.getElementById("mailBtn");'
+        'if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(a)){m.className="err";m.textContent="メールアドレスを確認してください / Verifique o e-mail";return;}'
+        'b.disabled=true;m.className="note";m.textContent="送信中… / Enviando";'
+        'try{var r=await fetch("/api/esign/deliver",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({t:T,email:a})});'
+        'var j={};try{j=await r.json();}catch(_){}if(!r.ok)throw new Error(j.error||("HTTP "+r.status));'
+        'document.getElementById("dlv").insertAdjacentHTML("beforeend","<div class=ok>📧 "+a.replace(/</g,"&lt;")+" へ控えを送信しました / Enviado</div>");m.textContent="";touch();}'
+        'catch(e){m.className="err";m.textContent="送信できませんでした: "+(e.message||e);}b.disabled=false;}'
+        'function finish(){try{history.replaceState(null,"","/api/esign/done");}catch(_){}'
+        'document.body.innerHTML="<div class=box style=\\"text-align:center\\"><div class=t style=\\"color:#455a64\\">🔒 終了しました</div><div class=p>このブラウザ(タブ)を閉じてください。<br>Pode fechar o navegador. Obrigado!</div></div>";'
+        'try{window.close();}catch(_){}}'
+        'var idle=null;function touch(){clearTimeout(idle);idle=setTimeout(finish,180000);}touch();'
+        '["click","touchstart","keydown","scroll"].forEach(function(ev){document.addEventListener(ev,touch,{passive:true});});'
+        '</script></body></html>'
+    )
+
+
+def handle_deliver(req: func.HttpRequest) -> func.HttpResponse:
+    """本人が完了画面で入力したメールへ控えを送付 (トークンのみ・署名済のみ・1依頼につき最大5回)。"""
+    fa = _fa()
+    try:
+        body = req.get_json()
+    except Exception:
+        return fa._json_response({"error": "invalid_json"}, 400)
+    rec = _load_rec(str(body.get("t") or ""))
+    if not rec or rec.get("status") != "signed" or not rec.get("savedUrl"):
+        return fa._json_response({"error": "not_found"}, 404)
+    addr = str(body.get("email") or "").strip()
+    if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", addr) or len(addr) > 120:
+        return fa._json_response({"error": "invalid_address"}, 400)
+    if len([d for d in (rec.get("deliveredTo") or []) if d.get("how") == "mail"]) >= 5:
+        return fa._json_response({"error": "too_many"}, 429)
+    pdf = fa._sp_download_bytes(rec["savedUrl"])
+    if not _send_copy_mail(rec, addr, pdf):
+        return fa._json_response({"error": "send_failed"}, 500)
+    _record_delivery(rec, addr, "mail")
+    try:
+        _save_rec(rec)
+    except Exception:
+        logging.exception("esign deliver save failed")
+    return fa._json_response({"ok": True, "to": addr})
+
+
 def handle_page(req: func.HttpRequest) -> func.HttpResponse:
     """本人向け署名ページ (認証なし・トークンのみ)。"""
     token = str(req.params.get("t") or "").strip()
@@ -306,10 +435,7 @@ def handle_page(req: func.HttpRequest) -> func.HttpResponse:
                                            "このリンクは無効です。担当者にご確認ください。",
                                            "Este link não é válido. Por favor, fale com o responsável."), 404)
     if rec.get("status") == "signed":
-        dl = f'<a class="btn" href="/api/esign/signed?t={token}">📄 署名済PDFを開く / Abrir PDF assinado</a>'
-        return _html_response(_simple_page("署名済みです / Já assinado",
-                                           f"この書類は {_jst(rec.get('signedAt',''))} に署名済みです。ありがとうございました。",
-                                           "Este documento já foi assinado. Obrigado!", dl))
+        return _html_response(_signed_page(rec, token))
     if _is_expired(rec):
         return _html_response(_simple_page("期限切れ / Expirado",
                                            "このリンクは有効期限が切れています。担当者に再発行を依頼してください。",
@@ -371,6 +497,12 @@ def handle_submit(req: func.HttpRequest) -> func.HttpResponse:
     rec["signedAt"] = _iso(_now())
     rec["signedIp"] = ip[:64]
     rec["savedUrl"] = f"https://{fa.SP_HOST}{folder}/{file_name}"
+    # 本人へ控えを自動送付 (社員データにＥメール登録があれば)
+    delivered = ""
+    if rec.get("empEmail") and re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", rec["empEmail"]):
+        if _send_copy_mail(rec, rec["empEmail"], pdf):
+            _record_delivery(rec, rec["empEmail"], "mail")
+            delivered = rec["empEmail"]
     try:
         _save_rec(rec)
     except Exception:
@@ -379,19 +511,21 @@ def handle_submit(req: func.HttpRequest) -> func.HttpResponse:
     # 発行者へ完了通知 (best-effort・メール)
     try:
         folder_web = f"https://{fa.SP_HOST}{quote(folder)}"
+        dlv_line = (f'<p>本人への控え: {delivered} へ自動送付済み</p>' if delivered
+                    else '<p style="color:#e65100">本人への控え: Ｅメール未登録のため自動送付なし（本人が完了画面でメール入力 or QR で受け取り）</p>')
         html = (
             '<div style="font-family:Segoe UI,Meiryo,sans-serif;font-size:14px;color:#222;line-height:1.7">'
             f'<div style="font-size:16px;font-weight:700">✅ 電子署名が完了しました</div>'
             f'<p><b>{rec["name"]}</b>（No.{rec["syainNo"]}）— {rec.get("docLabel") or ""}<br>'
             f'署名日時: {_jst(rec["signedAt"])}</p>'
-            f'<p>保存先: <a href="{folder_web}">{folder}</a><br>ファイル: {file_name}{agg_info}</p></div>'
+            f'<p>保存先: <a href="{folder_web}">{folder}</a><br>ファイル: {file_name}{agg_info}</p>{dlv_line}</div>'
         )
         if rec.get("requester"):
             fa._send_notification_mail(f"✅ 電子署名完了: {rec['name']}（{rec.get('docLabel') or ''}）", html,
                                        to_addr=rec["requester"], html=True)
     except Exception:
         logging.exception("esign notify failed (ignored)")
-    return fa._json_response({"ok": True, "fileName": file_name, "signedAt": rec["signedAt"]})
+    return fa._json_response({"ok": True, "fileName": file_name, "signedAt": rec["signedAt"], "delivered": delivered})
 
 
 def handle_signed(req: func.HttpRequest) -> func.HttpResponse:
