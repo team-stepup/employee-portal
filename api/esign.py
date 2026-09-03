@@ -196,6 +196,7 @@ def handle_request(req: func.HttpRequest, requester_email: str) -> func.HttpResp
         "empEmail": str(body.get("empEmail") or "").strip()[:120],
         "empPhone": str(body.get("empPhone") or "").strip()[:40],
         "requester": requester_email,
+        "requesterName": str(body.get("requesterName") or "").strip()[:60],
         "createdAt": _iso(now), "expiresAt": _iso(now + _dt.timedelta(days=ESIGN_TTL_DAYS)),
         "status": "pending", "signedAt": "", "signedIp": "", "savedUrl": "",
     }
@@ -512,7 +513,32 @@ def handle_page(req: func.HttpRequest) -> func.HttpResponse:
     if not raw:
         return _html_response(_simple_page("エラー / Erro", "書類を読み込めませんでした。時間をおいて再度お試しください。",
                                            "Não foi possível carregar o documento. Tente novamente mais tarde."), 500)
-    return _html_response(raw.decode("utf-8", errors="replace"))
+    html = raw.decode("utf-8", errors="replace")
+    # 監査レポート用メタ (作成者・作成日・送付履歴・閲覧日時/IP) をページに埋め込む
+    ip = (req.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    ip = re.sub(r":\d+$", "", ip)
+    viewed = _iso(_now())
+    meta = {
+        "token": token, "docLabel": rec.get("docLabel") or "", "name": rec.get("name") or "", "syainNo": rec.get("syainNo") or "",
+        "requester": rec.get("requester") or "", "requesterName": rec.get("requesterName") or "",
+        "createdAt": rec.get("createdAt") or "",
+        "sentTo": [{"to": s.get("to"), "at": s.get("at")} for s in (rec.get("sentTo") or [])][-5:],
+        "viewedAt": viewed, "viewerIp": ip,
+    }
+    inj = "<script>window.ESIGN_META=" + json.dumps(meta, ensure_ascii=False).replace("</", "<\\/") + ";</script>"
+    if "</head>" in html:
+        html = html.replace("</head>", inj + "</head>", 1)
+    else:
+        html = inj + html
+    # 初回閲覧日時を記録 (best-effort)
+    if not rec.get("viewedAt"):
+        rec["viewedAt"] = viewed
+        rec["viewerIp"] = ip[:64]
+        try:
+            _save_rec(rec)
+        except Exception:
+            logging.exception("esign viewedAt save failed")
+    return _html_response(html)
 
 
 def handle_submit(req: func.HttpRequest) -> func.HttpResponse:
