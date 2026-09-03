@@ -564,7 +564,11 @@ def handle_submit(req: func.HttpRequest) -> func.HttpResponse:
         return fa._json_response({"error": "invalid_pdf"}, 400)
 
     folder = rec["folderPath"]
-    file_name = rec["fileName"]
+    # ファイル名の日付部分を「署名日時(JST, 分まで)」に置き換える → 同じ日に複数回署名しても上書きしない
+    #   例: …_20260903_署名済.pdf → …_20260903-1751_署名済.pdf
+    jst = _now() + _dt.timedelta(hours=9)
+    file_name = re.sub(r"_\d{8}_署名済\.pdf$", "_" + jst.strftime("%Y%m%d-%H%M") + "_署名済.pdf", rec["fileName"])
+    rec["fileName"] = file_name
     try:
         try:
             fa.sp_create_folder_if_not_exists(folder)
