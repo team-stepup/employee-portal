@@ -374,7 +374,11 @@ def _signed_page(rec: Dict[str, Any], token: str) -> str:
         '<h3>📱 自分のスマホで受け取る / Receber no seu celular</h3>'
         '<div class="note" style="text-align:center">自分のスマホのカメラでこのQRを読むと、控えのPDFを開いて保存できます。<br>Leia o QR com a câmera do seu celular para abrir e salvar o PDF.</div>'
         '<div id="qr"></div>'
-        f'<div style="text-align:center"><a class="btn gray" href="{signed_url}" target="_blank" rel="noopener">📄 この端末で開く / Abrir neste aparelho</a></div>'
+        f'<div style="text-align:center;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">'
+        f'<a class="btn" href="{signed_url}&dl=1" rel="noopener">📥 この端末に保存 / Salvar neste aparelho</a>'
+        f'<a class="btn gray" href="{signed_url}" target="_blank" rel="noopener">📄 開いて見る / Abrir</a></div>'
+        '<div class="note" style="text-align:center">iPhone は保存後「ファイル」アプリに入ります。WhatsApp や LINE の中のブラウザで開いている場合は、右上のメニューから Safari / Chrome で開くと保存しやすくなります。<br>'
+        'No iPhone o arquivo fica no app "Arquivos". Se abriu dentro do WhatsApp/LINE, use o menu para abrir no Safari/Chrome.</div>'
         '<h3>🔒 終了 / Encerrar</h3>'
         '<div class="note">共用のiPad等では、受け取りが済んだら必ず「終了」を押してください。画面と履歴からこの書類を消します。<br>Em aparelhos compartilhados, toque em "Encerrar" ao terminar.</div>'
         '<button class="btn red" style="margin-top:8px" onclick="finish()">🔒 終了して画面を消す / Encerrar</button>'
@@ -544,5 +548,5 @@ def handle_signed(req: func.HttpRequest) -> func.HttpResponse:
         return _html_response(_simple_page("エラー / Erro", "PDFを取得できませんでした。", "Não foi possível obter o PDF."), 500)
     fn = quote(rec.get("fileName") or "signed.pdf")
     return func.HttpResponse(raw, status_code=200, mimetype="application/pdf",
-                             headers={"Content-Disposition": f"inline; filename*=UTF-8''{fn}",
+                             headers={"Content-Disposition": f"{'attachment' if str(req.params.get('dl') or '') == '1' else 'inline'}; filename*=UTF-8''{fn}",
                                       "Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff"})
