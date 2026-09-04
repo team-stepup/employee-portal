@@ -1630,7 +1630,8 @@ def mensetsu_submit(req: func.HttpRequest) -> func.HttpResponse:
                     f'<td style="padding:3px 0;"><b>{v}</b></td></tr>'
                     for k, v in rows if str(v).strip())
                 + "</table>"
-                '<p style="color:#666;font-size:12px;">詳細・スキルシート作成は yukyu-app の 📄スキルシート へ。</p></div>')
+                f'<p style="font-size:13px;"><a href="{YUKYU_APP_URL}?open=skillsheet">'
+                '📄 スキルシート一覧を開く（詳細確認・PDF作成）</a></p></div>')
         # 宛先: 採用担当メール + Teams「応募者」チャネル(メール投稿)
         recipients = list(APPLY_NOTIFY_EMAILS) + [MENSETSU_TEAMS_CHANNEL_MAIL]
         message = {"subject": f"【面接シート】{name} 様 (ID {id1})",
@@ -8078,6 +8079,7 @@ def yukyu_skillsheet(req: func.HttpRequest) -> func.HttpResponse:
                                    "raw": raw,
                                    "birth": _ss.birth_of(caller_token, r1, r2),
                                    "nationality": _ss.nationality_of(caller_token, r1, r2),
+                                   "tel": _ss.tel_of(caller_token, r1, r2),
                                    "attachments": _ss.row_attachments(caller_token, r1, r2)})
         if action == "save":
             id1 = body.get("id1")
@@ -8122,3 +8124,86 @@ def yukyu_skillsheet(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.exception("skillsheet failed")
         return _json_response({"error": "internal", "detail": str(e)[:300]}, 500)
+
+# ============================================================
+# 電子署名リンク (esign) — yukyu-app 書類画面「本人へ署名リンクを送る」(2026-09-03)
+#   実装本体は esign.py。staff 認証が要るのは request/pending/send のみ。
+#   page/submit/signed は本人向け (推測不能トークンのみで認証)。
+# ============================================================
+import esign as _esign
+
+
+@app.route(route="esign/request", methods=["POST", "OPTIONS"])
+def esign_request(req: func.HttpRequest) -> func.HttpResponse:
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    return _esign.handle_request(req, email)
+
+
+@app.route(route="esign/pending", methods=["GET", "OPTIONS"])
+def esign_pending(req: func.HttpRequest) -> func.HttpResponse:
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    return _esign.handle_pending(req)
+
+
+@app.route(route="esign/send", methods=["POST", "OPTIONS"])
+def esign_send(req: func.HttpRequest) -> func.HttpResponse:
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    return _esign.handle_send(req, email)
+
+
+@app.route(route="esign/page", methods=["GET"])
+def esign_page(req: func.HttpRequest) -> func.HttpResponse:
+    return _esign.handle_page(req)
+
+
+@app.route(route="esign/submit", methods=["POST", "OPTIONS"])
+def esign_submit(req: func.HttpRequest) -> func.HttpResponse:
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    return _esign.handle_submit(req)
+
+
+@app.route(route="esign/deliver", methods=["POST", "OPTIONS"])
+def esign_deliver(req: func.HttpRequest) -> func.HttpResponse:
+    """本人が完了画面で入力したメールへ控え(署名済PDF)を送付 (トークンのみ)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    return _esign.handle_deliver(req)
+
+
+@app.route(route="esign/diag", methods=["POST", "OPTIONS"])
+def esign_diag(req: func.HttpRequest) -> func.HttpResponse:
+    """署名ページの診断情報(座標/表示状態)を記録 (トークンのみ)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    return _esign.handle_diag(req)
+
+
+@app.route(route="esign/view", methods=["GET"])
+def esign_view(req: func.HttpRequest) -> func.HttpResponse:
+    """署名済PDFの閲覧ページ (pdf.js 描画・トークンのみ)。"""
+    return _esign.handle_view(req)
+
+
+@app.route(route="esign/signed", methods=["GET"])
+def esign_signed(req: func.HttpRequest) -> func.HttpResponse:
+    return _esign.handle_signed(req)
+
