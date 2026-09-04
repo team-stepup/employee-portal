@@ -1631,7 +1631,8 @@ def mensetsu_submit(req: func.HttpRequest) -> func.HttpResponse:
                     f'<td style="padding:3px 0;"><b>{v}</b></td></tr>'
                     for k, v in rows if str(v).strip())
                 + "</table>"
-                f'<p style="font-size:13px;"><a href="{YUKYU_APP_URL}?open=skillsheet">'
+                # ⚠️github.ioのURLを本文に入れるとTeamsチャネル取り込みが破棄する(2026-09-04実害)→自社ドメインの転送ページ経由
+                '<p style="font-size:13px;"><a href="https://portal.team-stepup.com/app.html?open=skillsheet">'
                 '📄 スキルシート一覧を開く（詳細確認・PDF作成）</a></p></div>')
         # 宛先: 採用担当メール + Teams「応募者」チャネル(メール投稿)
         recipients = list(APPLY_NOTIFY_EMAILS) + [MENSETSU_TEAMS_CHANNEL_MAIL]
@@ -1657,6 +1658,27 @@ def mensetsu_submit(req: func.HttpRequest) -> func.HttpResponse:
         logging.warning("mensetsu push failed")
     return _json_response({"ok": True, "id1": id1, "itemId": item_id, "notify": notify_status}, 200,
                           extra_headers=public_cors)
+
+
+@app.route(route="mensetsu/notify-debug", methods=["POST", "OPTIONS"])
+def mensetsu_notify_debug(req: func.HttpRequest) -> func.HttpResponse:
+    """チャネル通知の疎通診断用 (staff限定・一時)。body: {subject, html}"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    email, err = require_staff_auth(req)
+    if err:
+        return err
+    body = req.get_json()
+    token = _get_graph_token()
+    sender = os.environ.get("MENSETSU_MAIL_SENDER", "").strip() or "jimusyo1@team-stepup.com"
+    message = {"subject": str(body.get("subject") or "debug"),
+               "body": {"contentType": "HTML", "content": str(body.get("html") or "debug")},
+               "toRecipients": [{"emailAddress": {"address": MENSETSU_TEAMS_CHANNEL_MAIL}}]}
+    r = requests.post(f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail",
+                      headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                      json={"message": message, "saveToSentItems": False}, timeout=30)
+    return _json_response({"status": r.status_code, "detail": r.text[:200]})
 
 
 @app.route(route="jobs/admin", methods=["GET", "OPTIONS"])
