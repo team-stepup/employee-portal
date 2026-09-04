@@ -1426,7 +1426,7 @@ def jobs_indeed_feed(req: func.HttpRequest) -> func.HttpResponse:
 # メール宛先: Teamsチャネル「一般」の投稿用メール + 役員個人(スマホ/PCのOutlook通知用)
 APPLY_NOTIFY_EMAILS = [e.strip() for e in os.environ.get(
     "APPLY_NOTIFY_EMAILS",
-    "oubosyamennsetu@team-stepup.com,h.yamashita@team-stepup.com").split(",") if e.strip()]
+    "oubosyamennsetu@team-stepup.com").split(",") if e.strip()]   # 2026-09-04 h.yamashita個人宛は除外(ユーザー指示)
 # Web Push宛先(yukyu-app portal 購読端末へロック画面通知)
 APPLY_PUSH_EMAILS = [e.strip() for e in os.environ.get(
     "APPLY_PUSH_EMAILS",
@@ -1604,6 +1604,7 @@ def mensetsu_submit(req: func.HttpRequest) -> func.HttpResponse:
     except Exception:
         logging.exception("mensetsu attach failed")
     # 通知(メール+Teamsチャネル(メール投稿)+Push・best effort)
+    notify_status = None
     try:
         token = _get_graph_token()
         # 送信者は本人名義NG(自己発言扱いでTeams通知が鳴らない・給油と同じ罠)→jimusyo1固定
@@ -1637,11 +1638,15 @@ def mensetsu_submit(req: func.HttpRequest) -> func.HttpResponse:
         message = {"subject": f"【面接シート】{name} 様 (ID {id1})",
                    "body": {"contentType": "HTML", "content": html},
                    "toRecipients": [{"emailAddress": {"address": a}} for a in recipients if a]}
-        requests.post(f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail",
-                      headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                      json={"message": message, "saveToSentItems": False}, timeout=30)
-    except Exception:
-        logging.warning("mensetsu notify mail failed")
+        _nr = requests.post(f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail",
+                            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                            json={"message": message, "saveToSentItems": False}, timeout=30)
+        notify_status = _nr.status_code
+        if _nr.status_code >= 400:
+            logging.error("mensetsu notify sendMail %s: %s", _nr.status_code, _nr.text[:400])
+    except Exception as e:
+        notify_status = f"err:{str(e)[:120]}"
+        logging.exception("mensetsu notify mail failed")
     try:
         _push_to_admins(APPLY_PUSH_EMAILS, {
             "title": "📋 面接シートが提出されました",
@@ -1650,7 +1655,7 @@ def mensetsu_submit(req: func.HttpRequest) -> func.HttpResponse:
         })
     except Exception:
         logging.warning("mensetsu push failed")
-    return _json_response({"ok": True, "id1": id1, "itemId": item_id}, 200,
+    return _json_response({"ok": True, "id1": id1, "itemId": item_id, "notify": notify_status}, 200,
                           extra_headers=public_cors)
 
 
