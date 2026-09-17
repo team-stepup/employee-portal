@@ -11,6 +11,7 @@
 import datetime
 import json
 import re
+import time
 
 import requests
 
@@ -33,29 +34,33 @@ def _hdr(token, write=False):
 
 
 def next_id1(token):
-    """ID1の連番を継続: List1の最大 と List2直近行の最大 の大きい方+1"""
+    """ID1の連番を継続: List1の最大 と List2直近行の最大 の大きい方+1。
+    ⚠️取得失敗を握りつぶすとID重複が起きる(2026-08-28実害: List2読取が一時失敗→4034を二重発行)
+    → 各3回リトライ・それでも失敗なら例外を投げて提出自体を失敗させる(応募者が再送すれば正しく採番される)"""
+    def _get_vals(url, label):
+        last = None
+        for attempt in range(3):
+            try:
+                r = requests.get(url, headers=_hdr(token), timeout=30)
+                r.raise_for_status()
+                return r.json().get("value", [])
+            except Exception as e:
+                last = e
+                time.sleep(2)
+        raise RuntimeError(f"next_id1 {label} read failed after retries: {last}")
+
     cur = 0
-    try:
-        url = (f"{SITE_ROOT}/_api/web/lists(guid'{LIST1}')/items"
-               f"?$select={_ss.K['id1']}&$orderby={_ss.K['id1']} desc&$top=1")
-        r = requests.get(url, headers=_hdr(token), timeout=30)
-        r.raise_for_status()
-        vals = r.json().get("value", [])
-        if vals and vals[0].get(_ss.K["id1"]) is not None:
-            cur = int(float(vals[0][_ss.K["id1"]]))
-    except Exception:
-        pass
-    try:
-        url = (f"{SAVE_BASE}/_api/web/lists(guid'{SAVE_LIST}')/items"
-               f"?$select={_ss.K['id1']}&$orderby=Id desc&$top=50")
-        r = requests.get(url, headers=_hdr(token), timeout=30)
-        r.raise_for_status()
-        for it in r.json().get("value", []):
-            v = it.get(_ss.K["id1"])
-            if v is not None:
-                cur = max(cur, int(float(v)))
-    except Exception:
-        pass
+    vals = _get_vals(
+        f"{SITE_ROOT}/_api/web/lists(guid'{LIST1}')/items"
+        f"?$select={_ss.K['id1']}&$orderby={_ss.K['id1']} desc&$top=1", "List1")
+    if vals and vals[0].get(_ss.K["id1"]) is not None:
+        cur = int(float(vals[0][_ss.K["id1"]]))
+    for it in _get_vals(
+            f"{SAVE_BASE}/_api/web/lists(guid'{SAVE_LIST}')/items"
+            f"?$select={_ss.K['id1']}&$orderby=Id desc&$top=100", "List2"):
+        v = it.get(_ss.K["id1"])
+        if v is not None:
+            cur = max(cur, int(float(v)))
     return cur + 1
 
 

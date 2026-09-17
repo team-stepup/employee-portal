@@ -337,6 +337,50 @@ def jobs_from_rows(token, r1, r2):
                     return v
             return ""
 
+        # 派遣会社列(①〜④/末尾数字) — 新面接シートは「{派遣会社} 時給1,250円」、旧Formsは「Sankyo1250」形式
+        haken_keys = {}
+        try:
+            for key, title in _field_titles(token, base, guid):
+                t = str(title)
+                if "派遣会社" not in t:
+                    continue
+                idx = None
+                for mark, j in (("①", 0), ("②", 1), ("③", 2), ("④", 3)):
+                    if mark in t:
+                        idx = j
+                        break
+                if idx is None:
+                    m = re.search(r"([2-4])\s*$", t.strip())
+                    idx = (int(m.group(1)) - 1) if m else 0
+                haken_keys.setdefault(idx, key)
+        except Exception:
+            pass
+
+        def jikyu_of(i):
+            v = _clean(row.get(haken_keys.get(i, ""), ""))
+            if not v:
+                return ""
+            m = re.search(r"時給\s*([0-9,，]{3,6})\s*円", v)
+            if not m:
+                m = re.search(r"([0-9]{3,4})\s*$", v.replace(",", "").replace("，", ""))
+            if not m:
+                return ""
+            try:
+                return f"{int(m.group(1).replace(',', '').replace('，', '')):,}円"
+            except Exception:
+                return ""
+
+        def haken_of(i):
+            """派遣会社名 (時給部分を除いた社名。「Sankyo 時給1,250円」「Sankyo1250」→Sankyo)。
+            社内参考欄なのでローマ字社名もそのまま残す (jp_cleanはラテン文字を消すため使わない)"""
+            v = _clean(row.get(haken_keys.get(i, ""), ""))
+            if not v:
+                return ""
+            v = re.sub(r"時給\s*[0-9,，]{3,6}\s*円", "", v)
+            v = re.sub(r"[0-9,，]{3,6}\s*$", "", v)
+            v = re.sub(r"[\s　]+", " ", v)
+            return v.strip("　 ・:：-－")
+
         rows = []
         for i in range(4):
             comp = val("company", i)
@@ -347,12 +391,14 @@ def jobs_from_rows(token, r1, r2):
                 continue
             rows.append({"company": comp,
                          "naiyou": (sh + ("　" if sh and na else "") + na),
-                         "kikan": kk})
+                         "kikan": kk,
+                         "jikyu": jikyu_of(i),
+                         "haken": haken_of(i)})
         if rows:
             while len(rows) < 5:
-                rows.append({"company": "", "naiyou": "", "kikan": ""})
+                rows.append({"company": "", "naiyou": "", "kikan": "", "jikyu": "", "haken": ""})
             return rows[:5]
-    return [{"company": "", "naiyou": "", "kikan": ""} for _ in range(5)]
+    return [{"company": "", "naiyou": "", "kikan": "", "jikyu": "", "haken": ""} for _ in range(5)]
 
 
 # ============================================================
@@ -385,9 +431,20 @@ def _jp_min(v):
 def search_candidates(token, query=""):
     """面接表List1から候補【全件】(新しい順・応募IDで重複除去・ページング)。
     絞り込み用に 性別/年齢/通勤/日本語/住所 も返す。検索/フィルタはアプリ側で行う。"""
+    def _birth_key_of(base, guid):
+        try:
+            for key, title in _field_titles(token, base, guid):
+                if "生年月日" in str(title):
+                    return key
+        except Exception:
+            pass
+        return None
+
+    bk1 = _birth_key_of(SP_HOST, LIST1)
     sel = ",".join([K["id1"], K["name"], K["done"], K["sex"], K["age"],
-                    K["commute"], K["jp_pct"], K["addr"]])
-    url = f"{SP_HOST}/_api/web/lists(guid'{LIST1}')/items?$select=Id,{sel}&$orderby=Id desc&$top=1000"
+                    K["commute"], K["jp_pct"], K["addr"], "Attachments"])
+    sel1 = sel + ("," + bk1 if bk1 else "")
+    url = f"{SP_HOST}/_api/web/lists(guid'{LIST1}')/items?$select=Id,{sel1}&$orderby=Id desc&$top=1000"
     items = []
     while url:
         js = _sp_get(url, token)
@@ -397,7 +454,7 @@ def search_candidates(token, query=""):
             url = f"{SP_HOST}/_api/" + url
         if len(items) >= 6000:
             break
-    def to_cand(it, rid):
+    def to_cand(it, rid, bk):
         age_s = re.sub(r"[^0-9]", "", _clean(it.get(K["age"])))
         return {
             "id1": rid,
@@ -409,6 +466,8 @@ def search_candidates(token, query=""):
             "jp": _clean(it.get(K["jp_pct"])),
             "jpMin": _jp_min(it.get(K["jp_pct"])),
             "addr": addr_short(it.get(K["addr"])),
+            "birth": (_clean(it.get(bk))[:10] if bk else ""),
+            "hasImg": bool(it.get("Attachments")),
         }
 
     out = []
@@ -425,13 +484,15 @@ def search_candidates(token, query=""):
         if rid is not None and rid in seen:
             continue   # 再送信等でできた重複行は最新のみ表示
         seen.add(rid)
-        out.append(to_cand(it, rid))
+        out.append(to_cand(it, rid, bk1))
 
     # 新方式(Forms廃止後)の応募・手入力は「面接表2000件。」に保存される → マージ表示
     # 識別: 2026-08-26以降に作成され、かつList1に同じ応募IDが無い行
     try:
+        bk2 = _birth_key_of(SITE_PA, LIST2)
+        sel2 = sel + ("," + bk2 if bk2 else "")
         url2 = (f"{SITE_PA}/_api/web/lists(guid'{LIST2}')/items"
-                f"?$select=Id,Created,{sel}&$orderby=Id desc&$top=1000")
+                f"?$select=Id,Created,{sel2}&$orderby=Id desc&$top=1000")
         for it in _sp_get(url2, token).get("value", []):
             if str(it.get("Created") or "") < "2026-08-26":
                 continue
@@ -443,7 +504,7 @@ def search_candidates(token, query=""):
             if not nm or (nq and nq not in _norm(nm)):
                 continue
             seen.add(rid)
-            out.append(to_cand(it, rid))
+            out.append(to_cand(it, rid, bk2))
     except Exception:
         pass
     out.sort(key=lambda c: (c["id1"] or 0), reverse=True)
@@ -457,6 +518,7 @@ HAKENSAKI_LIST_PATH = "/sites/PowerApps/Lists/040623"
 _HK_NAME = "OData__x6d3e__x9063__x5148__x4f1a__x790"   # 派遣先会社名
 _HK_PLACE = "OData__x5c31__x696d__x5834__x6240_"        # 就業場所
 _HK_ADDR = "OData__x5c31__x696d__x5834__x6240__xff"     # 就業場所(所在地)
+_HK_DEPT = "OData__x7d44__x7e54__x5358__x4f4d_"         # 組織単位 (例: 浜松工場 / 北棟製造部)
 
 
 def hakensaki_options(token):
@@ -469,16 +531,31 @@ def hakensaki_options(token):
     for it in vals:
         name = _clean(it.get(_HK_NAME)) or _clean(it.get(_HK_PLACE))
         addr = _clean(it.get(_HK_ADDR))
+        dept = _clean(it.get(_HK_DEPT))
         if not name:
             continue
         if addr:
-            seen.setdefault(name + "|" + addr, {"name": name, "addr": addr})
+            seen.setdefault(name + "|" + addr, {"name": name, "addr": addr, "dept": dept, "company": name})
         else:
-            noaddr[name] = {"name": name, "addr": ""}
-    have = {v["name"] for v in seen.values()}
+            noaddr[name] = {"name": name, "addr": "", "dept": dept, "company": name}
+    # 同じ会社名で就業場所(住所)が複数ある場合は「会社名　組織単位」で区別 (例: アポロ電気 浜松工場/北棟製造部・2026-09-11)
+    # 組織単位が無ければ住所の市区町村を付ける
+    by_name = {}
+    for v in seen.values():
+        by_name.setdefault(v["company"], []).append(v)
+    for company, lst in by_name.items():
+        if len(lst) < 2:
+            continue
+        for v in lst:
+            tag = v.get("dept") or ""
+            if not tag:
+                m = re.search(r"(?:静岡県|愛知県|[^\s]+?[都道府県])?([^\s]+?[市区町村])", v["addr"])
+                tag = m.group(1) if m else v["addr"][:12]
+            v["name"] = company + "　" + tag
+    have = {v["company"] for v in seen.values()}
     out = sorted(seen.values(), key=lambda x: x["name"])
     out += sorted((v for n, v in noaddr.items() if n not in have), key=lambda x: x["name"])
-    return out
+    return [{"name": v["name"], "addr": v["addr"]} for v in out]
 
 
 def save_hakensaki_addr(token, name, addr):
@@ -565,9 +642,83 @@ def _getv(key, r1, r2):
     return ""
 
 
+def birth_of(token, r1, r2):
+    """生年月日(表示用 YYYY/M/D)。列は表示名「生年月日」で動的解決。"""
+    for base, guid, row in ((SP_HOST, LIST1, r1), (SITE_PA, LIST2, r2)):
+        if not row:
+            continue
+        for key, title in _field_titles(token, base, guid):
+            if "生年月日" not in str(title):
+                continue
+            v = _clean(row.get(key))
+            m = re.match(r"(\d{4})-(\d{2})-(\d{2})", v)
+            if m:
+                return f"{m.group(1)}/{int(m.group(2))}/{int(m.group(3))}"
+            if v:
+                return v[:10]
+    return ""
+
+
+def nationality_of(token, r1, r2):
+    """国籍(表示用)。列は表示名に「国籍」を含むもので動的解決 (List1は旧学歴列の転用)。"""
+    for base, guid, row in ((SP_HOST, LIST1, r1), (SITE_PA, LIST2, r2)):
+        if not row:
+            continue
+        for key, title in _field_titles(token, base, guid):
+            if "国籍" not in str(title):
+                continue
+            v = jp_clean(_first(_clean(row.get(key))))
+            if v:
+                return v
+    return ""
+
+
+def _kana_list_norm(v):
+    """読める/書ける列の値を日本語表記に正規化 (Hiragana→ひらがな 等・否定系は除去)"""
+    s = _clean(v)
+    if not s:
+        return ""
+    for pat, rep in ((r"hiragana", "ひらがな"), (r"katakana", "カタカナ"), (r"kanji", "漢字"),
+                     (r"romaji|alfabeto|alphabet", "ローマ字"),
+                     (r"n[ãa]o( sei)?( ler| escrever)?|nenhum|nada", "")):
+        s = re.sub(pat, rep, s, flags=re.IGNORECASE)
+    s = jp_clean(s)
+    s = re.sub(r"[・]{2,}", "・", s).strip("・ ")
+    return s
+
+
+def tel_of(token, r1, r2):
+    """電話番号(表示用)。列は表示名に「電話」を含むもので動的解決。"""
+    for base, guid, row in ((SP_HOST, LIST1, r1), (SITE_PA, LIST2, r2)):
+        if not row:
+            continue
+        for key, title in _field_titles(token, base, guid):
+            if "電話" not in str(title) or "緊急" in str(title):
+                continue
+            v = _clean(row.get(key))
+            if v:
+                return v
+    return ""
+
+
 def person_fields(token, r1, r2):
     """アプリの編集フォーム用: 日本語化済みの初期値一式を返す"""
     jobs = jobs_from_rows(token, r1, r2)
+
+    def _dynval(title_sub):
+        for base, guid, row in ((SP_HOST, LIST1, r1), (SITE_PA, LIST2, r2)):
+            if not row:
+                continue
+            try:
+                for key, title in _field_titles(token, base, guid):
+                    if title_sub in str(title):
+                        v = _clean(row.get(key))
+                        if v:
+                            return v
+            except Exception:
+                pass
+        return ""
+
     jp = []
     if _getv("jp_rikai", r1, r2):
         jp.append("理解:" + jp_clean(_first(_getv("jp_rikai", r1, r2))))
@@ -575,6 +726,13 @@ def person_fields(token, r1, r2):
         jp.append("会話:" + jp_clean(_first(_getv("jp_hanasu", r1, r2))))
     if _getv("jp_pct", r1, r2):
         jp.append("(" + _getv("jp_pct", r1, r2) + ")")
+    yomi = _kana_list_norm(_dynval("読める"))
+    kaku = _kana_list_norm(_dynval("書く") or _dynval("書ける"))
+    kana_parts = []
+    if yomi:
+        kana_parts.append("読める:" + yomi)
+    if kaku:
+        kana_parts.append("書ける:" + kaku)
     age = _getv("age", r1, r2)
     uni = _getv("uniform", r1, r2)
     nm = _getv("name", r1, r2)
@@ -602,6 +760,7 @@ def person_fields(token, r1, r2):
         "shoes": _getv("shoes", r1, r2),
         "jobs": jobs,
         "jp": "　".join(jp),
+        "jpKana": "　".join(kana_parts),
         "no": "",
     }
 
@@ -710,7 +869,8 @@ def render_pdf_fields(F, stamp=None):
         put((jb.get("naiyou") or ""), 333, y, 21, max_w=500)
         put((jb.get("kikan") or ""), 895, y, 20, "mm", max_w=95)
 
-    put(g("jp"), 310, 1370, 19, max_w=530)   # 備考1行目「日本語能力：」の右
+    jp_line = "　".join(x for x in [g("jp"), g("jpKana")] if x)
+    put(jp_line, 310, 1370, 19, max_w=530)   # 備考1行目「日本語能力：」の右 (理解/会話/%+読める書ける)
     _draw_stamp(d, stamp)
 
     buf = io.BytesIO()

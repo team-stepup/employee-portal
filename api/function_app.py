@@ -47,6 +47,7 @@ LIST_SOUGEI = "60569629-38e0-4dcb-9a73-c5f2904e3036"  # 送迎連絡 (派遣先�
 LIST_KYUJIN = "3b062cf9-73a0-4539-b10c-fd3edcc0e8b3"  # 求人 (HP採用情報・役員がyukyu-appから掲載。公開APIで匿名配信)
 LIST_OUBO = "7784b615-c0e1-4587-a10e-3551a2bd47cf"   # 応募 (HP採用ページの応募フォーム→POST /apply で保存。総務へ通知)
 LIST_SOUGEI_KIROKU = "ec0a16dc-6bba-49cf-a901-d5b3907553ca"  # 送迎記録 (運転手が1タップで実績記録→月次集計して総務へ)
+LIST_TREX_CHECK = "98b0f7f4-2b86-4913-a007-a06224ee98d7"     # T-REX照合 (PC日次ジョブ trex_sougei_check.py が9:02に書込・日付×送迎先の出勤/遅刻/早退)
 LIST_JIKO = "56dcb3c2-472b-4472-9d32-904f67cc3afa"           # 事故報告 (運転手の交通事故報告→送迎関係チャネル+Push即時通知)
 
 # 送迎記録 List フィールド (ASCII名なので read/write とも OData_ プレフィックス無し)
@@ -3866,33 +3867,136 @@ def _sougei_pending_counts(until: _dt.date) -> Dict[str, int]:
     return counts
 
 
+def _sougei_pending_records(until: _dt.date, include_approved: bool = False,
+                            since: Optional[_dt.date] = None) -> List[Dict[str, Any]]:
+    """未承認 (Status=active・until 以前) の送迎記録 (date/dest/cat)。include_approved=承認済も含む (テスト用)。"""
+    items = sp_get_items(
+        LIST_SOUGEI_KIROKU,
+        select=",".join(["Id", SK_DATE, SK_DEST, SK_CAT, SK_STATUS]),
+        filter_=(f"{SK_STATUS} ne 'cancelled'" if include_approved else f"{SK_STATUS} eq 'active'"),
+        orderby="Id desc", top=5000,
+    )
+    out = []
+    for it in items:
+        d = _utc_to_jst_date(it.get(SK_DATE))
+        if d is None or d > until or (since and d < since):
+            continue
+        out.append({"date": d, "dest": (it.get(SK_DEST) or "").strip(), "cat": (it.get(SK_CAT) or "").strip()})
+    return out
+
+
+def _trex_check_rows(date_from: _dt.date, date_to: _dt.date) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    """SP「T-REX照合」の (CheckDate, Dest) → 行。CheckDate は 'YYYY-MM-DD' Text。"""
+    out: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    try:
+        rows = sp_get_items(
+            LIST_TREX_CHECK,
+            select="Id,CheckDate,Dest,Shukkin,Early,EarlyAll,Late,LateAll,EarlyNames,LateNames,CheckedAt",
+            filter_=f"CheckDate ge '{date_from.isoformat()}' and CheckDate le '{date_to.isoformat()}'",
+            top=2000,
+        )
+    except Exception:
+        logging.exception("T-REX照合 List の取得に失敗")
+        return out
+    for r in rows:
+        out[(str(r.get("CheckDate") or ""), str(r.get("Dest") or "").strip())] = r
+    return out
+
+
+def _sougei_pending_warnings(until: _dt.date, include_approved: bool = False,
+                             since: Optional[_dt.date] = None) -> Dict[str, Any]:
+    """未承認の送迎記録を 日付×送迎先 で T-REX照合と突合し、警告を作る。
+    警告: 出勤者0の日に申請 / 早退申請 > T-REX早退者(送迎利用者) / 遅刻申請 > T-REX遅刻者 / T-REX照合未実施。"""
+    recs = _sougei_pending_records(until, include_approved=include_approved, since=since)
+    counts: Dict[str, int] = {}
+    grp: Dict[Tuple[_dt.date, str], Dict[str, int]] = {}
+    for r in recs:
+        counts[r["dest"]] = counts.get(r["dest"], 0) + 1
+        g = grp.setdefault((r["date"], r["dest"]), {})
+        g[r["cat"]] = g.get(r["cat"], 0) + 1
+    warnings: List[Dict[str, Any]] = []
+    if grp:
+        dmin = min(k[0] for k in grp); dmax = max(k[0] for k in grp)
+        checks = _trex_check_rows(dmin, dmax)
+        for (d, dest), cats in sorted(grp.items()):
+            row = checks.get((d.isoformat(), dest))
+            label = f"{d.month}/{d.day} {dest}"
+            total = sum(cats.values())
+            if row is None:
+                warnings.append({"date": d.isoformat(), "dest": dest, "type": "unchecked",
+                                 "text": f"{label}: T-REX照合未実施（申請{total}件）"})
+                continue
+            def _n(v):
+                try:
+                    return int(float(v or 0))
+                except Exception:
+                    return 0
+            if _n(row.get("Shukkin")) == 0 and total > 0:
+                warnings.append({"date": d.isoformat(), "dest": dest, "type": "no_work",
+                                 "text": f"{label}: 出勤者0名の日に申請{total}件"})
+                continue
+            n_e = cats.get("早退", 0); n_l = cats.get("遅刻", 0)
+            if n_e > _n(row.get("Early")):
+                names = str(row.get("EarlyNames") or "").strip()
+                warnings.append({"date": d.isoformat(), "dest": dest, "type": "early",
+                                 "text": f"{label}: 早退申請{n_e}件／T-REX早退{_n(row.get('Early'))}名" + (f"（{names}）" if names else "")})
+            if n_l > _n(row.get("Late")):
+                names = str(row.get("LateNames") or "").strip()
+                warnings.append({"date": d.isoformat(), "dest": dest, "type": "late",
+                                 "text": f"{label}: 遅刻申請{n_l}件／T-REX遅刻{_n(row.get('Late'))}名" + (f"（{names}）" if names else "")})
+    return {"counts": counts, "warnings": warnings}
+
+
 def _sougei_send_pending_push():
-    """前日までの未承認 送迎記録があれば、送迎先の担当者へPush (yukyu-app で承認してもらう)。"""
+    """前日までの未承認 送迎記録があれば、送迎先の担当者へPush (yukyu-app で承認してもらう)。
+    T-REX照合の警告 (申請>実態・出勤者0・照合未実施) を本文に添え、警告があれば役員へも送る。"""
     yesterday = _today_jst() - _dt.timedelta(days=1)
-    counts = _sougei_pending_counts(yesterday)
+    res = _sougei_pending_warnings(yesterday)
+    counts = res["counts"]; warnings = res["warnings"]
     per_email: Dict[str, Dict[str, int]] = {}
     for dest, n in counts.items():
         email = SOUGEI_TANTOU_BY_DEST.get(dest)
         if not email or n <= 0:
             continue
         per_email.setdefault(email, {})[dest] = n
+
+    def _warn_lines(ws: List[Dict[str, Any]], limit: int = 3) -> str:
+        if not ws:
+            return ""
+        lines = [("⚠ " if w["type"] != "unchecked" else "ℹ ") + w["text"] for w in ws[:limit]]
+        if len(ws) > limit:
+            lines.append(f"…ほか{len(ws) - limit}件")
+        return "\n" + "\n".join(lines)
+
     sent = 0
     for email, dests in per_email.items():
         total = sum(dests.values())
         detail = "、".join(f"{d} {n}件" for d, n in dests.items())
+        my_w = [w for w in warnings if w["dest"] in dests]
+        real = [w for w in my_w if w["type"] != "unchecked"]
         sent += _push_to_admins([email], {
-            "title": "🚌 送迎記録の承認",
-            "body": f"未承認の送迎記録が {total}件あります（{detail}）。アプリの承認画面からご確認ください。",
+            "title": ("⚠ 送迎記録の承認（要確認あり）" if real else "🚌 送迎記録の承認"),
+            "body": f"未承認の送迎記録が {total}件あります（{detail}）。アプリの承認画面からご確認ください。" + _warn_lines(my_w),
             "url": YUKYU_APP_URL,
             "tag": "sougei-approval",
             "badge": total,
         })
-    return {"ok": True, "counts": counts, "targets": len(per_email), "sent": sent}
+    # 役員: 警告 (照合未実施も含む) がある日だけ
+    if warnings:
+        real = [w for w in warnings if w["type"] != "unchecked"]
+        sent += _push_to_admins(ADMIN_APPROVER_EMAILS, {
+            "title": "⚠ 送迎記録 T-REX突合 警告" if real else "ℹ 送迎記録 T-REX照合未実施",
+            "body": (f"申請が打刻実態を超える記録が{len(real)}件あります。" if real else "本日のT-REX照合が取り込まれていません（PC未起動の可能性）。")
+                    + _warn_lines(warnings, 4),
+            "url": YUKYU_APP_URL,
+            "tag": "sougei-trex-warn",
+        })
+    return {"ok": True, "counts": counts, "warnings": warnings, "targets": len(per_email), "sent": sent}
 
 
 @app.route(route="sougei/pending-test", methods=["POST", "GET", "OPTIONS"])
 def sougei_pending_test(req: func.HttpRequest) -> func.HttpResponse:
-    """手動確認用: 前日までの未承認 送迎記録の件数(送迎先別)。?push=1 で担当者へ実Push。総務/役員のみ。"""
+    """手動確認用: 前日までの未承認 送迎記録の件数(送迎先別)+T-REX突合警告。?push=1 で担当者(+警告時は役員)へ実Push。総務/役員のみ。"""
     pf = _handle_preflight(req)
     if pf:
         return pf
@@ -3903,7 +4007,18 @@ def sougei_pending_test(req: func.HttpRequest) -> func.HttpResponse:
         if req.params.get("push") == "1":
             res = _sougei_send_pending_push()
         else:
-            res = {"ok": True, "counts": _sougei_pending_counts(_today_jst() - _dt.timedelta(days=1)), "sent": 0}
+            # テスト用: ?until=YYYY-MM-DD (既定=昨日) / ?since=YYYY-MM-DD / ?all=1 (承認済も含めて突合)
+            until = _today_jst() - _dt.timedelta(days=1)
+            since = None
+            try:
+                if req.params.get("until"):
+                    until = _dt.date.fromisoformat(req.params.get("until"))
+                if req.params.get("since"):
+                    since = _dt.date.fromisoformat(req.params.get("since"))
+            except ValueError:
+                return _json_response({"error": "bad_date"}, 400)
+            res = _sougei_pending_warnings(until, include_approved=(req.params.get("all") == "1"), since=since)
+            res.update({"ok": True, "sent": 0})
         return _json_response(res)
     except Exception as e:
         logging.exception("sougei_pending_test failed")
@@ -7715,16 +7830,138 @@ def kintai_approve(req: func.HttpRequest) -> func.HttpResponse:
     if not isinstance(ids, list) or not ids or len(ids) > 200:
         return _json_response({"error": "invalid_ids"}, 400)
     now_s = _kintai_jst_now().strftime("%Y-%m-%d %H:%M")
-    done, errors = [], []
+    done, errors, notified = [], [], []
     for i in ids:
         try:
+            row = _kintai_get_row_by_id(int(i))
             sp_patch_item(LIST_JIMUSHO_TC, int(i), {
                 "Status": "承認済", "ApprovedBy": user["name"], "ApprovedAt": now_s})
             done.append(int(i))
+            # 有給/欠勤の申請 (区分≠出勤) を承認したときだけ本人へ通知 (週次の出勤行一括承認では通知しない)
+            if row and str(row.get("Kubun") or "出勤") != "出勤" and str(row.get("Status") or "") == "未承認":
+                info = _kintai_notify_staff(row, "approved", user["name"], now_s, "")
+                if info:
+                    notified.append(info)
         except Exception as e:
             errors.append({"id": i, "error": str(e)[:200]})
-    logging.info("kintai approve by %s: %d ok / %d err", user["email"], len(done), len(errors))
-    return _json_response({"ok": len(errors) == 0, "approved": done, "errors": errors})
+    logging.info("kintai approve by %s: %d ok / %d err / %d notified", user["email"], len(done), len(errors), len(notified))
+    return _json_response({"ok": len(errors) == 0, "approved": done, "errors": errors, "notified": notified})
+
+
+def _kintai_get_row_by_id(item_id: int) -> Optional[Dict[str, Any]]:
+    rows = sp_get_items(
+        LIST_JIMUSHO_TC,
+        select="Id,Title,EmpNo,KinmuDate,ClockIn,ClockOut,Kubun,Status,ApprovedBy,ApprovedAt,Memo",
+        filter_=f"Id eq {int(item_id)}",
+    )
+    return rows[0] if rows else None
+
+
+KINTAI_REJECT_PREFIX = "【却下】"
+
+
+def _kintai_notify_staff(row: Dict[str, Any], decision: str, approver: str, at_s: str, reason: str) -> Optional[Dict[str, Any]]:
+    """承認/却下の結果を本人へ Push (yukyu-app の🔔購読があれば)。
+    Teams 1:1 はフロント(役員の委任トークン)が送るので、必要な情報を返す。"""
+    emp_no = str(row.get("EmpNo") or "")
+    upn = next((k for k, v in _kintai_user_map().items() if v["empNo"] == emp_no), "")
+    date_s = str(row.get("KinmuDate") or "")
+    kubun = str(row.get("Kubun") or "")
+    info = {"empNo": emp_no, "name": str(row.get("Title") or ""), "upn": upn, "date": date_s,
+            "kubun": kubun, "decision": decision, "reason": reason, "approver": approver, "at": at_s}
+    try:
+        md = f"{int(date_s[5:7])}/{int(date_s[8:10])}" if len(date_s) == 10 else date_s
+        if decision == "approved":
+            payload = {"title": "✅ 勤怠申請が承認されました",
+                       "body": f"{md} 「{kubun}」を {approver} が承認しました。", "url": YUKYU_APP_URL, "tag": "kintai-kekka"}
+        else:
+            payload = {"title": "❌ 勤怠申請が却下されました",
+                       "body": f"{md} 「{kubun}」は却下されました。理由: {reason}", "url": YUKYU_APP_URL, "tag": "kintai-kekka"}
+        info["pushSent"] = _push_to_admins([upn], payload) if upn else 0
+    except Exception:
+        logging.exception("kintai notify staff push failed")
+        info["pushSent"] = 0
+    return info
+
+
+@app.route(route="kintai/reject", methods=["POST", "OPTIONS"])
+def kintai_reject(req: func.HttpRequest) -> func.HttpResponse:
+    """有給/欠勤申請の却下 (役員のみ)。body: {id, reason}。理由必須。
+    区分を「出勤」に戻し、備考に【却下】理由｜元申請 を残す。Status は未承認のまま (週次承認で通常日として扱う)。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    user, err = require_kintai_auth(req)
+    if err:
+        return err
+    if not user["yakuin"]:
+        return _json_response({"error": "forbidden"}, 403)
+    try:
+        body = req.get_json()
+        item_id = int(body.get("id"))
+    except Exception:
+        return _json_response({"error": "invalid_json"}, 400)
+    reason = str(body.get("reason") or "").strip()[:150]
+    if not reason:
+        return _json_response({"error": "reason_required"}, 400)
+    try:
+        row = _kintai_get_row_by_id(item_id)
+        if not row:
+            return _json_response({"error": "not_found"}, 404)
+        kubun = str(row.get("Kubun") or "出勤")
+        if kubun == "出勤" or str(row.get("Status") or "") != "未承認":
+            return _json_response({"error": "not_pending"}, 409)
+        now_s = _kintai_jst_now().strftime("%Y-%m-%d %H:%M")
+        old_memo = str(row.get("Memo") or "").strip()
+        memo = f"{KINTAI_REJECT_PREFIX}{reason}｜元申請: {kubun}" + (f"（{old_memo}）" if old_memo else "")
+        sp_patch_item(LIST_JIMUSHO_TC, item_id, {
+            "Kubun": "出勤", "Memo": memo[:250], "ApprovedBy": user["name"], "ApprovedAt": now_s})
+        info = _kintai_notify_staff(row, "rejected", user["name"], now_s, reason)
+    except Exception as e:
+        logging.exception("kintai reject failed")
+        return _json_response({"error": "sp_error", "detail": str(e)[:300]}, 502)
+    logging.info("kintai reject %s by %s: %s", item_id, user["email"], reason[:40])
+    return _json_response({"ok": True, "notified": [info] if info else []})
+
+
+@app.route(route="kintai/decisions", methods=["GET", "OPTIONS"])
+def kintai_decisions(req: func.HttpRequest) -> func.HttpResponse:
+    """本人の申請結果 (承認/却下) 一覧。直近90日の勤務日分・決定日時の新しい順。
+    yukyu-app のスタッフ側「🕐勤怠」未読バッジと結果欄で使用。"""
+    pf = _handle_preflight(req)
+    if pf:
+        return pf
+    user, err = require_kintai_auth(req)
+    if err:
+        return err
+    since = (_kintai_jst_now() - _dt.timedelta(days=90)).strftime("%Y-%m-%d")
+    try:
+        rows = sp_get_items(
+            LIST_JIMUSHO_TC,
+            select="Id,Title,EmpNo,KinmuDate,Kubun,Status,ApprovedBy,ApprovedAt,Memo",
+            filter_=f"EmpNo eq '{user['empNo']}' and KinmuDate ge '{since}'",
+        )
+    except Exception as e:
+        logging.exception("kintai decisions failed")
+        return _json_response({"error": "sp_error", "detail": str(e)[:300]}, 502)
+    out = []
+    for r in rows:
+        at = str(r.get("ApprovedAt") or "").strip()
+        if not at:
+            continue
+        memo = str(r.get("Memo") or "")
+        kubun = str(r.get("Kubun") or "出勤")
+        if memo.startswith(KINTAI_REJECT_PREFIX):
+            rest = memo[len(KINTAI_REJECT_PREFIX):]
+            reason, _, tail = rest.partition("｜元申請: ")
+            orig = tail.split("（")[0].strip() if tail else ""
+            out.append({"id": r.get("Id"), "date": r.get("KinmuDate"), "decision": "rejected",
+                        "kubun": orig or "申請", "reason": reason.strip(), "approver": r.get("ApprovedBy") or "", "at": at})
+        elif kubun != "出勤" and str(r.get("Status") or "") == "承認済":
+            out.append({"id": r.get("Id"), "date": r.get("KinmuDate"), "decision": "approved",
+                        "kubun": kubun, "reason": "", "approver": r.get("ApprovedBy") or "", "at": at})
+    out.sort(key=lambda x: x["at"], reverse=True)
+    return _json_response({"ok": True, "rows": out[:50]})
 
 
 # ---- 事務所有給 (残数計算) ----

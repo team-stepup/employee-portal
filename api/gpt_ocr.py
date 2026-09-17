@@ -53,7 +53,7 @@ def translate_renraku(title: str, body: str) -> Dict[str, Any]:
         "前後に説明やコードフェンスを付けない。"
     )
     resp = client.messages.create(
-        model=CLAUDE_MODEL, max_tokens=2500, temperature=0, system=system,
+        model=CLAUDE_MODEL, max_tokens=2500, system=system,
         messages=[{"role": "user", "content": [{"type": "text", "text": src}]}],
     )
     txt = "".join(getattr(b, "text", "") for b in resp.content).strip()
@@ -81,7 +81,7 @@ def translate_job(fields: Dict[str, str]) -> Dict[str, Any]:
         "\"en\":{...同キー...}} のJSONのみ。前後に説明やコードフェンスを付けない。"
     )
     resp = client.messages.create(
-        model=CLAUDE_MODEL, max_tokens=2000, temperature=0, system=system,
+        model=CLAUDE_MODEL, max_tokens=2000, system=system,
         messages=[{"role": "user", "content": [{"type": "text", "text": src}]}],
     )
     txt = "".join(getattr(b, "text", "") for b in resp.content).strip()
@@ -126,7 +126,7 @@ def generate_indeed_copy(fields: Dict[str, str]) -> Dict[str, Any]:
         "- 前後に説明やコードフェンスを付けずJSONのみ返す"
     )
     resp = client.messages.create(
-        model=CLAUDE_MODEL, max_tokens=2000, temperature=0.3, system=system,
+        model=CLAUDE_MODEL, max_tokens=2000, system=system,
         messages=[{"role": "user", "content": [{"type": "text", "text": src}]}],
     )
     txt = "".join(getattr(b, "text", "") for b in resp.content).strip()
@@ -149,7 +149,7 @@ def summarize_nippou(reports_text: str) -> str:
         "- 出力は要約本文のみ(『要約:』等の見出しや前置きは不要)。"
     )
     resp = client.messages.create(
-        model=CLAUDE_MODEL, max_tokens=1500, temperature=0, system=system,
+        model=CLAUDE_MODEL, max_tokens=1500, system=system,
         messages=[{"role": "user", "content": [{"type": "text", "text": reports_text}]}],
     )
     return "".join(getattr(b, "text", "") for b in resp.content).strip()
@@ -164,11 +164,23 @@ def _extract_via_claude(system: str, user_prompt: str, images: list, max_tokens:
     for b in images[:4]:
         if not b:
             continue
+        # media_type は実データから判定する（jpeg固定だと PNG 送信時に
+        # Anthropic 側の検証エラー→呼び出し元で gpt-4o へ静かにフォールバックしていた。2026-08-27）
+        if b[:8] == b"\x89PNG\r\n\x1a\n":
+            mt = "image/png"
+        elif b[:3] == b"\xff\xd8\xff":
+            mt = "image/jpeg"
+        elif b[:4] == b"RIFF" and b[8:12] == b"WEBP":
+            mt = "image/webp"
+        elif b[:6] in (b"GIF87a", b"GIF89a"):
+            mt = "image/gif"
+        else:
+            mt = "image/jpeg"
         content.append({"type": "image", "source": {
-            "type": "base64", "media_type": "image/jpeg",
+            "type": "base64", "media_type": mt,
             "data": base64.b64encode(b).decode("ascii")}})
     resp = client.messages.create(
-        model=CLAUDE_MODEL, max_tokens=max_tokens, temperature=0,
+        model=CLAUDE_MODEL, max_tokens=max_tokens,
         system=system + " 出力は JSON オブジェクトのみ。前後に説明やコードフェンスを付けない。",
         messages=[{"role": "user", "content": content}],
     )
@@ -246,6 +258,10 @@ ZAIRYU_USER = """この在留カードの画像から以下の項目を抽出し
 - "sex": 性別。"M" または "F"。不明なら null。
 - "address": 住居地。カード表面/裏面に印字された住所を一字一句そのまま(日本語)。
     **市区町村名を推測・補完・変更しないこと**(例: 読み取りにくくても勝手に別の市名にしない)。読み取れなければ null。
+    ★引越し後は表面の住所に二重線が引かれ、**裏面の「住居地記載欄」に新しい住所が届出年月日と市区町村長印とともに記載**される(印字またはスタンプ・手書き)。
+      裏面に住居地記載があれば**裏面の最も新しい(最下段の)住所を address にする**(表面の消された住所は使わない)。
+      裏面の画像だけが渡された場合も住居地記載欄から住所を読む。マンション名・部屋番号まで含める。
+- "addressSource": address をどこから読んだか。"front"(表面) / "back"(裏面の住居地記載欄) / null。
 
 規則:
 - 和暦(令和/平成/昭和)は西暦に変換する。例: 令和7年7月4日 → 2025-07-04。
@@ -398,6 +414,56 @@ DOC_PROMPTS: Dict[str, Dict[str, str]] = {
 ※個人番号(12桁)は抽出しない。
 """ + _COMMON_RULES,
     },
+    "fuyou": {
+        "system": "あなたは日本年金機構の「健康保険被扶養者（異動）決定通知書」および「健康保険被扶養者（異動）届」(協会けんぽ様式)を読み取る高精度な情報抽出エンジンです。",
+        "user": """この画像は 被扶養者（異動）決定通知書 または 被扶養者（異動）届 です。以下をJSONのみで返してください。
+- "docKind": "決定通知書" / "異動届" / "その他" のいずれか。
+- "docDate": 通知日または提出日 ("YYYY-MM-DD"。無ければ null)。
+- "insuredName": 「１．被保険者」欄(または「A 被保険者欄」)の被保険者氏名 (本人。カナは全角カタカナに。半角カナ ﾁﾊﾞ → チバ)。
+- "dependents": 被扶養者の配列。「２．被扶養者（配偶者）」と「３．被扶養者（配偶者以外）」(届では B欄・C欄) の**全員**を、上から順に1人1要素で:
+  - "name": 被扶養者氏名 (記載どおりの語順。半角カナは全角カタカナに変換。姓と名の間は全角スペース1つ)。
+  - "birthday": 生年月日 ("YYYY-MM-DD")。
+  - "sex": "男" / "女" / null。
+  - "relation": 続柄を次のいずれかに正規化: "配偶者" / "子" / "父" / "母" / "孫" / "兄弟姉妹" / "その他"。(夫・妻 → 配偶者、長男・長女・子 → 子)
+  - "change": 異動内容: "該当"(被扶養者になった) / "非該当"(被扶養者でなくなった) / "変更" / null。
+  - "date": 「被扶養者になった日」または「(被扶養者でなくなった日)」("YYYY-MM-DD")。非該当なら なくなった日。
+  - "certified": 認定区分 (例 "認定") または null。
+★被保険者本人を dependents に入れないこと。空欄の行(氏名が無い)は入れないこと。個人番号(マイナンバー)は絶対に出力しないこと。
+""" + _COMMON_RULES,
+        "max_tokens": 1500,
+    },
+    "uniform": {
+        "system": "あなたは派遣先(ASTI等)の「制服貸与および責任に関する同意書 / TERMO DE FORNECIMENTO DE UNIFORME E RESPONSABILIDADE」(日本語・ポルトガル語併記の手書き記入フォーム)を読み取る高精度な情報抽出エンジンです。",
+        "user": """この制服(作業服)貸与同意書の画像から以下を抽出し、JSONのみを返してください。
+- "name": 受領者氏名 (「Eu ____」「私 ____」の空欄に手書き/印字された氏名。カタカナならそのまま)。
+- "date": 日付 (Data: 年 月 日 → "YYYY-MM-DD")。
+★受領品目(Itens recebidos)は**上から順に必ず3行**: 1行目=Boné/帽子、2行目=Parte superior/上衣、3行目=Calça/ズボン。
+  各行の「peças(枚数)」と「Tamanho(サイズ)」は**その行の右側**にあり、行をまたいで読まないこと(1行目の帽子が空欄でも、2行目の値を帽子に入れてはいけない)。
+  まず各行を左から右へそのまま転写して、次にそこから値を取る:
+- "capLineText": 帽子(Boné)の行の転写 (例 "Boné : ____ peças  Tamanho: ____")。
+- "topLineText": 上衣(Parte superior)の行の転写 (例 "Parte superior: [Verão] Inverno / 2 peças  Tamanho: M")。
+- "pantsLineText": ズボン(Calça)の行の転写 (例 "Calça: Verão [Inverno] / 1 peças  Tamanho: LL")。
+- "capQty": 帽子(Boné)の個数 (帽子の行の数字。空欄なら null)。
+- "capSize": 帽子のサイズ (帽子の行の Tamanho。空欄なら null)。
+- "topSummerQty": 上衣(Parte superior)のうち「夏 Verão」に該当する枚数。
+- "topWinterQty": 上衣のうち「冬 Inverno」に該当する枚数。
+- "topSize": 上衣の行の Tamanho (例 "M","L","LL","3L")。
+- "pantsSummerQty": ズボン(Calça)のうち「夏 Verão」に該当する枚数。
+- "pantsWinterQty": ズボンのうち「冬 Inverno」に該当する枚数。
+- "pantsSize": ズボンの行の Tamanho。
+- "shoesCm": 静電靴(Calçado antiestático)のサイズ cm (例 "25.5"。空欄なら null)。
+- "others": その他(Outros)の記載 (空欄なら null)。
+- "handler": 引渡担当者 (Responsável pela entrega - ASTI の欄の氏名)。
+- "companyId": ID(派遣会社名)欄の数字 (例 "1000000131")。
+※上衣・ズボンの行は「Verão / Inverno / N peças」の形式で、**四角い枠・丸・チェック・下線で囲まれている季節が選択された季節**。
+  枚数(peças)はその選択された季節に入れる。両方が囲まれていれば両方に同じ枚数を入れる。どちらも囲まれていなければ両方 null。
+  枠は細い手書きの長方形で、単語のすぐ上下に横線があり左右に縦線がある。**どちらの単語の文字が四辺の線の内側にあるか**を行ごとに別々に確かめること
+  (上衣とズボンで選択が違うことが多い。片方の行の結果をもう一方にコピーしない)。
+※画像が2枚以上ある場合、2枚目以降は「受領品目(Itens recebidos)」の部分を拡大した切り出し画像。**枠の判定・枚数・サイズは拡大画像を優先**して読む。
+※数字は半角。サイズは大文字(LL, 3L など)。読み取れない欄は null。
+※自己チェック: capQty/capSize は capLineText から、top系は topLineText から、pants系は pantsLineText から取ったことを確認してから出力する。
+""" + _COMMON_RULES,
+    },
     "classify": {
         "system": "あなたは日本の各種証明書類の画像を見て、その書類の種別を判定する分類エンジンです。",
         "user": """この画像が次のどの書類かを判定し、JSONのみを返してください。
@@ -471,6 +537,36 @@ DOC_PROMPTS: Dict[str, Dict[str, str]] = {
 - 末尾に 0.1km 単位の小数があっても整数部のみ。単位の"km"や"ODO"の文字は含めない。
 - 数字がはっきり読めない場合は null。推測で値を作らない。
 """ + _COMMON_RULES,
+    },
+    "timecard": {
+        "system": "あなたは日本の紙タイムカード(AMANO ASTカード等の打刻カード・手書き勤怠カード)を読み取る高精度な勤怠データ抽出エンジンです。",
+        "user": """このタイムカード画像から日別の勤怠を抽出し、JSONのみを返してください。
+出力形式:
+{"yearMonth":"YYYY-MM",
+ "days":[{"date":"YYYY-MM-DD","status":"work","hours":7.83}, ...],
+ "summary":{"shotei":20,"shukkin":17,"kekkin":2,"yukyu":0,"kyugyo":1,"teiji":133.11}}
+status は "work"(出勤) / "absence"(欠勤) / "paid"(有給) / "kyugyo"(休業) / "half"(半日勤務) / "off"(休日・空欄) / "unknown"(判読不能) のいずれか。
+判定規則:
+- ★画像の最上部に「対象月: YYYY年M月」の注記帯がある場合、それが正解の年月。days はその月の日のみを返し、
+  カードヘッダの年月表記と食い違っても注記帯を優先する(カードは前半/後半で隣接月のヘッダが付くことがある)。
+- 注記帯が無い場合のみ、カードヘッダの「26年 5月」等から年月を推定する(2桁年=西暦2000年代。26年=2026年)。
+  各日の "date" は必ず完全な日付にする。
+- 出退勤打刻(例 8:15 17:00)または実働時間(例 7.83)がある日 = "work"。"hours" に実働時間を数値で入れる。
+- 赤丸の「欠」印や「欠勤」の日 = "absence"。ただし同じ日に「有給」の記載(赤字の上書き含む)があれば "paid" を優先する。
+- 「有給」「有休」の日 = "paid"。「休業」「休業補償」の日 = "kyugyo"。
+- 打刻はあるが「欠1/2」「半欠」等の半日欠表記がある日 = "half"("hours" に実働を入れる)。
+- 空欄の日(土日祝) = "off" として days に含める(読み落としと区別するため全日付を出力する)。
+- ★赤の斜線や大きな✕で消されている行は前月分の重複掲載なので無視する(daysに含めない)。
+  ただし打消線は**行単位**で判定すること。同じカード面でも、斜線の範囲外にある行
+  (特に赤い横線の下に続く行や、カード末尾の数行)は有効な当月データなので必ず読み取る。
+- 各カード面は1行も取りこぼさないこと。カード面の最上行・最下行は見落としやすいので特に注意。
+- 1画像に複数のカード面(前半/後半・別月)が並ぶことがある。各カード面のヘッダ年月でそれぞれ解釈する。
+  ただし日付+曜日がヘッダ年月の暦と合わない場合は、曜日が一致する隣接月として解釈し直す
+  (前半/後半カードは月をまたいで打刻されることがある)。
+- "summary" はカード余白の集計欄(所定/出勤日数/欠勤/有給/休業/定時)を読み取る。無い項目は null。
+- 判読できない日は "unknown" とし、推測で断定しない。
+""" + _COMMON_RULES,
+        "max_tokens": 4000,
     },
 }
 
