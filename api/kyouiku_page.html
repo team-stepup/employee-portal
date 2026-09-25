@@ -52,6 +52,19 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
 .tbl .tj .to { display: block; font-size: 15.5px; color: var(--blue); line-height: 1.4; }
 .tbl .tj .to2 { display: block; font-size: 13px; color: #6b7280; line-height: 1.4; }
 .tbl .tnote { font-size: 13px; color: var(--sub); padding: 12px 14px 16px; }
+.tbl .map { padding: 0 10px 14px; }
+.tbl .mh { color: #fff; font-weight: 700; font-size: 13px; padding: 6px 9px; border-radius: 7px 7px 0 0; margin-top: 10px; }
+.tbl .mh small { font-weight: 400; opacity: .85; font-size: 11.5px; }
+.tbl .mg { display: grid; gap: 1px; background: #cfd5df; border: 1px solid #cfd5df; border-top: 0; border-radius: 0 0 7px 7px; overflow: hidden; }
+.tbl .mc { background: #fff; border: 0; padding: 5px 1px 6px; min-height: 52px; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; font: inherit; color: inherit; }
+.tbl .mc:active { background: #e8eef8; }
+.tbl .mc.hl { background: #fff4d6; }
+.tbl .mn { font-size: 16px; line-height: 1.1; color: var(--navy); }
+.tbl .ml { font-size: 9px; line-height: 1.2; text-align: center; color: #333; max-height: 2.45em; overflow: hidden; word-break: break-all; padding: 0 1px; }
+.tbl .tr.flash { animation: kyflash 1.8s ease-out; }
+@keyframes kyflash { 0%, 55% { background: #ffe08a; } 100% { background: transparent; } }
+.tbl .tj .td { display: block; font-size: 12.5px; color: #6b4e00; background: #fff8e6; border-radius: 6px; padding: 5px 7px; margin-top: 5px; line-height: 1.45; }
+.tbl .sep { font-size: 13px; color: var(--sub); padding: 12px 14px 8px; border-top: 1px solid #eee; }
 .pdfbar .lb { flex: 0 0 auto; height: 46px; border: 1px solid #5b6475; border-radius: 10px; background: #2b2f36; color: #fff; font-size: 14px; font-weight: 700; padding: 0 12px; white-space: nowrap; cursor: pointer; }
 .note { font-size: 12px; color: var(--sub); text-align: center; margin-top: 16px; }
 .err { background: #fdecea; color: var(--red); border-radius: 10px; padding: 14px; font-size: 14px; text-align: center; }
@@ -109,19 +122,19 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
   var T = {
     ja: { hi: function (n) { return n + ' さん　入社時の資料です'; }, lead: '上から順番に見てください。動画は最後まで見るとチェックが付きます。',
           prog: function (d, t) { return d + ' / ' + t + ' 完了'; }, done: '🎉 すべて終わりました。担当者に声をかけてください。',
-          video: '動画', pdf: '資料', table: '対訳表', layout: '📄 明細書の配置', back: '← 一覧へ', read: '✓ 読みました', videoHint: '最後まで見るとチェックが付きます', videoOk: '✓ 完了しました',
+          video: '動画', pdf: '資料', table: '対訳表', layout: '📄 PDFで見る', back: '← 一覧へ', read: '✓ 読みました', videoHint: '最後まで見るとチェックが付きます', videoOk: '✓ 完了しました',
           loading: '読み込み中…', fail: '読み込みに失敗しました。通信状態を確認して、もう一度開いてください。', note: 'このリンクは今日だけ使えます。',
           expired: 'このリンクは期限切れです。担当者に新しいリンクをもらってください。', subDone: '✓ 完了',
           tip: '読み終わったら、下の「✓ 読みました」を押してください。文字が小さいときは ＋ で拡大できます。' },
     pt: { hi: function (n) { return 'Olá, ' + n + '. Materiais de admissão'; }, lead: 'Veja na ordem, de cima para baixo. O vídeo fica marcado quando assistido até o fim.',
           prog: function (d, t) { return d + ' / ' + t + ' concluído'; }, done: '🎉 Tudo concluído! Avise o responsável.',
-          video: 'Vídeo', pdf: 'Documento', table: 'Tabela', layout: '📄 Ver holerite', back: '← Voltar', read: '✓ Li e entendi', videoHint: 'Assista até o fim para marcar como concluído', videoOk: '✓ Concluído',
+          video: 'Vídeo', pdf: 'Documento', table: 'Tabela', layout: '📄 Ver em PDF', back: '← Voltar', read: '✓ Li e entendi', videoHint: 'Assista até o fim para marcar como concluído', videoOk: '✓ Concluído',
           loading: 'Carregando…', fail: 'Falha ao carregar. Verifique a conexão e tente novamente.', note: 'Este link só pode ser usado hoje.',
           expired: 'Este link expirou. Peça um novo link ao responsável.', subDone: '✓ Concluído',
           tip: 'Quando terminar, toque em "✓ Li e entendi" abaixo. Se o texto estiver pequeno, use + para ampliar.' },
     en: { hi: function (n) { return 'Hello, ' + n + '. Onboarding materials'; }, lead: 'Please go through them in order from the top. A video is checked when you watch it to the end.',
           prog: function (d, t) { return d + ' / ' + t + ' done'; }, done: '🎉 All done! Please tell the staff.',
-          video: 'Video', pdf: 'Document', table: 'Table', layout: '📄 Pay slip', back: '← Back', read: '✓ I have read it', videoHint: 'Watch to the end to complete', videoOk: '✓ Completed',
+          video: 'Video', pdf: 'Document', table: 'Table', layout: '📄 View PDF', back: '← Back', read: '✓ I have read it', videoHint: 'Watch to the end to complete', videoOk: '✓ Completed',
           loading: 'Loading…', fail: 'Could not load. Please check your connection and try again.', note: 'This link can be used only today.',
           expired: 'This link has expired. Please ask the staff for a new one.', subDone: '✓ Done',
           tip: 'When you finish, tap "✓ I have read it" below. If the text is small, use + to zoom in.' }
@@ -217,7 +230,7 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
 
   function showVideo(it, l) {
     var t = T[lang], seq = ++openSeq;
-    $('pdfbar').hidden = true; $('pdfbar').innerHTML = ''; $('vbody').onscroll = null;
+    $('pdfbar').hidden = true; $('pdfbar').innerHTML = ''; $('vbody').onscroll = null; $('vbody').onclick = null;
     var body = $('vbody');
     body.innerHTML = '<video controls playsinline preload="metadata"></video><div class="vhint' + (it.done ? ' ok' : '') + '" id="vhint">' + esc(it.done ? t.videoOk : t.videoHint) + '</div>';
     var v = body.querySelector('video');
@@ -266,19 +279,47 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
       var d = await r.json();
       if (seq !== openSeq) return;
       var hl = {}; (d.highlight || []).forEach(function (n) { hl[n] = 1; });
+      var byNo = {};
+      (d.sections || []).forEach(function (sec) { (sec.items || []).forEach(function (x) { if (x.no) byNo[x.no] = x; }); });
       var others = ['pt', 'en'].filter(function (x) { return x !== lang; });
-      var h = '<div class="tbl"><div class="tt">' + esc(tx(d.title)) + '</div><div class="tl">' + esc(tx(d.lead)) + '</div>';
+      var h = '<div class="tbl"><div class="tt">' + esc(tx(d.title)) + '</div>';
+      // ① 全体図 (実際の明細書と同じ並び・番号を押すと下の説明へ)
+      if (d.layout && d.layout.length) {
+        h += '<div class="tl">' + esc(tx(d.layoutLead)) + '</div><div class="map">';
+        d.layout.forEach(function (blk) {
+          h += '<div class="mh" style="background:' + esc(blk.color || '#163352') + '">' + esc(blk.title.ja) + (lang !== 'ja' ? ' <small>/ ' + esc(tx(blk.title)) + '</small>' : '') + '</div>' +
+               '<div class="mg" style="grid-template-columns:repeat(' + (blk.cols || 7) + ',1fr)">';
+          (blk.rows || []).forEach(function (row) {
+            row.forEach(function (n) {
+              var x = byNo[n]; if (!x) { h += '<div class="mc"></div>'; return; }
+              h += '<button class="mc' + (hl[n] ? ' hl' : '') + '" data-no="' + n + '"><span class="mn">' + esc(x.mark) + '</span><span class="ml">' + esc(x.ja) + '</span></button>';
+            });
+          });
+          h += '</div>';
+        });
+        h += '</div><div class="sep">' + esc(tx(d.lead)) + '</div>';
+      } else {
+        h += '<div class="tl">' + esc(tx(d.lead)) + '</div>';
+      }
+      // ② 各項目
       (d.sections || []).forEach(function (sec) {
         h += '<div class="ts">' + esc(sec.title.ja) + (lang !== 'ja' ? ' <small>/ ' + esc(tx(sec.title)) + '</small>' : '') + '</div>';
         (sec.items || []).forEach(function (x) {
           var sub = lang === 'ja'
             ? '<span class="to2">' + esc(x.pt) + '</span><span class="to2">' + esc(x.en) + '</span>'
             : '<span class="to">' + esc(x[lang]) + '</span>' + (others.length ? '<span class="to2">' + esc(x[others[0]]) + '</span>' : '');
-          h += '<div class="tr' + (hl[x.no] ? ' hl' : '') + '"><span class="tn">' + esc(x.mark || '・') + '</span><span class="tj"><b>' + esc(x.ja) + '</b>' + sub + '</span></div>';
+          var desc = x.desc ? '<span class="td">' + esc(x.desc[lang] || x.desc.ja) + '</span>' : '';
+          h += '<div class="tr' + (hl[x.no] ? ' hl' : '') + '"' + (x.no ? ' id="mi-' + x.no + '"' : '') + '><span class="tn">' + esc(x.mark || '・') + '</span><span class="tj"><b>' + esc(x.ja) + '</b>' + sub + desc + '</span></div>';
         });
       });
       h += '<div class="tnote">' + esc(tx(d.note)) + '</div></div>';
       body.innerHTML = h;
+      body.onclick = function (ev) {
+        var c = ev.target.closest('.mc[data-no]'); if (!c) return;
+        var row = document.getElementById('mi-' + c.getAttribute('data-no')); if (!row) return;
+        row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash');
+      };
     } catch (e) {
       if (seq === openSeq) body.innerHTML = '<div class="vmsg">' + esc(t.fail) + '</div>';
     }
@@ -287,7 +328,7 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
   var ZOOMS = [1, 1.5, 2, 3];
   async function showPdf(it, l) {
     var t = T[lang], seq = ++openSeq, body = $('vbody'), bar = $('pdfbar');
-    body.onscroll = null;
+    body.onscroll = null; body.onclick = null;
     body.innerHTML = '<div class="vmsg">' + esc(t.loading) + '</div>';
     bar.hidden = false;
     bar.innerHTML = '<span class="pgno" id="pgno">…</span><button class="zb" id="zout" aria-label="zoom out">－</button><button class="zb" id="zin" aria-label="zoom in">＋</button>' +
@@ -371,7 +412,7 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
     openSeq++;
     var v = $('vbody').querySelector('video'); if (v) { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} }
     $('viewer').hidden = true; document.body.style.overflow = ''; $('vbody').innerHTML = ''; cur = null;
-    $('pdfbar').hidden = true; $('pdfbar').innerHTML = ''; $('vbody').onscroll = null;
+    $('pdfbar').hidden = true; $('pdfbar').innerHTML = ''; $('vbody').onscroll = null; $('vbody').onclick = null;
     render();
   }
   function closeViewerNav() { if (history.state && history.state.v) history.back(); else closeViewer(); }

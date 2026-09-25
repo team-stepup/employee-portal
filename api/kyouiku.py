@@ -190,14 +190,14 @@ def _cur_item(key: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _file_bytes(rel: str) -> Optional[bytes]:
+def _file_bytes(rel: str, max_age: int = FILE_CACHE_SEC) -> Optional[bytes]:
     """入社資料フォルダの相対パス → bytes (インスタンスの /tmp に30分キャッシュ)"""
     if ".." in rel or rel.startswith("/"):
         return None
     os.makedirs(CACHE_DIR, exist_ok=True)
     cp = os.path.join(CACHE_DIR, hashlib.sha1(rel.encode("utf-8")).hexdigest() + ".bin")
     try:
-        if os.path.exists(cp) and time.time() - os.path.getmtime(cp) < FILE_CACHE_SEC:
+        if os.path.exists(cp) and time.time() - os.path.getmtime(cp) < max_age:
             with open(cp, "rb") as fh:
                 return fh.read()
     except Exception:
@@ -452,7 +452,7 @@ def handle_file(req: func.HttpRequest) -> func.HttpResponse:
     if not it:
         return func.HttpResponse("not found", status_code=404)
     if req.params.get("v") == "table" and it.get("table"):
-        tb = _file_bytes(it["table"])
+        tb = _file_bytes(it["table"], max_age=300)
         if not tb:
             return func.HttpResponse("file error", status_code=502)
         return func.HttpResponse(body=tb, status_code=200, mimetype="application/json", charset="utf-8",
