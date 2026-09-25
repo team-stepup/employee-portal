@@ -619,7 +619,8 @@ def create_handover(sn: str, name: str, contract_path: str, source: str, request
     now = _now()
     rec = {"token": secrets.token_urlsafe(24), "type": "handover", "syainNo": sn, "name": name or emp_name,
            "lang": lang, "contractUrl": contract_url, "source": source, "requester": requester,
-           "createdAt": _iso(now), "expiresAt": _iso(now + _dt.timedelta(days=HO_DAYS)), "opened": {}}
+           "createdAt": _iso(now), "expiresAt": _iso(now + _dt.timedelta(days=HO_DAYS)), "opened": {}, "access": [],
+           "sent": ([{"at": _iso(now), "channel": "esign_page", "to": "", "by": "", "byName": ""}] if source == "esign" else [])}
     try:
         fa.sp_create_folder_if_not_exists(HO_FOLDER)
     except Exception:
@@ -726,9 +727,16 @@ def handle_handover_doc(req: func.HttpRequest) -> func.HttpResponse:
     if not data:
         return func.HttpResponse("file error", status_code=502)
     try:
+        now_s = _iso(_now())
         if d not in (rec.get("opened") or {}):
-            rec.setdefault("opened", {})[d] = _iso(_now())
-            _ho_save(rec)
+            rec.setdefault("opened", {})[d] = now_s
+        ua = str(req.headers.get("User-Agent") or "")
+        dev = ("iPhone" if "iPhone" in ua else "iPad" if "iPad" in ua else "Android" if "Android" in ua
+               else "Windows" if "Windows" in ua else "Mac" if "Macintosh" in ua else "その他")
+        acc = rec.setdefault("access", [])
+        acc.append({"d": d, "at": now_s, "dl": req.params.get("dl") == "1", "dev": dev})
+        rec["access"] = acc[-100:]
+        _ho_save(rec)
     except Exception:
         logging.exception("handover opened save failed")
     disp = "attachment" if req.params.get("dl") == "1" else "inline"
@@ -758,6 +766,8 @@ def _ho_public(rec: Dict[str, Any]) -> Dict[str, Any]:
     return {"token": rec["token"], "url": _ho_page_url(rec["token"]), "createdAt": rec.get("createdAt"),
             "expiresAt": rec.get("expiresAt"), "expired": _is_expired(rec), "lang": rec.get("lang"), "name": rec.get("name"),
             "source": rec.get("source"), "hasContract": bool(rec.get("contractUrl")), "opened": rec.get("opened") or {},
+            "requester": rec.get("requester"), "sent": rec.get("sent") or [], "access": rec.get("access") or [],
+            "recordSavedAt": rec.get("recordSavedAt"), "recordPath": rec.get("recordPath"), "recordHash": rec.get("recordHash"),
             "docs": [{"d": x["d"], "title": x["title"]["ja"]} for x in _ho_docs(rec)]}
 
 
@@ -785,3 +795,50 @@ def handle_handover_status(req: func.HttpRequest) -> func.HttpResponse:
             out.append(_ho_public(rec))
     out.sort(key=lambda x: x.get("createdAt") or "", reverse=True)
     return fa._json_response({"ok": True, "items": out[:5]})
+
+
+HO_CHANNELS = {"whatsapp", "line", "share", "mail", "copy", "qr", "esign_page", "mail_auto", "mail_self"}
+
+
+def ho_log(token: str, channel: str, to: str = "", by: str = "", by_name: str = "") -> Optional[Dict[str, Any]]:
+    """書類の送付記録を追加 (担当者のボタン / 控えメール)。"""
+    if channel not in HO_CHANNELS:
+        return None
+    _ho_cache.pop(token, None)
+    rec = _ho_load(token)
+    if not rec:
+        return None
+    lst = rec.setdefault("sent", [])
+    lst.append({"at": _iso(_now()), "channel": channel, "to": str(to or "")[:120], "by": str(by or "")[:120], "byName": str(by_name or "")[:60]})
+    rec["sent"] = lst[-50:]
+    _ho_save(rec)
+    return rec
+
+
+def handle_handover_sent(req: func.HttpRequest, requester_email: str) -> func.HttpResponse:
+    """担当者が送るボタンを押した記録 (staff)。body: token, channel, to?, byName?"""
+    fa = _fa()
+    b = _body(req)
+    ch = str(b.get("channel") or "")
+    if ch not in {"whatsapp", "line", "share", "mail", "copy", "qr"}:
+        return fa._json_response({"error": "bad_channel"}, 400)
+    rec = ho_log(str(b.get("token") or ""), ch, str(b.get("to") or ""), requester_email, str(b.get("byName") or ""))
+    if not rec:
+        return fa._json_response({"error": "not_found"}, 404)
+    return fa._json_response({"ok": True, "handover": _ho_public(rec)})
+
+
+def handle_handover_recorded(req: func.HttpRequest) -> func.HttpResponse:
+    """書類交付記録PDFを社員フォルダへ保存した事実 (staff)。body: token, path, hash"""
+    fa = _fa()
+    b = _body(req)
+    token = str(b.get("token") or "")
+    _ho_cache.pop(token, None)
+    rec = _ho_load(token)
+    if not rec:
+        return fa._json_response({"error": "not_found"}, 404)
+    rec["recordSavedAt"] = _iso(_now())
+    rec["recordPath"] = str(b.get("path") or "")[:400]
+    rec["recordHash"] = str(b.get("hash") or "")[:80]
+    _ho_save(rec)
+    return fa._json_response({"ok": True, "handover": _ho_public(rec)})

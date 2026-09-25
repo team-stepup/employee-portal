@@ -487,6 +487,12 @@ def handle_deliver(req: func.HttpRequest) -> func.HttpResponse:
     if not _send_copy_mail(rec, addr, pdf):
         return fa._json_response({"error": "send_failed"}, 500)
     _record_delivery(rec, addr, "mail")
+    if rec.get("handoverToken"):   # 書類交付記録: 本人が完了画面で入力したメールへ受け取りリンクつきの控え
+        try:
+            import kyouiku as _ky
+            _ky.ho_log(rec["handoverToken"], "mail_self", addr, "本人（署名完了画面で入力）")
+        except Exception:
+            logging.exception("handover log mail_self failed")
     try:
         _save_rec(rec)
     except Exception:
@@ -635,6 +641,12 @@ def handle_submit(req: func.HttpRequest) -> func.HttpResponse:
         if _send_copy_mail(rec, rec["empEmail"], pdf):
             _record_delivery(rec, rec["empEmail"], "mail")
             delivered = rec["empEmail"]
+            if rec.get("handoverToken"):   # 書類交付記録: 控えメールに受け取りリンクを入れて送った
+                try:
+                    import kyouiku as _ky
+                    _ky.ho_log(rec["handoverToken"], "mail_auto", rec["empEmail"], "自動（控えメール）")
+                except Exception:
+                    logging.exception("handover log mail_auto failed")
     try:
         _save_rec(rec)
     except Exception:
