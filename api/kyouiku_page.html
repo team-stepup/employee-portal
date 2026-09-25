@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="format-detection" content="telephone=no">
+<meta name="theme-color" content="#0d2137">
+<title>入社時教育 / Treinamento</title>
+<style>
+:root { --navy:#0d2137; --navy2:#163352; --gold:#c9922a; --gold2:#f0b84a; --bg:#f4f2ed; --card:#fff; --text:#1a1a2e; --sub:#5b6475; --line:#e3e0d8; --green:#2e7d32; --red:#c0392b; --blue:#1a5fa8; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", Meiryo, sans-serif; font-size: 16px; line-height: 1.55; -webkit-text-size-adjust: 100%; overflow-x: hidden; }
+button { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+header { position: sticky; top: 0; z-index: 10; background: var(--navy); color: #fff; padding: 10px 16px; padding-top: calc(10px + env(safe-area-inset-top)); display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+header .logo { font-family: Georgia, "Times New Roman", serif; font-size: 21px; font-weight: 700; white-space: nowrap; }
+.langs { display: flex; gap: 4px; }
+.langs button { border: 1px solid rgba(255,255,255,.35); background: transparent; color: #fff; border-radius: 999px; padding: 4px 10px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.langs button.on { background: var(--gold2); border-color: var(--gold2); color: var(--navy); font-weight: 700; }
+.hero { background: linear-gradient(135deg, var(--navy2), var(--navy)); color: #fff; padding: 16px 16px 18px; }
+.hero h1 { margin: 0; font-size: 19px; line-height: 1.4; overflow-wrap: anywhere; }
+.hero p { margin: 6px 0 0; font-size: 14px; color: #d8dfeb; }
+.pbar { margin-top: 12px; background: rgba(255,255,255,.18); border-radius: 99px; height: 10px; overflow: hidden; }
+.pbar i { display: block; height: 100%; width: 0; background: var(--gold2); transition: width .3s; }
+.ptxt { margin-top: 6px; font-size: 13px; color: #fff; font-weight: 700; }
+main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
+.done-banner { background: #e8f5e9; border: 2px solid var(--green); color: var(--green); border-radius: 12px; padding: 14px; font-weight: 700; text-align: center; margin-bottom: 12px; font-size: 15px; }
+.item { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 10px; cursor: pointer; }
+.item:active { background: #f7f4ec; }
+.item.done { border-color: #a5d6a7; background: #f6fbf6; }
+.num { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; background: #efe7d6; color: var(--navy); font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.item.done .num { background: var(--green); color: #fff; }
+.tx { flex: 1 1 auto; min-width: 0; }
+.tx .ttl { display: block; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.tx .sub { display: block; font-size: 12px; color: var(--sub); }
+.badge { flex: 0 0 auto; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+.badge.video { background: #fde8e6; color: var(--red); }
+.badge.pdf { background: #e5eef9; color: var(--blue); }
+.note { font-size: 12px; color: var(--sub); text-align: center; margin-top: 16px; }
+.err { background: #fdecea; color: var(--red); border-radius: 10px; padding: 14px; font-size: 14px; text-align: center; }
+#viewer { position: fixed; inset: 0; z-index: 50; background: #2b2f36; display: flex; flex-direction: column; }
+.vbar { display: flex; align-items: center; gap: 8px; background: var(--navy); color: #fff; padding: 8px 10px; padding-top: calc(8px + env(safe-area-inset-top)); }
+.vbar button { flex: 0 0 auto; background: rgba(255,255,255,.12); border: 0; color: #fff; border-radius: 8px; padding: 8px 12px; font-size: 14px; cursor: pointer; white-space: nowrap; }
+.vtitle { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vlangs { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 10px; background: #1f2329; }
+.vlangs button { border: 1px solid #5b6475; background: transparent; color: #dfe3ea; border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
+.vlangs button.on { background: var(--gold2); border-color: var(--gold2); color: var(--navy); font-weight: 700; }
+.vbody { flex: 1 1 auto; overflow: auto; -webkit-overflow-scrolling: touch; padding: 10px 0 24px; }
+.vmsg { color: #e8ebf0; text-align: center; padding: 40px 20px; font-size: 14px; }
+.vhint { color: #e8ebf0; text-align: center; font-size: 13px; padding: 10px 16px; }
+.vhint.ok { color: #a5d6a7; font-weight: 700; }
+.pg { background: #fff; margin: 0 auto 10px; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+.pg canvas { display: block; width: 100%; height: auto; }
+.vbody video { display: block; width: 100%; max-height: calc(100dvh - 170px); background: #000; }
+.readbtn { display: block; width: calc(100% - 32px); max-width: 520px; margin: 16px auto 0; padding: 15px; font-size: 17px; font-weight: 700; color: #fff; background: var(--green); border: 0; border-radius: 12px; cursor: pointer; }
+.readbtn:disabled { opacity: .7; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Step Up</div>
+  <div class="langs" id="langs"><button data-l="ja">日本語</button><button data-l="pt">Português</button><button data-l="en">English</button></div>
+</header>
+<div class="hero">
+  <h1 id="heroT"></h1>
+  <p id="heroS"></p>
+  <div class="pbar"><i id="pbar"></i></div>
+  <div class="ptxt" id="ptxt"></div>
+</div>
+<main>
+  <div id="banner" class="done-banner" hidden></div>
+  <div id="list"><div class="vmsg" style="color:#5b6475">…</div></div>
+  <div class="note" id="note"></div>
+</main>
+<div id="viewer" hidden>
+  <div class="vbar"><button id="vback"></button><div class="vtitle" id="vtitle"></div></div>
+  <div class="vlangs" id="vlangs" hidden></div>
+  <div class="vbody" id="vbody"></div>
+</div>
+<script>
+(function () {
+  'use strict';
+  var TOKEN = '__TOKEN__', API = '__API__';
+  var T = {
+    ja: { hi: function (n) { return n + ' さん　入社時の資料です'; }, lead: '上から順番に見てください。動画は最後まで見るとチェックが付きます。',
+          prog: function (d, t) { return d + ' / ' + t + ' 完了'; }, done: '🎉 すべて終わりました。担当者に声をかけてください。',
+          video: '動画', pdf: '資料', back: '← 一覧へ', read: '✓ 読みました', videoHint: '最後まで見るとチェックが付きます', videoOk: '✓ 完了しました',
+          loading: '読み込み中…', fail: '読み込みに失敗しました。通信状態を確認して、もう一度開いてください。', note: 'このリンクは今日だけ使えます。',
+          expired: 'このリンクは期限切れです。担当者に新しいリンクをもらってください。', subDone: '✓ 完了' },
+    pt: { hi: function (n) { return 'Olá, ' + n + '. Materiais de admissão'; }, lead: 'Veja na ordem, de cima para baixo. O vídeo fica marcado quando assistido até o fim.',
+          prog: function (d, t) { return d + ' / ' + t + ' concluído'; }, done: '🎉 Tudo concluído! Avise o responsável.',
+          video: 'Vídeo', pdf: 'Documento', back: '← Voltar', read: '✓ Li e entendi', videoHint: 'Assista até o fim para marcar como concluído', videoOk: '✓ Concluído',
+          loading: 'Carregando…', fail: 'Falha ao carregar. Verifique a conexão e tente novamente.', note: 'Este link só pode ser usado hoje.',
+          expired: 'Este link expirou. Peça um novo link ao responsável.', subDone: '✓ Concluído' },
+    en: { hi: function (n) { return 'Hello, ' + n + '. Onboarding materials'; }, lead: 'Please go through them in order from the top. A video is checked when you watch it to the end.',
+          prog: function (d, t) { return d + ' / ' + t + ' done'; }, done: '🎉 All done! Please tell the staff.',
+          video: 'Video', pdf: 'Document', back: '← Back', read: '✓ I have read it', videoHint: 'Watch to the end to complete', videoOk: '✓ Completed',
+          loading: 'Loading…', fail: 'Could not load. Please check your connection and try again.', note: 'This link can be used only today.',
+          expired: 'This link has expired. Please ask the staff for a new one.', subDone: '✓ Done' }
+  };
+  var LANG_NAME = { ja: '日本語', pt: 'Português', en: 'English' };
+  var D = null, lang = 'ja', cur = null, curLang = null, openSeq = 0;
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function tx(o) { return o ? (o[lang] || o.ja || '') : ''; }
+  function fileUrl(k, l) { return API + '/kyouiku/file?t=' + encodeURIComponent(TOKEN) + '&k=' + encodeURIComponent(k) + '&l=' + encodeURIComponent(l); }
+
+  async function load() {
+    try {
+      var r = await fetch(API + '/kyouiku/items?t=' + encodeURIComponent(TOKEN), { cache: 'no-store' });
+      if (r.status === 410) { $('list').innerHTML = '<div class="err">' + esc(T[lang].expired) + '</div>'; return; }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      D = await r.json();
+      if (!cur) { try { lang = localStorage.getItem('ky_lang_' + TOKEN) || D.lang || 'ja'; } catch (e) { lang = D.lang || 'ja'; } }
+      if (!T[lang]) lang = 'ja';
+      render();
+    } catch (e) {
+      $('list').innerHTML = '<div class="err">' + esc(T[lang].fail) + '</div>';
+    }
+  }
+
+  function render() {
+    var t = T[lang];
+    document.documentElement.lang = lang === 'pt' ? 'pt-BR' : lang;
+    Array.prototype.forEach.call($('langs').children, function (b) { b.classList.toggle('on', b.getAttribute('data-l') === lang); });
+    $('heroT').textContent = t.hi(D.name || '');
+    $('heroS').textContent = t.lead;
+    var total = D.items.length, done = D.items.filter(function (i) { return i.done; }).length;
+    $('pbar').style.width = (total ? Math.round(done * 100 / total) : 0) + '%';
+    $('ptxt').textContent = t.prog(done, total);
+    $('banner').hidden = !(total && done === total);
+    $('banner').textContent = t.done;
+    $('note').textContent = t.note;
+    $('list').innerHTML = D.items.map(function (it, i) {
+      var f = it.files[lang] || it.files.ja || it.files.pt || it.files.en || { kind: 'pdf' };
+      var other = (f.lang && f.lang !== 'all' && f.lang !== lang) ? LANG_NAME[f.lang] : '';
+      return '<button class="item' + (it.done ? ' done' : '') + '" data-i="' + i + '">' +
+        '<span class="num">' + (it.done ? '✓' : (i + 1)) + '</span>' +
+        '<span class="tx"><span class="ttl">' + esc(it.icon) + ' ' + esc(tx(it.title)) + '</span>' +
+        '<span class="sub">' + (it.done ? esc(t.subDone) : '') + (other ? (it.done ? '・' : '') + esc(other) : '') + '</span></span>' +
+        '<span class="badge ' + f.kind + '">' + esc(t[f.kind]) + '</span></button>';
+    }).join('');
+  }
+
+  $('langs').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button[data-l]'); if (!b || !D) return;
+    lang = b.getAttribute('data-l');
+    try { localStorage.setItem('ky_lang_' + TOKEN, lang); } catch (e) {}
+    render();
+  });
+  $('list').addEventListener('click', function (ev) {
+    var b = ev.target.closest('.item'); if (!b || !D) return;
+    openItem(D.items[+b.getAttribute('data-i')]);
+  });
+
+  function post(k, ev) {
+    return fetch(API + '/kyouiku/progress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true,
+      body: JSON.stringify({ t: TOKEN, k: k, ev: ev, lang: curLang || lang }) }).catch(function () {});
+  }
+  async function markDone(it) {
+    if (it.done) return;
+    it.done = true;
+    render();
+    await post(it.key, 'done');
+  }
+
+  function openItem(it, wantLang) {
+    var t = T[lang];
+    var f = it.files[wantLang || lang] || it.files.ja || it.files.pt || it.files.en;
+    if (!f) return;
+    var l = f.lang === 'all' ? lang : f.lang;
+    if ($('viewer').hidden) history.pushState({ v: 1 }, '');
+    cur = it; curLang = l;
+    $('viewer').hidden = false; document.body.style.overflow = 'hidden';
+    $('vback').textContent = t.back;
+    $('vtitle').textContent = tx(it.title);
+    var langs = [];
+    ['ja', 'pt', 'en'].forEach(function (x) { var g = it.files[x]; if (g && g.lang === x) langs.push(x); });
+    if (langs.length > 1) {
+      $('vlangs').hidden = false;
+      $('vlangs').innerHTML = langs.map(function (x) { return '<button data-l="' + x + '" class="' + (x === l ? 'on' : '') + '">' + LANG_NAME[x] + '</button>'; }).join('');
+    } else { $('vlangs').hidden = true; $('vlangs').innerHTML = ''; }
+    post(it.key, 'open');
+    if (f.kind === 'video') showVideo(it, l); else showPdf(it, l);
+  }
+  $('vlangs').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button[data-l]'); if (b && cur) openItem(cur, b.getAttribute('data-l'));
+  });
+
+  function showVideo(it, l) {
+    var t = T[lang], seq = ++openSeq;
+    var body = $('vbody');
+    body.innerHTML = '<video controls playsinline preload="metadata"></video><div class="vhint' + (it.done ? ' ok' : '') + '" id="vhint">' + esc(it.done ? t.videoOk : t.videoHint) + '</div>';
+    var v = body.querySelector('video');
+    v.src = fileUrl(it.key, l);
+    function check() {
+      if (seq !== openSeq || it.done) return;
+      if (v.ended || (v.duration && v.currentTime >= v.duration * 0.95)) {
+        markDone(it);
+        var h = $('vhint'); if (h) { h.textContent = t.videoOk; h.classList.add('ok'); }
+      }
+    }
+    v.addEventListener('timeupdate', check);
+    v.addEventListener('ended', check);
+    v.addEventListener('error', function () { if (seq === openSeq) $('vhint').textContent = t.fail; });
+  }
+
+  var PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/';
+  var pdfjsReady = null;
+  function loadPdfjs() {
+    if (pdfjsReady) return pdfjsReady;
+    pdfjsReady = new Promise(function (res, rej) {
+      var s = document.createElement('script');
+      s.src = PDFJS + 'build/pdf.min.js';
+      s.onload = function () { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'build/pdf.worker.min.js'; res(window.pdfjsLib); };
+      s.onerror = function () { pdfjsReady = null; rej(new Error('pdfjs')); };
+      document.head.appendChild(s);
+    });
+    return pdfjsReady;
+  }
+  async function showPdf(it, l) {
+    var t = T[lang], seq = ++openSeq, body = $('vbody');
+    body.innerHTML = '<div class="vmsg">' + esc(t.loading) + '</div>';
+    try {
+      var libP = loadPdfjs();
+      var r = await fetch(fileUrl(it.key, l));
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var data = new Uint8Array(await r.arrayBuffer());
+      var lib = await libP;
+      var doc = await lib.getDocument({ data: data, cMapUrl: PDFJS + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS + 'standard_fonts/' }).promise;
+      if (seq !== openSeq) return;
+      body.innerHTML = '';
+      var W = Math.min(body.clientWidth - 16, 900), dpr = Math.min(window.devicePixelRatio || 1, 2), holders = [];
+      for (var i = 1; i <= doc.numPages; i++) {
+        var page = await doc.getPage(i);
+        if (seq !== openSeq) return;
+        var vp = page.getViewport({ scale: 1 });
+        var div = document.createElement('div');
+        div.className = 'pg'; div.style.width = W + 'px'; div.style.height = Math.round(W * vp.height / vp.width) + 'px';
+        div._page = page; div._vp = vp;
+        body.appendChild(div); holders.push(div);
+      }
+      var btn = document.createElement('button');
+      btn.className = 'readbtn'; btn.textContent = it.done ? t.subDone : t.read; btn.disabled = !!it.done;
+      btn.addEventListener('click', async function () { btn.disabled = true; await markDone(it); closeViewerNav(); });
+      body.appendChild(btn);
+      function draw(d) {
+        if (d._done) return; d._done = true;
+        var v = d._page.getViewport({ scale: W * dpr / d._vp.width });
+        var c = document.createElement('canvas'); c.width = Math.floor(v.width); c.height = Math.floor(v.height);
+        d.appendChild(c);
+        d._page.render({ canvasContext: c.getContext('2d'), viewport: v }).promise.then(function () { d.style.height = 'auto'; });
+      }
+      if ('IntersectionObserver' in window) {
+        var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { draw(e.target); io.unobserve(e.target); } }); }, { root: body, rootMargin: '600px 0px' });
+        holders.forEach(function (d) { io.observe(d); });
+      } else holders.forEach(draw);
+    } catch (e) {
+      if (seq === openSeq) body.innerHTML = '<div class="vmsg">' + esc(t.fail) + '</div>';
+    }
+  }
+
+  function closeViewer() {
+    openSeq++;
+    var v = $('vbody').querySelector('video'); if (v) { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} }
+    $('viewer').hidden = true; document.body.style.overflow = ''; $('vbody').innerHTML = ''; cur = null;
+    render();
+  }
+  function closeViewerNav() { if (history.state && history.state.v) history.back(); else closeViewer(); }
+  $('vback').addEventListener('click', closeViewerNav);
+  window.addEventListener('popstate', function () { if (!$('viewer').hidden) closeViewer(); });
+
+  load();
+})();
+</script>
+</body>
+</html>
