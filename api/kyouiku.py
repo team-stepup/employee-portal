@@ -625,8 +625,7 @@ def create_handover(sn: str, name: str, contract_path: str, source: str, request
     except Exception:
         logging.exception("handover folder ensure failed")
     _ho_save(rec)
-    return {"token": rec["token"], "url": _ho_page_url(rec["token"]), "expiresAt": rec["expiresAt"], "lang": lang,
-            "docs": [x["title"]["ja"] for x in _ho_docs(rec)]}
+    return _ho_public(rec)
 
 
 def handle_handover_create(req: func.HttpRequest, requester_email: str) -> func.HttpResponse:
@@ -636,8 +635,15 @@ def handle_handover_create(req: func.HttpRequest, requester_email: str) -> func.
     sn = _sn_str(b.get("syainNo"))
     if not re.match(r"^\d{1,10}$", sn or ""):
         return fa._json_response({"error": "invalid_syainNo"}, 400)
+    contract_path = str(b.get("contractPath") or "")
+    src = "inapp"
+    if b.get("fromToken"):   # 社員画面からの発行し直し: 前回の契約書控えを引き継ぐ
+        old = _ho_load(str(b.get("fromToken")))
+        if old and old.get("syainNo") == sn and old.get("contractUrl"):
+            contract_path = old["contractUrl"].replace(f"https://{fa.SP_HOST}", "", 1)
+        src = "reissue"
     try:
-        h = create_handover(sn, str(b.get("name") or "")[:60], str(b.get("contractPath") or ""), "inapp", requester_email)
+        h = create_handover(sn, str(b.get("name") or "")[:60], contract_path, src, requester_email)
     except Exception as e:
         logging.exception("handover create failed")
         return fa._json_response({"error": "save_failed", "detail": str(e)[:200]}, 500)
@@ -746,3 +752,36 @@ def handle_recorded(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         return fa._json_response({"error": "save_failed", "detail": str(e)[:200]}, 500)
     return fa._json_response({"ok": True, "request": _public(rec)})
+
+
+def _ho_public(rec: Dict[str, Any]) -> Dict[str, Any]:
+    return {"token": rec["token"], "url": _ho_page_url(rec["token"]), "createdAt": rec.get("createdAt"),
+            "expiresAt": rec.get("expiresAt"), "expired": _is_expired(rec), "lang": rec.get("lang"), "name": rec.get("name"),
+            "source": rec.get("source"), "hasContract": bool(rec.get("contractUrl")), "opened": rec.get("opened") or {},
+            "docs": [{"d": x["d"], "title": x["title"]["ja"]} for x in _ho_docs(rec)]}
+
+
+def handle_handover_status(req: func.HttpRequest) -> func.HttpResponse:
+    """社員番号の受け取りページ一覧 (staff・新しい順・最大5件)。社員画面「📖 お渡しする書類」用"""
+    fa = _fa()
+    sn = _sn_str(req.params.get("syainNo"))
+    if not re.match(r"^\d{1,10}$", sn or ""):
+        return fa._json_response({"error": "invalid_syainNo"}, 400)
+    try:
+        url = (f"{fa.SITE_TEAMSTEPUP}/_api/web/GetFolderByServerRelativeUrl('{quote(HO_FOLDER)}')"
+               f"/Files?$select=Name,TimeLastModified&$filter=startswith(Name,'{sn}__')&$top=50")
+        r = requests.get(url, headers=fa._sp_headers(), timeout=30)
+        files = [] if r.status_code == 404 else (r.raise_for_status() or r.json().get("value", []) or [])
+    except Exception as e:
+        return fa._json_response({"error": "list_failed", "detail": str(e)[:200]}, 500)
+    out = []
+    for f in files:
+        m = re.match(r"^\d+__([A-Za-z0-9_-]+)\.json$", f.get("Name", ""))
+        if not m:
+            continue
+        _ho_cache.pop(m.group(1), None)
+        rec = _ho_load(m.group(1))
+        if rec:
+            out.append(_ho_public(rec))
+    out.sort(key=lambda x: x.get("createdAt") or "", reverse=True)
+    return fa._json_response({"ok": True, "items": out[:5]})

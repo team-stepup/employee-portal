@@ -650,7 +650,10 @@ def handle_submit(req: func.HttpRequest) -> func.HttpResponse:
             f'<div style="font-size:16px;font-weight:700">✅ 電子署名が完了しました</div>'
             f'<p><b>{rec["name"]}</b>（No.{rec["syainNo"]}）— {rec.get("docLabel") or ""}<br>'
             f'署名日時: {_jst(rec["signedAt"])}</p>'
-            f'<p>保存先: <a href="{folder_web}">{folder}</a><br>ファイル: {file_name}{agg_info}</p>{dlv_line}</div>'
+            f'<p>保存先: <a href="{folder_web}">{folder}</a><br>ファイル: {file_name}{agg_info}</p>{dlv_line}'
+            + (f'<p>📖 本人へお渡しする書類（契約書控え・就業規則・給料明細の見方／30日間）: <a href="{rec.get("handoverUrl")}">{rec.get("handoverUrl")}</a><br>'
+               f'<span style="font-size:12px;color:#666">このリンクを本人へ転送できます。アプリの社員画面「📖 お渡しする書類」からも送れます。</span></p>'
+               if rec.get("handoverUrl") else '') + '</div>'
         )
         if rec.get("requester"):
             fa._send_notification_mail(f"✅ 電子署名完了: {rec['name']}（{rec.get('docLabel') or ''}）", html,
