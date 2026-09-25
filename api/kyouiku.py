@@ -509,3 +509,220 @@ def handle_progress(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         return fa._json_response({"error": "save_failed", "detail": str(e)[:200]}, 500)
     return fa._json_response({"ok": True, "progress": _progress(rec)})
+
+
+# ===================== 書類の受け取り (handover) 2026-09-25 =====================
+# 新規雇用契約書に署名したとき、本人へ 契約書の控え・就業規則(本人の言語+日本語の正本)・給料明細の見方 を渡す。
+# リモート署名 = esign.handle_submit が自動作成 → 署名完了画面/控えメールにリンク。
+# 対面署名    = yukyu-app が保存後に kyouiku/handover を呼び、QR を本人のスマホで読んでもらう。
+HO_FOLDER = KY_FOLDER + "/交付"
+HO_DAYS = 30
+LANG_LABEL = {"ja": {"ja": "日本語", "pt": "japonês", "en": "Japanese"},
+              "pt": {"ja": "ポルトガル語", "pt": "português", "en": "Portuguese"},
+              "en": {"ja": "英語", "pt": "inglês", "en": "English"}}
+_ho_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+
+
+def _esc(s: Any) -> str:
+    return (str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def _emp_lang(sn: str) -> Tuple[str, str]:
+    """社員番号 → (言語, 氏名)。国籍が分からなければ 'all'。"""
+    fa = _fa()
+    try:
+        it = fa.find_active_employee_by_shain(int(sn))
+    except Exception:
+        logging.exception("handover emp lookup failed")
+        it = None
+    if not it:
+        return "all", ""
+    nat = str(it.get(fa.F_KOKUSEKI) or "").strip()
+    return (_lang_from_nationality(nat) if nat else "all"), str(it.get(fa.F_SHAIN_NAME) or "")
+
+
+def _ho_docs(rec: Dict[str, Any]) -> List[Dict[str, Any]]:
+    cfg = _curriculum().get("handover", {})
+    lang = rec.get("lang") or "all"
+    docs = []
+    if rec.get("contractUrl"):
+        docs.append({"d": "contract", "icon": "📄",
+                     "title": {"ja": "雇用契約書の控え（署名済み）", "pt": "Cópia do contrato assinado", "en": "Copy of your signed contract"}})
+    rt = cfg.get("rules", {}).get("title", {"ja": "就業規則", "pt": "Regulamento Interno", "en": "Work Rules"})
+    rl = [] if lang == "ja" else (["pt", "en"] if lang == "all" else [lang])
+    for l in rl:
+        if cfg.get("rules", {}).get("files", {}).get(l):
+            docs.append({"d": "rules_" + l, "icon": "📖",
+                         "title": {"ja": "就業規則（" + LANG_LABEL[l]["ja"] + "版）",
+                                   "pt": rt.get("pt", "") + " (" + LANG_LABEL[l]["pt"] + ")",
+                                   "en": rt.get("en", "") + " (" + LANG_LABEL[l]["en"] + ")"}})
+    docs.append({"d": "rules_ja", "icon": "📖",
+                 "title": {"ja": "就業規則（日本語・正本）", "pt": rt.get("pt", "") + " (japonês — original)",
+                           "en": rt.get("en", "") + " (Japanese — original)"}})
+    if cfg.get("meisai", {}).get("file"):
+        mt = cfg["meisai"].get("title", {})
+        docs.append({"d": "meisai", "icon": "💰",
+                     "title": {"ja": mt.get("ja", "給料明細の見方") + "（日本語・ポルトガル語・英語）",
+                               "pt": mt.get("pt", "Como ler o holerite") + " (3 idiomas)",
+                               "en": mt.get("en", "How to read your pay slip") + " (3 languages)"}})
+    return docs
+
+
+def _ho_page_url(token: str) -> str:
+    return f"https://{_func_host()}/api/kyouiku/hpage?t={token}"
+
+
+def _ho_save(rec: Dict[str, Any]) -> None:
+    _fa().sp_upload_file(HO_FOLDER, f"{rec.get('syainNo') or '0'}__{rec['token']}.json",
+                         json.dumps(rec, ensure_ascii=False).encode("utf-8"))
+    _ho_cache[rec["token"]] = (time.time(), rec)
+
+
+def _ho_load(token: str) -> Optional[Dict[str, Any]]:
+    if not TOKEN_RE.match(token or ""):
+        return None
+    c = _ho_cache.get(token)
+    if c and time.time() - c[0] < REC_CACHE_SEC:
+        return c[1]
+    fa = _fa()
+    try:
+        url = (f"{fa.SITE_TEAMSTEPUP}/_api/web/GetFolderByServerRelativeUrl('{quote(HO_FOLDER)}')"
+               f"/Files?$select=Name&$filter=substringof('__{token}.json',Name)&$top=5")
+        r = requests.get(url, headers=fa._sp_headers(), timeout=30)
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        for f in r.json().get("value", []) or []:
+            if f["Name"].endswith(f"__{token}.json"):
+                raw = fa._sp_download_bytes(_sp_abs(f"{HO_FOLDER}/{f['Name']}"))
+                if raw:
+                    rec = json.loads(raw.decode("utf-8"))
+                    _ho_cache[token] = (time.time(), rec)
+                    return rec
+    except Exception:
+        logging.exception("handover load failed")
+    return None
+
+
+def create_handover(sn: str, name: str, contract_path: str, source: str, requester: str) -> Dict[str, Any]:
+    fa = _fa()
+    sn = _sn_str(sn)
+    lang, emp_name = _emp_lang(sn) if sn else ("all", "")
+    contract_url = ""
+    if contract_path:
+        folder = contract_path.rsplit("/", 1)[0]
+        if fa._validate_shainfile_path(folder) and contract_path.lower().endswith(".pdf"):
+            contract_url = _sp_abs(contract_path)
+    now = _now()
+    rec = {"token": secrets.token_urlsafe(24), "type": "handover", "syainNo": sn, "name": name or emp_name,
+           "lang": lang, "contractUrl": contract_url, "source": source, "requester": requester,
+           "createdAt": _iso(now), "expiresAt": _iso(now + _dt.timedelta(days=HO_DAYS)), "opened": {}}
+    try:
+        fa.sp_create_folder_if_not_exists(HO_FOLDER)
+    except Exception:
+        logging.exception("handover folder ensure failed")
+    _ho_save(rec)
+    return {"token": rec["token"], "url": _ho_page_url(rec["token"]), "expiresAt": rec["expiresAt"], "lang": lang,
+            "docs": [x["title"]["ja"] for x in _ho_docs(rec)]}
+
+
+def handle_handover_create(req: func.HttpRequest, requester_email: str) -> func.HttpResponse:
+    """対面署名の後にアプリから呼ぶ (staff)。body: syainNo, name?, contractPath? (社員ファイル配下の署名済PDF)"""
+    fa = _fa()
+    b = _body(req)
+    sn = _sn_str(b.get("syainNo"))
+    if not re.match(r"^\d{1,10}$", sn or ""):
+        return fa._json_response({"error": "invalid_syainNo"}, 400)
+    try:
+        h = create_handover(sn, str(b.get("name") or "")[:60], str(b.get("contractPath") or ""), "inapp", requester_email)
+    except Exception as e:
+        logging.exception("handover create failed")
+        return fa._json_response({"error": "save_failed", "detail": str(e)[:200]}, 500)
+    return fa._json_response({"ok": True, "handover": h})
+
+
+HO_TX = {
+    "ja": {"title": "お渡しする書類", "lead": "スマホに保存しておいてください。", "open": "開く", "save": "保存", "until": "受け取り期限"},
+    "pt": {"title": "Documentos para você", "lead": "Salve no seu celular.", "open": "Abrir", "save": "Salvar", "until": "Disponível até"},
+    "en": {"title": "Your documents", "lead": "Please save them on your phone.", "open": "Open", "save": "Save", "until": "Available until"},
+}
+
+
+def handle_handover_page(req: func.HttpRequest) -> func.HttpResponse:
+    token = req.params.get("t") or ""
+    rec = _ho_load(token)
+    if not rec:
+        return _html_response(_simple_page("リンクが見つかりません", "担当者に確認してください。", "Link inválido. Fale com o responsável."), 404)
+    if _is_expired(rec):
+        return _html_response(_simple_page("受け取り期限が切れました", "担当者に相談してください。", "O prazo terminou. Fale com o responsável."), 410)
+    lang = rec.get("lang") or "all"
+    xl = "pt" if lang == "all" else lang
+
+    def both(k: str) -> str:
+        s = HO_TX["ja"][k]
+        if xl != "ja":
+            s += " / " + HO_TX[xl][k]
+        return s
+
+    rows = ""
+    for d in _ho_docs(rec):
+        t_x = d["title"].get(xl, "") if xl != "ja" else ""
+        base = f"/api/kyouiku/hdoc?t={token}&d={d['d']}"
+        rows += ('<div class="doc"><div class="dt"><span class="ic">' + d["icon"] + '</span><div><b>' + _esc(d["title"]["ja"]) + '</b>'
+                 + ('<small>' + _esc(t_x) + '</small>' if t_x else '') + '</div></div>'
+                 '<div class="bt"><a class="b1" href="' + base + '">' + _esc(both("open")) + '</a>'
+                 '<a class="b2" href="' + base + '&dl=1">📥 ' + _esc(both("save")) + '</a></div></div>')
+    exp_s = (_parse(rec["expiresAt"]) + _dt.timedelta(hours=9)).strftime("%Y/%m/%d")
+    html = (
+        '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<meta name="robots" content="noindex"><meta name="referrer" content="no-referrer"><title>書類の受け取り / Documentos</title>'
+        '<style>body{margin:0;background:#f4f2ed;color:#1a1a2e;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",Meiryo,sans-serif;-webkit-text-size-adjust:100%}'
+        '.hd{background:#0d2137;color:#fff;padding:14px 16px}.hd .l{font-family:Georgia,serif;font-size:20px;font-weight:700}'
+        '.hd h1{margin:8px 0 2px;font-size:19px}.hd p{margin:0;color:#d8dfeb;font-size:13.5px}'
+        'main{max-width:560px;margin:0 auto;padding:12px 14px 28px}'
+        '.doc{background:#fff;border:1px solid #e3e0d8;border-radius:12px;padding:12px;margin-bottom:10px}'
+        '.dt{display:flex;gap:10px;align-items:flex-start}.ic{font-size:24px;line-height:1}.dt b{display:block;font-size:15.5px}'
+        '.dt small{display:block;color:#5b6475;font-size:13px}'
+        '.bt{display:flex;gap:8px;margin-top:10px}.bt a{flex:1;text-align:center;text-decoration:none;font-weight:700;font-size:14px;border-radius:9px;padding:11px 6px}'
+        '.b1{background:#eef2f7;color:#1a5fa8}.b2{background:#2e7d32;color:#fff}'
+        '.note{font-size:12px;color:#6b7280;line-height:1.6;margin-top:12px}</style></head><body>'
+        '<div class="hd"><div class="l">Step Up</div><h1>' + _esc(both("title")) + '</h1><p>' + _esc(rec.get("name") or "") + '　' + _esc(both("lead")) + '</p></div>'
+        '<main>' + rows + '<div class="note">' + _esc(both("until")) + ': ' + exp_s + '<br>'
+        'iPhone は保存すると「ファイル」アプリに入ります。 / No iPhone, o arquivo fica no app "Arquivos".</div></main></body></html>'
+    )
+    return _html_response(html)
+
+
+def handle_handover_doc(req: func.HttpRequest) -> func.HttpResponse:
+    token = req.params.get("t") or ""
+    rec = _ho_load(token)
+    if not rec or _is_expired(rec):
+        return func.HttpResponse("gone", status_code=410)
+    d = req.params.get("d") or ""
+    if d not in {x["d"] for x in _ho_docs(rec)}:
+        return func.HttpResponse("not found", status_code=404)
+    cfg = _curriculum().get("handover", {})
+    if d == "contract":
+        data = _fa()._sp_download_bytes(rec["contractUrl"])
+        fname = "雇用契約書_控え.pdf"
+    elif d.startswith("rules_"):
+        l = d.split("_", 1)[1]
+        rel = cfg.get("rules", {}).get("files", {}).get(l, "")
+        data = _file_bytes(rel) if rel else None
+        fname = {"ja": "就業規則_日本語.pdf", "pt": "Regulamento_Interno_portugues.pdf", "en": "Work_Rules_English.pdf"}.get(l, "rules.pdf")
+    else:
+        rel = cfg.get("meisai", {}).get("file", "")
+        data = _file_bytes(rel) if rel else None
+        fname = "給料明細の見方_Holerite.pdf"
+    if not data:
+        return func.HttpResponse("file error", status_code=502)
+    try:
+        if d not in (rec.get("opened") or {}):
+            rec.setdefault("opened", {})[d] = _iso(_now())
+            _ho_save(rec)
+    except Exception:
+        logging.exception("handover opened save failed")
+    disp = "attachment" if req.params.get("dl") == "1" else "inline"
+    return func.HttpResponse(body=data, status_code=200, mimetype="application/pdf",
+                             headers={"Content-Disposition": disp + "; filename=\"document.pdf\"; filename*=UTF-8''" + quote(fname),
+                                      "Cache-Control": "private, max-age=600", "X-Content-Type-Options": "nosniff"})

@@ -316,6 +316,9 @@ def _send_copy_mail(rec: Dict[str, Any], addr: str, pdf: Optional[bytes] = None)
         f'署名日時: {_jst(rec.get("signedAt", ""))}</p>'
         f'<p><a href="{url}" style="display:inline-block;background:#1565c0;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">📄 署名済PDFを開く / Abrir PDF</a></p>'
         f'<p style="font-size:12px;color:#666">このリンクは {SIGNED_DL_DAYS} 日間有効です。スマホに保存するか印刷して保管してください。</p>'
+        + (f'<p style="margin-top:14px"><b>📖 就業規則・💰 給料明細の見方</b>もお渡しします。<br>'
+           f'<a href="{rec.get("handoverUrl")}" style="display:inline-block;background:#2e7d32;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">📖 書類を受け取る / Receber documentos</a></p>'
+           if rec.get("handoverUrl") else '') +
         '<hr style="border:none;border-top:1px solid #ddd;margin:14px 0">'
         f'<p style="color:#444">Sr(a). {rec["name"]},<br>Segue a cópia (PDF assinado) do <b>{label}</b>. '
         f'O link é válido por {SIGNED_DL_DAYS} dias. Salve no seu celular ou imprima para guardar.</p></div>'
@@ -374,6 +377,10 @@ def _signed_page(rec: Dict[str, Any], token: str) -> str:
         '<div class="box" id="main">'
         '<div class="t">✅ 署名が完了しました</div><div class="p">ありがとうございました。署名済みの書類は会社で保管します。</div>'
         '<div class="pt">Assinatura concluída. Obrigado! O documento assinado ficará guardado na empresa.</div>'
+        + (f'<h3>📖 就業規則・給料明細の見方 / Regulamento e holerite</h3>'
+           f'<div class="note" style="margin:0 0 8px">入社時にお渡しする書類です。自分のスマホに保存してください。<br>Documentos da admissão. Salve no seu celular.</div>'
+           f'<div style="text-align:center"><a class="btn" style="background:#2e7d32" href="{rec.get("handoverUrl")}">📖 書類を受け取る / Receber documentos</a></div>'
+           if rec.get("handoverUrl") else '') +
         '<h3>📄 控え（署名済PDF）の受け取り / Receber a cópia</h3>'
         f'<div id="dlv">{dl_html}</div>'
         '<div class="note" style="margin:0 0 6px"><span class="step">1</span>メールアドレスを入力（欄をタップするとキーボードが出ます）→ <span class="step">2</span>送信<br>'
@@ -613,6 +620,15 @@ def handle_submit(req: func.HttpRequest) -> func.HttpResponse:
     rec["signedAt"] = _iso(_now())
     rec["signedIp"] = ip[:64]
     rec["savedUrl"] = f"https://{fa.SP_HOST}{folder}/{file_name}"
+    # 新規雇用契約書: 就業規則・給料明細の見方の受け取りページを作る (2026-09-25・完了画面と控えメールにリンク)
+    if str(rec.get("docLabel") or "").startswith("新規"):
+        try:
+            import kyouiku as _ky
+            h = _ky.create_handover(rec.get("syainNo") or "", rec.get("name") or "", f"{folder}/{file_name}", "esign", rec.get("requester") or "")
+            rec["handoverToken"] = h["token"]
+            rec["handoverUrl"] = h["url"]
+        except Exception:
+            logging.exception("esign handover create failed (ignored)")
     # 本人へ控えを自動送付 (社員データにＥメール登録があれば)
     delivered = ""
     if rec.get("empEmail") and re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", rec["empEmail"]):
