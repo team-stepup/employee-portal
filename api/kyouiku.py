@@ -245,16 +245,19 @@ def _progress(rec: Dict[str, Any]) -> Dict[str, Any]:
 
 def _public(rec: Dict[str, Any]) -> Dict[str, Any]:
     keys = ("token", "syainNo", "name", "lang", "commute", "createdAt", "expiresAt", "requester",
-            "requesterName", "done", "opened", "completedAt", "firstOpenedAt")
+            "requesterName", "done", "opened", "completedAt", "firstOpenedAt", "device", "recordSavedAt", "recordPath")
     out = {k: rec.get(k) for k in keys}
     out["url"] = _page_url(rec["token"])
     out["expired"] = _is_expired(rec)
     out["progress"] = _progress(rec)
-    titles = {}
+    items = []
     for k in rec.get("items", []):
-        it = _cur_item(k)
-        titles[k] = (it or {}).get("title", {}).get("ja", k)
-    out["items"] = [{"key": k, "title": titles.get(k, k)} for k in rec.get("items", [])]
+        it = _cur_item(k) or {}
+        fs = it.get("files", {}) or {}
+        kind = "table" if it.get("table") else ("video" if any(str(v).lower().endswith(".mp4") for v in fs.values()) else "pdf")
+        items.append({"key": k, "title": it.get("title", {}).get("ja", k), "kind": kind,
+                      "videoLangs": [l for l in LANGS if str(fs.get(l, "")).lower().endswith(".mp4")]})
+    out["items"] = items
     return out
 
 
@@ -726,3 +729,20 @@ def handle_handover_doc(req: func.HttpRequest) -> func.HttpResponse:
     return func.HttpResponse(body=data, status_code=200, mimetype="application/pdf",
                              headers={"Content-Disposition": disp + "; filename=\"document.pdf\"; filename*=UTF-8''" + quote(fname),
                                       "Cache-Control": "private, max-age=600", "X-Content-Type-Options": "nosniff"})
+
+
+def handle_recorded(req: func.HttpRequest) -> func.HttpResponse:
+    """受講記録PDFを社員フォルダへ保存した事実を記録 (staff)。body: token, path"""
+    fa = _fa()
+    b = _body(req)
+    rec = _load_rec(str(b.get("token") or ""), use_cache=False)
+    if not rec:
+        return fa._json_response({"error": "not_found"}, 404)
+    path = str(b.get("path") or "")[:400]
+    rec["recordSavedAt"] = _iso(_now())
+    rec["recordPath"] = path
+    try:
+        _save_rec(rec)
+    except Exception as e:
+        return fa._json_response({"error": "save_failed", "detail": str(e)[:200]}, 500)
+    return fa._json_response({"ok": True, "request": _public(rec)})
