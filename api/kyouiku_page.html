@@ -48,15 +48,22 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
 .vlangs { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 10px; background: #1f2329; }
 .vlangs button { border: 1px solid #5b6475; background: transparent; color: #dfe3ea; border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
 .vlangs button.on { background: var(--gold2); border-color: var(--gold2); color: var(--navy); font-weight: 700; }
-.vbody { flex: 1 1 auto; overflow: auto; -webkit-overflow-scrolling: touch; padding: 10px 0 24px; }
+.vbody { flex: 1 1 auto; overflow: auto; -webkit-overflow-scrolling: touch; padding: 10px 0 24px; position: relative; }
+.toptip { color: #ffe08a; font-size: 12.5px; text-align: center; padding: 0 14px 10px; line-height: 1.5; }
+.pdfbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; background: #11151b; border-top: 1px solid #3a3f47; padding: 8px 10px; padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
+.pdfbar .pgno { flex: 0 0 auto; min-width: 58px; color: #dfe3ea; font-size: 13px; text-align: center; white-space: nowrap; }
+.pdfbar .zb { flex: 0 0 auto; width: 42px; height: 42px; border-radius: 9px; border: 1px solid #5b6475; background: #2b2f36; color: #fff; font-size: 22px; font-weight: 700; line-height: 1; cursor: pointer; }
+.pdfbar .zb:disabled { opacity: .35; }
+.pdfbar .rb { flex: 1 1 auto; min-width: 0; height: 46px; border: 0; border-radius: 10px; background: var(--green); color: #fff; font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.pdfbar .rb.done { background: #4b5563; }
 .vmsg { color: #e8ebf0; text-align: center; padding: 40px 20px; font-size: 14px; }
 .vhint { color: #e8ebf0; text-align: center; font-size: 13px; padding: 10px 16px; }
 .vhint.ok { color: #a5d6a7; font-weight: 700; }
 .pg { background: #fff; margin: 0 auto 10px; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
-.pg canvas { display: block; width: 100%; height: auto; }
+.pg canvas { display: block; width: 100%; height: 100%; }
 .vbody video { display: block; width: 100%; max-height: calc(100dvh - 170px); background: #000; }
-.readbtn { display: block; width: calc(100% - 32px); max-width: 520px; margin: 16px auto 0; padding: 15px; font-size: 17px; font-weight: 700; color: #fff; background: var(--green); border: 0; border-radius: 12px; cursor: pointer; }
-.readbtn:disabled { opacity: .7; }
+.readbtn-old { display: block; width: calc(100% - 32px); max-width: 520px; margin: 16px auto 0; padding: 15px; font-size: 17px; font-weight: 700; color: #fff; background: var(--green); border: 0; border-radius: 12px; cursor: pointer; }
+.readbtn-old:disabled { opacity: .7; }
 </style>
 </head>
 <body>
@@ -79,6 +86,7 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
   <div class="vbar"><button id="vback"></button><div class="vtitle" id="vtitle"></div></div>
   <div class="vlangs" id="vlangs" hidden></div>
   <div class="vbody" id="vbody"></div>
+  <div class="pdfbar" id="pdfbar" hidden></div>
 </div>
 <script>
 (function () {
@@ -89,17 +97,20 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
           prog: function (d, t) { return d + ' / ' + t + ' 完了'; }, done: '🎉 すべて終わりました。担当者に声をかけてください。',
           video: '動画', pdf: '資料', back: '← 一覧へ', read: '✓ 読みました', videoHint: '最後まで見るとチェックが付きます', videoOk: '✓ 完了しました',
           loading: '読み込み中…', fail: '読み込みに失敗しました。通信状態を確認して、もう一度開いてください。', note: 'このリンクは今日だけ使えます。',
-          expired: 'このリンクは期限切れです。担当者に新しいリンクをもらってください。', subDone: '✓ 完了' },
+          expired: 'このリンクは期限切れです。担当者に新しいリンクをもらってください。', subDone: '✓ 完了',
+          tip: '読み終わったら、下の「✓ 読みました」を押してください。文字が小さいときは ＋ で拡大できます。' },
     pt: { hi: function (n) { return 'Olá, ' + n + '. Materiais de admissão'; }, lead: 'Veja na ordem, de cima para baixo. O vídeo fica marcado quando assistido até o fim.',
           prog: function (d, t) { return d + ' / ' + t + ' concluído'; }, done: '🎉 Tudo concluído! Avise o responsável.',
           video: 'Vídeo', pdf: 'Documento', back: '← Voltar', read: '✓ Li e entendi', videoHint: 'Assista até o fim para marcar como concluído', videoOk: '✓ Concluído',
           loading: 'Carregando…', fail: 'Falha ao carregar. Verifique a conexão e tente novamente.', note: 'Este link só pode ser usado hoje.',
-          expired: 'Este link expirou. Peça um novo link ao responsável.', subDone: '✓ Concluído' },
+          expired: 'Este link expirou. Peça um novo link ao responsável.', subDone: '✓ Concluído',
+          tip: 'Quando terminar, toque em "✓ Li e entendi" abaixo. Se o texto estiver pequeno, use + para ampliar.' },
     en: { hi: function (n) { return 'Hello, ' + n + '. Onboarding materials'; }, lead: 'Please go through them in order from the top. A video is checked when you watch it to the end.',
           prog: function (d, t) { return d + ' / ' + t + ' done'; }, done: '🎉 All done! Please tell the staff.',
           video: 'Video', pdf: 'Document', back: '← Back', read: '✓ I have read it', videoHint: 'Watch to the end to complete', videoOk: '✓ Completed',
           loading: 'Loading…', fail: 'Could not load. Please check your connection and try again.', note: 'This link can be used only today.',
-          expired: 'This link has expired. Please ask the staff for a new one.', subDone: '✓ Done' }
+          expired: 'This link has expired. Please ask the staff for a new one.', subDone: '✓ Done',
+          tip: 'When you finish, tap "✓ I have read it" below. If the text is small, use + to zoom in.' }
   };
   var LANG_NAME = { ja: '日本語', pt: 'Português', en: 'English' };
   var D = null, lang = 'ja', cur = null, curLang = null, openSeq = 0;
@@ -192,6 +203,7 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
 
   function showVideo(it, l) {
     var t = T[lang], seq = ++openSeq;
+    $('pdfbar').hidden = true; $('pdfbar').innerHTML = ''; $('vbody').onscroll = null;
     var body = $('vbody');
     body.innerHTML = '<video controls playsinline preload="metadata"></video><div class="vhint' + (it.done ? ' ok' : '') + '" id="vhint">' + esc(it.done ? t.videoOk : t.videoHint) + '</div>';
     var v = body.querySelector('video');
@@ -221,9 +233,18 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
     });
     return pdfjsReady;
   }
+  var ZOOMS = [1, 1.5, 2, 3];
   async function showPdf(it, l) {
-    var t = T[lang], seq = ++openSeq, body = $('vbody');
+    var t = T[lang], seq = ++openSeq, body = $('vbody'), bar = $('pdfbar');
+    body.onscroll = null;
     body.innerHTML = '<div class="vmsg">' + esc(t.loading) + '</div>';
+    bar.hidden = false;
+    bar.innerHTML = '<span class="pgno" id="pgno">…</span><button class="zb" id="zout" aria-label="zoom out">－</button><button class="zb" id="zin" aria-label="zoom in">＋</button>' +
+      '<button class="rb' + (it.done ? ' done' : '') + '" id="rbtn">' + esc(it.done ? t.subDone : t.read) + '</button>';
+    $('rbtn').onclick = async function () {
+      if (it.done) { closeViewerNav(); return; }
+      this.disabled = true; await markDone(it); closeViewerNav();
+    };
     try {
       var libP = loadPdfjs();
       var r = await fetch(fileUrl(it.key, l));
@@ -232,32 +253,64 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
       var lib = await libP;
       var doc = await lib.getDocument({ data: data, cMapUrl: PDFJS + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS + 'standard_fonts/' }).promise;
       if (seq !== openSeq) return;
-      body.innerHTML = '';
-      var W = Math.min(body.clientWidth - 16, 900), dpr = Math.min(window.devicePixelRatio || 1, 2), holders = [];
+      body.innerHTML = '<div class="toptip">' + esc(t.tip) + '</div>';
+      var baseW = Math.min(body.clientWidth - 16, 900);
+      var dpr = Math.min(window.devicePixelRatio || 1, 3);
+      var zi = 0, holders = [];
       for (var i = 1; i <= doc.numPages; i++) {
         var page = await doc.getPage(i);
         if (seq !== openSeq) return;
-        var vp = page.getViewport({ scale: 1 });
         var div = document.createElement('div');
-        div.className = 'pg'; div.style.width = W + 'px'; div.style.height = Math.round(W * vp.height / vp.width) + 'px';
-        div._page = page; div._vp = vp;
+        div.className = 'pg'; div._page = page; div._vp = page.getViewport({ scale: 1 });
         body.appendChild(div); holders.push(div);
       }
-      var btn = document.createElement('button');
-      btn.className = 'readbtn'; btn.textContent = it.done ? t.subDone : t.read; btn.disabled = !!it.done;
-      btn.addEventListener('click', async function () { btn.disabled = true; await markDone(it); closeViewerNav(); });
-      body.appendChild(btn);
-      function draw(d) {
-        if (d._done) return; d._done = true;
-        var v = d._page.getViewport({ scale: W * dpr / d._vp.width });
-        var c = document.createElement('canvas'); c.width = Math.floor(v.width); c.height = Math.floor(v.height);
-        d.appendChild(c);
-        d._page.render({ canvasContext: c.getContext('2d'), viewport: v }).promise.then(function () { d.style.height = 'auto'; });
+      function release(d) {
+        if (d._task) { try { d._task.cancel(); } catch (e) {} d._task = null; }
+        if (d._c) { d._c.width = 0; d._c.height = 0; d._c.remove(); d._c = null; }
+        d._done = false;
       }
-      if ('IntersectionObserver' in window) {
-        var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { draw(e.target); io.unobserve(e.target); } }); }, { root: body, rootMargin: '600px 0px' });
-        holders.forEach(function (d) { io.observe(d); });
-      } else holders.forEach(draw);
+      function layout() {
+        var W = baseW * ZOOMS[zi];
+        holders.forEach(function (d) {
+          release(d);
+          d.style.width = W + 'px';
+          d.style.height = Math.round(W * d._vp.height / d._vp.width) + 'px';
+          d.style.marginLeft = ZOOMS[zi] > 1 ? '8px' : '';
+        });
+      }
+      function draw(d) {
+        if (d._done || seq !== openSeq) return; d._done = true;
+        var W = baseW * ZOOMS[zi];
+        var px = Math.min(W * dpr, 4096, Math.sqrt(12e6 * d._vp.width / d._vp.height));   // iOS のキャンバス上限対策
+        var v = d._page.getViewport({ scale: px / d._vp.width });
+        var c = document.createElement('canvas'); c.width = Math.floor(v.width); c.height = Math.floor(v.height);
+        d.appendChild(c); d._c = c;
+        d._task = d._page.render({ canvasContext: c.getContext('2d'), viewport: v });
+        d._task.promise.catch(function () {});
+      }
+      var io = ('IntersectionObserver' in window) ? new IntersectionObserver(function (es) {
+        es.forEach(function (e) { if (e.isIntersecting) draw(e.target); else release(e.target); });
+      }, { root: body, rootMargin: '1200px 0px' }) : null;
+      function observeAll() { if (io) { io.disconnect(); holders.forEach(function (d) { io.observe(d); }); } else holders.forEach(draw); }
+      function updPg() {
+        var y = body.scrollTop + body.clientHeight / 3, n = 1;
+        for (var k = 0; k < holders.length; k++) { if (holders[k].offsetTop <= y) n = k + 1; }
+        var el = $('pgno'); if (el) el.textContent = n + ' / ' + holders.length;
+      }
+      function updZoomBtns() { $('zout').disabled = zi === 0; $('zin').disabled = zi === ZOOMS.length - 1; }
+      function setZoom(dz) {
+        var nz = Math.max(0, Math.min(ZOOMS.length - 1, zi + dz)); if (nz === zi) return;
+        var ry = body.scrollHeight ? (body.scrollTop + body.clientHeight / 2) / body.scrollHeight : 0;
+        var rx = body.scrollWidth > body.clientWidth ? (body.scrollLeft + body.clientWidth / 2) / body.scrollWidth : 0.5;
+        zi = nz; layout();
+        body.scrollTop = Math.max(0, ry * body.scrollHeight - body.clientHeight / 2);
+        body.scrollLeft = Math.max(0, rx * body.scrollWidth - body.clientWidth / 2);
+        observeAll(); updZoomBtns(); updPg();
+      }
+      $('zin').onclick = function () { setZoom(1); };
+      $('zout').onclick = function () { setZoom(-1); };
+      body.onscroll = updPg;
+      layout(); observeAll(); updZoomBtns(); updPg();
     } catch (e) {
       if (seq === openSeq) body.innerHTML = '<div class="vmsg">' + esc(t.fail) + '</div>';
     }
@@ -267,6 +320,7 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
     openSeq++;
     var v = $('vbody').querySelector('video'); if (v) { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} }
     $('viewer').hidden = true; document.body.style.overflow = ''; $('vbody').innerHTML = ''; cur = null;
+    $('pdfbar').hidden = true; $('pdfbar').innerHTML = ''; $('vbody').onscroll = null;
     render();
   }
   function closeViewerNav() { if (history.state && history.state.v) history.back(); else closeViewer(); }
