@@ -424,9 +424,12 @@ def handle_items(req: func.HttpRequest) -> func.HttpResponse:
         files = {}
         for l in LANGS:
             fl, rel = _pick_file(it, l)
-            if rel:
+            if it.get("table"):
+                files[l] = {"kind": "table", "lang": "all"}   # スマホ用の対訳表(JSON)。PDFは「配置」として別に見られる
+            elif rel:
                 files[l] = {"kind": _kind(rel), "lang": fl}
         out.append({"key": k, "icon": it.get("icon", "📄"), "title": it.get("title", {}), "files": files,
+                    "layout": bool(it.get("table") and _pick_file(it, "ja")[1]),
                     "done": bool((rec.get("done") or {}).get(k))})
     return fa._json_response({"ok": True, "name": rec.get("name"), "lang": rec.get("lang"),
                               "expiresAt": rec.get("expiresAt"), "items": out, "progress": _progress(rec)},
@@ -445,6 +448,12 @@ def handle_file(req: func.HttpRequest) -> func.HttpResponse:
     it = _cur_item(key)
     if not it:
         return func.HttpResponse("not found", status_code=404)
+    if req.params.get("v") == "table" and it.get("table"):
+        tb = _file_bytes(it["table"])
+        if not tb:
+            return func.HttpResponse("file error", status_code=502)
+        return func.HttpResponse(body=tb, status_code=200, mimetype="application/json", charset="utf-8",
+                                 headers={"Cache-Control": "private, max-age=600"})
     _, rel = _pick_file(it, lang if lang in LANGS else "ja")
     data = _file_bytes(rel) if rel else None
     if not data:

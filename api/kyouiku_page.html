@@ -38,7 +38,21 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
 .tx .sub { display: block; font-size: 12px; color: var(--sub); }
 .badge { flex: 0 0 auto; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
 .badge.video { background: #fde8e6; color: var(--red); }
-.badge.pdf { background: #e5eef9; color: var(--blue); }
+.badge.pdf, .badge.table { background: #e5eef9; color: var(--blue); }
+.tbl { background: #fff; margin: 0 10px; border-radius: 12px; overflow: hidden; }
+.tbl .tt { font-weight: 700; font-size: 17px; padding: 14px 14px 2px; color: var(--navy); }
+.tbl .tl { font-size: 13px; color: var(--sub); padding: 2px 14px 12px; }
+.tbl .ts { position: sticky; top: -10px; z-index: 1; background: var(--navy); color: #fff; font-weight: 700; padding: 9px 14px; font-size: 15px; }
+.tbl .ts small { font-weight: 400; color: #d8dfeb; font-size: 13px; }
+.tbl .tr { display: flex; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #eee; align-items: flex-start; }
+.tbl .tr.hl { background: #fff4d6; }
+.tbl .tn { flex: 0 0 30px; font-size: 21px; line-height: 1.25; color: var(--navy); text-align: center; }
+.tbl .tj { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.tbl .tj b { display: block; font-size: 17px; line-height: 1.35; }
+.tbl .tj .to { display: block; font-size: 15.5px; color: var(--blue); line-height: 1.4; }
+.tbl .tj .to2 { display: block; font-size: 13px; color: #6b7280; line-height: 1.4; }
+.tbl .tnote { font-size: 13px; color: var(--sub); padding: 12px 14px 16px; }
+.pdfbar .lb { flex: 0 0 auto; height: 46px; border: 1px solid #5b6475; border-radius: 10px; background: #2b2f36; color: #fff; font-size: 14px; font-weight: 700; padding: 0 12px; white-space: nowrap; cursor: pointer; }
 .note { font-size: 12px; color: var(--sub); text-align: center; margin-top: 16px; }
 .err { background: #fdecea; color: var(--red); border-radius: 10px; padding: 14px; font-size: 14px; text-align: center; }
 #viewer { position: fixed; inset: 0; z-index: 50; background: #2b2f36; display: flex; flex-direction: column; }
@@ -95,19 +109,19 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
   var T = {
     ja: { hi: function (n) { return n + ' さん　入社時の資料です'; }, lead: '上から順番に見てください。動画は最後まで見るとチェックが付きます。',
           prog: function (d, t) { return d + ' / ' + t + ' 完了'; }, done: '🎉 すべて終わりました。担当者に声をかけてください。',
-          video: '動画', pdf: '資料', back: '← 一覧へ', read: '✓ 読みました', videoHint: '最後まで見るとチェックが付きます', videoOk: '✓ 完了しました',
+          video: '動画', pdf: '資料', table: '対訳表', layout: '📄 明細書の配置', back: '← 一覧へ', read: '✓ 読みました', videoHint: '最後まで見るとチェックが付きます', videoOk: '✓ 完了しました',
           loading: '読み込み中…', fail: '読み込みに失敗しました。通信状態を確認して、もう一度開いてください。', note: 'このリンクは今日だけ使えます。',
           expired: 'このリンクは期限切れです。担当者に新しいリンクをもらってください。', subDone: '✓ 完了',
           tip: '読み終わったら、下の「✓ 読みました」を押してください。文字が小さいときは ＋ で拡大できます。' },
     pt: { hi: function (n) { return 'Olá, ' + n + '. Materiais de admissão'; }, lead: 'Veja na ordem, de cima para baixo. O vídeo fica marcado quando assistido até o fim.',
           prog: function (d, t) { return d + ' / ' + t + ' concluído'; }, done: '🎉 Tudo concluído! Avise o responsável.',
-          video: 'Vídeo', pdf: 'Documento', back: '← Voltar', read: '✓ Li e entendi', videoHint: 'Assista até o fim para marcar como concluído', videoOk: '✓ Concluído',
+          video: 'Vídeo', pdf: 'Documento', table: 'Tabela', layout: '📄 Ver holerite', back: '← Voltar', read: '✓ Li e entendi', videoHint: 'Assista até o fim para marcar como concluído', videoOk: '✓ Concluído',
           loading: 'Carregando…', fail: 'Falha ao carregar. Verifique a conexão e tente novamente.', note: 'Este link só pode ser usado hoje.',
           expired: 'Este link expirou. Peça um novo link ao responsável.', subDone: '✓ Concluído',
           tip: 'Quando terminar, toque em "✓ Li e entendi" abaixo. Se o texto estiver pequeno, use + para ampliar.' },
     en: { hi: function (n) { return 'Hello, ' + n + '. Onboarding materials'; }, lead: 'Please go through them in order from the top. A video is checked when you watch it to the end.',
           prog: function (d, t) { return d + ' / ' + t + ' done'; }, done: '🎉 All done! Please tell the staff.',
-          video: 'Video', pdf: 'Document', back: '← Back', read: '✓ I have read it', videoHint: 'Watch to the end to complete', videoOk: '✓ Completed',
+          video: 'Video', pdf: 'Document', table: 'Table', layout: '📄 Pay slip', back: '← Back', read: '✓ I have read it', videoHint: 'Watch to the end to complete', videoOk: '✓ Completed',
           loading: 'Loading…', fail: 'Could not load. Please check your connection and try again.', note: 'This link can be used only today.',
           expired: 'This link has expired. Please ask the staff for a new one.', subDone: '✓ Done',
           tip: 'When you finish, tap "✓ I have read it" below. If the text is small, use + to zoom in.' }
@@ -195,7 +209,7 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
       $('vlangs').innerHTML = langs.map(function (x) { return '<button data-l="' + x + '" class="' + (x === l ? 'on' : '') + '">' + LANG_NAME[x] + '</button>'; }).join('');
     } else { $('vlangs').hidden = true; $('vlangs').innerHTML = ''; }
     post(it.key, 'open');
-    if (f.kind === 'video') showVideo(it, l); else showPdf(it, l);
+    if (f.kind === 'video') showVideo(it, l); else if (f.kind === 'table') showTable(it); else showPdf(it, l);
   }
   $('vlangs').addEventListener('click', function (ev) {
     var b = ev.target.closest('button[data-l]'); if (b && cur) openItem(cur, b.getAttribute('data-l'));
@@ -233,6 +247,43 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
     });
     return pdfjsReady;
   }
+  // 給料明細など: 対訳表(JSON)をスマホ向けの1行1項目で表示。元のPDFは「明細書の配置」で見られる
+  async function showTable(it) {
+    var t = T[lang], seq = ++openSeq, body = $('vbody'), bar = $('pdfbar');
+    body.onscroll = null;
+    body.innerHTML = '<div class="vmsg">' + esc(t.loading) + '</div>';
+    bar.hidden = false;
+    bar.innerHTML = (it.layout ? '<button class="lb" id="lbtn">' + esc(t.layout) + '</button>' : '') +
+      '<button class="rb' + (it.done ? ' done' : '') + '" id="rbtn">' + esc(it.done ? t.subDone : t.read) + '</button>';
+    $('rbtn').onclick = async function () {
+      if (it.done) { closeViewerNav(); return; }
+      this.disabled = true; await markDone(it); closeViewerNav();
+    };
+    if (it.layout) $('lbtn').onclick = function () { showPdf(it, lang); };
+    try {
+      var r = await fetch(fileUrl(it.key, lang) + '&v=table');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var d = await r.json();
+      if (seq !== openSeq) return;
+      var hl = {}; (d.highlight || []).forEach(function (n) { hl[n] = 1; });
+      var others = ['pt', 'en'].filter(function (x) { return x !== lang; });
+      var h = '<div class="tbl"><div class="tt">' + esc(tx(d.title)) + '</div><div class="tl">' + esc(tx(d.lead)) + '</div>';
+      (d.sections || []).forEach(function (sec) {
+        h += '<div class="ts">' + esc(sec.title.ja) + (lang !== 'ja' ? ' <small>/ ' + esc(tx(sec.title)) + '</small>' : '') + '</div>';
+        (sec.items || []).forEach(function (x) {
+          var sub = lang === 'ja'
+            ? '<span class="to2">' + esc(x.pt) + '</span><span class="to2">' + esc(x.en) + '</span>'
+            : '<span class="to">' + esc(x[lang]) + '</span>' + (others.length ? '<span class="to2">' + esc(x[others[0]]) + '</span>' : '');
+          h += '<div class="tr' + (hl[x.no] ? ' hl' : '') + '"><span class="tn">' + esc(x.mark || '・') + '</span><span class="tj"><b>' + esc(x.ja) + '</b>' + sub + '</span></div>';
+        });
+      });
+      h += '<div class="tnote">' + esc(tx(d.note)) + '</div></div>';
+      body.innerHTML = h;
+    } catch (e) {
+      if (seq === openSeq) body.innerHTML = '<div class="vmsg">' + esc(t.fail) + '</div>';
+    }
+  }
+
   var ZOOMS = [1, 1.5, 2, 3];
   async function showPdf(it, l) {
     var t = T[lang], seq = ++openSeq, body = $('vbody'), bar = $('pdfbar');
