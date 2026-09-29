@@ -86,6 +86,10 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
 .vmsg { color: #e8ebf0; text-align: center; padding: 40px 20px; font-size: 14px; }
 .vhint { color: #e8ebf0; text-align: center; font-size: 13px; padding: 10px 16px; }
 .vhint.ok { color: #a5d6a7; font-weight: 700; }
+.vhint .cd { margin-top: 10px; display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; color: #fff; font-weight: 700; }
+.vhint .cd button { border: 0; border-radius: 9px; padding: 10px 16px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.vhint .cd #cdNow { background: var(--green); color: #fff; }
+.vhint .cd #cdStop { background: #4b5563; color: #fff; }
 .pg { background: #fff; margin: 0 auto 10px; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
 .pg canvas { display: block; width: 100%; height: 100%; }
 .vbody video { display: block; width: 100%; max-height: calc(100dvh - 170px); background: #000; }
@@ -123,18 +127,21 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
     ja: { hi: function (n) { return n + ' さん　入社時の資料です'; }, lead: '上から順番に見てください。動画は最後まで見るとチェックが付きます。',
           prog: function (d, t) { return d + ' / ' + t + ' 完了'; }, done: '🎉 すべて終わりました。担当者に声をかけてください。',
           video: '動画', pdf: '資料', table: '対訳表', layout: '📄 PDFで見る', back: '← 一覧へ', read: '✓ 読みました', videoHint: '最後まで見るとチェックが付きます', videoOk: '✓ 完了しました',
+          nextBtn: '次へ ▶', toList: '一覧へ', stop: '止める', nextIn: function (n) { return n + '秒後に次へ進みます'; },
           loading: '読み込み中…', fail: '読み込みに失敗しました。通信状態を確認して、もう一度開いてください。', note: 'このリンクは今日だけ使えます。',
           expired: 'このリンクは期限切れです。担当者に新しいリンクをもらってください。', subDone: '✓ 完了',
           tip: '読み終わったら、下の「✓ 読みました」を押してください。文字が小さいときは ＋ で拡大できます。' },
     pt: { hi: function (n) { return 'Olá, ' + n + '. Materiais de admissão'; }, lead: 'Veja na ordem, de cima para baixo. O vídeo fica marcado quando assistido até o fim.',
           prog: function (d, t) { return d + ' / ' + t + ' concluído'; }, done: '🎉 Tudo concluído! Avise o responsável.',
           video: 'Vídeo', pdf: 'Documento', table: 'Tabela', layout: '📄 Ver em PDF', back: '← Voltar', read: '✓ Li e entendi', videoHint: 'Assista até o fim para marcar como concluído', videoOk: '✓ Concluído',
+          nextBtn: 'Próximo ▶', toList: 'Voltar à lista', stop: 'Parar', nextIn: function (n) { return 'Próximo em ' + n + ' s'; },
           loading: 'Carregando…', fail: 'Falha ao carregar. Verifique a conexão e tente novamente.', note: 'Este link só pode ser usado hoje.',
           expired: 'Este link expirou. Peça um novo link ao responsável.', subDone: '✓ Concluído',
           tip: 'Quando terminar, toque em "✓ Li e entendi" abaixo. Se o texto estiver pequeno, use + para ampliar.' },
     en: { hi: function (n) { return 'Hello, ' + n + '. Onboarding materials'; }, lead: 'Please go through them in order from the top. A video is checked when you watch it to the end.',
           prog: function (d, t) { return d + ' / ' + t + ' done'; }, done: '🎉 All done! Please tell the staff.',
           video: 'Video', pdf: 'Document', table: 'Table', layout: '📄 View PDF', back: '← Back', read: '✓ I have read it', videoHint: 'Watch to the end to complete', videoOk: '✓ Completed',
+          nextBtn: 'Next ▶', toList: 'Back to list', stop: 'Stop', nextIn: function (n) { return 'Next in ' + n + ' s'; },
           loading: 'Loading…', fail: 'Could not load. Please check your connection and try again.', note: 'This link can be used only today.',
           expired: 'This link has expired. Please ask the staff for a new one.', subDone: '✓ Done',
           tip: 'When you finish, tap "✓ I have read it" below. If the text is small, use + to zoom in.' }
@@ -205,6 +212,24 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
     await post(it.key, 'done');
   }
 
+  // 「読みました」/動画の終了 → まだ終わっていない次の資料を自動で開く (2026-09-29)
+  function nextOf(it) {
+    if (!D) return null;
+    var i = D.items.indexOf(it), n = D.items.length;
+    for (var k = 1; k < n; k++) { var x = D.items[(i + k) % n]; if (!x.done) return x; }
+    return null;
+  }
+  function goNext(it) {
+    var n = nextOf(it);
+    if (!n) { closeViewerNav(); return; }
+    window._kyAutoPlay = true;
+    openItem(n);
+    try { $('vbody').scrollTop = 0; } catch (_) {}
+  }
+  function readBtnLabel(it) {
+    var t = T[lang], n = nextOf(it);
+    return it.done ? (n ? t.nextBtn : t.toList) : (t.read + (n ? ' ▶' : ''));
+  }
   function openItem(it, wantLang) {
     var t = T[lang];
     var f = it.files[wantLang || lang] || it.files.ja || it.files.pt || it.files.en;
@@ -235,6 +260,7 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
     body.innerHTML = '<video controls playsinline preload="metadata"></video><div class="vhint' + (it.done ? ' ok' : '') + '" id="vhint">' + esc(it.done ? t.videoOk : t.videoHint) + '</div>';
     var v = body.querySelector('video');
     v.src = fileUrl(it.key, l);
+    if (window._kyAutoPlay) { window._kyAutoPlay = false; try { var pp = v.play(); if (pp && pp.catch) pp.catch(function () {}); } catch (_) {} }
     function check() {
       if (seq !== openSeq || it.done) return;
       if (v.ended || (v.duration && v.currentTime >= v.duration * 0.95)) {
@@ -242,8 +268,24 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
         var h = $('vhint'); if (h) { h.textContent = t.videoOk; h.classList.add('ok'); }
       }
     }
+    function countdown() {
+      if (seq !== openSeq || !nextOf(it)) return;
+      var h = $('vhint'); if (!h) return;
+      var left = 5;
+      h.classList.add('ok');
+      h.innerHTML = esc(t.videoOk) + '<div class="cd"><span id="cdTxt">' + esc(t.nextIn(left)) + '</span>' +
+        '<button id="cdNow">' + esc(t.nextBtn) + '</button><button id="cdStop">' + esc(t.stop) + '</button></div>';
+      var timer = setInterval(function () {
+        if (seq !== openSeq) { clearInterval(timer); return; }
+        left--;
+        var e = $('cdTxt'); if (e) e.textContent = t.nextIn(Math.max(left, 0));
+        if (left <= 0) { clearInterval(timer); goNext(it); }
+      }, 1000);
+      $('cdNow').onclick = function () { clearInterval(timer); goNext(it); };
+      $('cdStop').onclick = function () { clearInterval(timer); h.textContent = t.videoOk; };
+    }
     v.addEventListener('timeupdate', check);
-    v.addEventListener('ended', check);
+    v.addEventListener('ended', function () { check(); countdown(); });
     v.addEventListener('error', function () { if (seq === openSeq) $('vhint').textContent = t.fail; });
   }
 
@@ -267,10 +309,11 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
     body.innerHTML = '<div class="vmsg">' + esc(t.loading) + '</div>';
     bar.hidden = false;
     bar.innerHTML = (it.layout ? '<button class="lb" id="lbtn">' + esc(t.layout) + '</button>' : '') +
-      '<button class="rb' + (it.done ? ' done' : '') + '" id="rbtn">' + esc(it.done ? t.subDone : t.read) + '</button>';
-    $('rbtn').onclick = async function () {
-      if (it.done) { closeViewerNav(); return; }
-      this.disabled = true; await markDone(it); closeViewerNav();
+      '<button class="rb' + (it.done ? ' done' : '') + '" id="rbtn">' + esc(readBtnLabel(it)) + '</button>';
+    $('rbtn').onclick = function () {
+      this.disabled = true;
+      if (!it.done) markDone(it);   // 記録は裏で送る (待たずに次を開く=動画の自動再生が止められないように)
+      goNext(it);
     };
     if (it.layout) $('lbtn').onclick = function () { showPdf(it, lang); };
     try {
@@ -332,10 +375,11 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
     body.innerHTML = '<div class="vmsg">' + esc(t.loading) + '</div>';
     bar.hidden = false;
     bar.innerHTML = '<span class="pgno" id="pgno">…</span><button class="zb" id="zout" aria-label="zoom out">－</button><button class="zb" id="zin" aria-label="zoom in">＋</button>' +
-      '<button class="rb' + (it.done ? ' done' : '') + '" id="rbtn">' + esc(it.done ? t.subDone : t.read) + '</button>';
-    $('rbtn').onclick = async function () {
-      if (it.done) { closeViewerNav(); return; }
-      this.disabled = true; await markDone(it); closeViewerNav();
+      '<button class="rb' + (it.done ? ' done' : '') + '" id="rbtn">' + esc(readBtnLabel(it)) + '</button>';
+    $('rbtn').onclick = function () {
+      this.disabled = true;
+      if (!it.done) markDone(it);   // 記録は裏で送る (待たずに次を開く=動画の自動再生が止められないように)
+      goNext(it);
     };
     try {
       var libP = loadPdfjs();
