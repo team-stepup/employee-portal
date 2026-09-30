@@ -159,6 +159,7 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
       if (r.status === 410) { $('list').innerHTML = '<div class="err">' + esc(T[lang].expired) + '</div>'; return; }
       if (!r.ok) throw new Error('HTTP ' + r.status);
       D = await r.json();
+      resyncDone();
       if (!cur) { try { lang = localStorage.getItem('ky_lang_' + TOKEN) || D.lang || 'ja'; } catch (e) { lang = D.lang || 'ja'; } }
       if (!T[lang]) lang = 'ja';
       render();
@@ -201,15 +202,37 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
     openItem(D.items[+b.getAttribute('data-i')]);
   });
 
+  // 記録は1件ずつ順番に送る (「完了」と「次を開いた」が同時に届くと完了が消えていた・9/30 修正)
+  var postQ = Promise.resolve();
+  function sendOnce(body) {
+    return fetch(API + '/kyouiku/progress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true, body: body })
+      .then(function (r) { if (!r.ok && r.status >= 500) throw new Error('HTTP ' + r.status); return r; });
+  }
   function post(k, ev) {
-    return fetch(API + '/kyouiku/progress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true,
-      body: JSON.stringify({ t: TOKEN, k: k, ev: ev, lang: curLang || lang }) }).catch(function () {});
+    var body = JSON.stringify({ t: TOKEN, k: k, ev: ev, lang: curLang || lang });
+    postQ = postQ.then(function () {
+      return sendOnce(body).catch(function () {
+        return new Promise(function (r) { setTimeout(r, 1200); }).then(function () { return sendOnce(body); }).catch(function () {});
+      });
+    });
+    return postQ;
+  }
+  function localDone() { try { return JSON.parse(localStorage.getItem('ky_done_' + TOKEN) || '[]'); } catch (e) { return []; } }
+  function saveLocalDone(key) {
+    try { var a = localDone(); if (a.indexOf(key) < 0) { a.push(key); localStorage.setItem('ky_done_' + TOKEN, JSON.stringify(a)); } } catch (e) {}
   }
   async function markDone(it) {
     if (it.done) return;
     it.done = true;
+    saveLocalDone(it.key);
     render();
     await post(it.key, 'done');
+  }
+  // 開いたとき: このスマホで完了したのにサーバーに残っていない資料があれば送り直す
+  function resyncDone() {
+    if (!D) return;
+    var mine = localDone();
+    D.items.forEach(function (it) { if (!it.done && mine.indexOf(it.key) >= 0) { it.done = true; post(it.key, 'done'); } });
   }
 
   // 「読みました」/動画の終了 → まだ終わっていない次の資料を自動で開く (2026-09-29)

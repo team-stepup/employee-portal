@@ -497,16 +497,24 @@ def handle_progress(req: func.HttpRequest) -> func.HttpResponse:
     ev = str(b.get("ev") or "")
     now = _iso(_now())
     lang = str(b.get("lang") or "")[:3]
+    # 変更が無いときは保存しない (同時に届いた別の記録を上書きで消さないため・9/30 完了が消える不具合の対策)
+    changed = False
     if ev == "open":
-        rec.setdefault("opened", {}).setdefault(k, now)
+        if k not in (rec.get("opened") or {}):
+            rec.setdefault("opened", {})[k] = now
+            changed = True
     elif ev == "done":
         rec.setdefault("done", {})
         if k not in rec["done"]:
             rec["done"][k] = {"at": now, "lang": lang}
+            changed = True
         if _progress(rec)["complete"] and not rec.get("completedAt"):
             rec["completedAt"] = now
+            changed = True
     else:
         return fa._json_response({"error": "bad_event"}, 400)
+    if not changed:
+        return fa._json_response({"ok": True, "progress": _progress(rec), "unchanged": True})
     try:
         _save_rec(rec)
     except Exception as e:
