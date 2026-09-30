@@ -245,7 +245,7 @@ def _progress(rec: Dict[str, Any]) -> Dict[str, Any]:
 
 def _public(rec: Dict[str, Any]) -> Dict[str, Any]:
     keys = ("token", "syainNo", "name", "lang", "commute", "createdAt", "expiresAt", "requester",
-            "requesterName", "done", "opened", "completedAt", "firstOpenedAt", "device", "recordSavedAt", "recordPath")
+            "requesterName", "done", "opened", "completedAt", "firstOpenedAt", "device", "recordSavedAt", "recordPath", "attested")
     out = {k: rec.get(k) for k in keys}
     out["url"] = _page_url(rec["token"])
     out["expired"] = _is_expired(rec)
