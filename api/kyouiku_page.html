@@ -113,6 +113,7 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
   <div id="list"><div class="vmsg" style="color:#5b6475">…</div></div>
   <div class="note" id="note"></div>
 </main>
+<div id="syncWarn" hidden style="position:fixed;left:8px;right:8px;top:calc(8px + env(safe-area-inset-top));z-index:80;background:#c0392b;color:#fff;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.3);line-height:1.5;">⚠ 記録を送れませんでした。電波の良い場所で、このページを開いたままにしてください（自動で送り直します）<br><span style="font-weight:400;">Não foi possível salvar. Mantenha esta página aberta com sinal (reenvio automático).</span></div>
 <div id="viewer" hidden>
   <div class="vbar"><button id="vback"></button><div class="vtitle" id="vtitle"></div></div>
   <div class="vlangs" id="vlangs" hidden></div>
@@ -206,16 +207,27 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
   var postQ = Promise.resolve();
   function sendOnce(body) {
     return fetch(API + '/kyouiku/progress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true, body: body })
-      .then(function (r) { if (!r.ok && r.status >= 500) throw new Error('HTTP ' + r.status); return r; });
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r; });
   }
+  var failed = {}, retryTimer = null;
   function post(k, ev) {
     var body = JSON.stringify({ t: TOKEN, k: k, ev: ev, lang: curLang || lang });
     postQ = postQ.then(function () {
       return sendOnce(body).catch(function () {
-        return new Promise(function (r) { setTimeout(r, 1200); }).then(function () { return sendOnce(body); }).catch(function () {});
+        return new Promise(function (r) { setTimeout(r, 1200); }).then(function () { return sendOnce(body); });
+      }).then(function () {
+        if (ev === 'done' && failed[k]) { delete failed[k]; updWarn(); }
+      }).catch(function () {
+        if (ev === 'done') { failed[k] = 1; updWarn(); }   // 送れなかった完了は、送れるまで15秒ごとに送り直す
       });
     });
     return postQ;
+  }
+  function updWarn() {
+    var n = Object.keys(failed).length, w = $('syncWarn');
+    if (w) w.hidden = !n;
+    if (n && !retryTimer) retryTimer = setInterval(function () { Object.keys(failed).forEach(function (k) { post(k, 'done'); }); }, 15000);
+    if (!n && retryTimer) { clearInterval(retryTimer); retryTimer = null; }
   }
   function localDone() { try { return JSON.parse(localStorage.getItem('ky_done_' + TOKEN) || '[]'); } catch (e) { return []; } }
   function saveLocalDone(key) {

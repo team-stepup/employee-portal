@@ -872,3 +872,33 @@ def handle_unlinked(req: func.HttpRequest) -> func.HttpResponse:
             out.append(_public(rec))
     out.sort(key=lambda r: r.get("createdAt") or "", reverse=True)
     return fa._json_response({"ok": True, "items": out[:20]})
+
+
+def handle_pending(req: func.HttpRequest) -> func.HttpResponse:
+    """記録の取りこぼし防止 (staff・アプリ起動時に呼ぶ)。
+    items   = 社員番号あり・全部完了・受講記録PDF未保存 (30日以内に更新) → アプリが社員フォルダへ保存
+    unlinked= 社員番号なし・本人が開いた記録で、発行から2時間以上たったもの (7日以内) → 担当者へ知らせる"""
+    fa = _fa()
+    since = _iso(_now() - _dt.timedelta(days=30))
+    try:
+        files = _list_files(f"TimeLastModified ge datetime'{since}'")
+    except Exception as e:
+        return fa._json_response({"error": "list_failed", "detail": str(e)[:200]}, 500)
+    items, unlinked = [], []
+    now = _now()
+    for f in files:
+        m = re.match(r"^(\d+)__([A-Za-z0-9_-]+)\.json$", f.get("Name", ""))
+        if not m:
+            continue
+        rec = _load_rec(m.group(2), use_cache=False)
+        if not rec:
+            continue
+        if rec.get("syainNo"):
+            if _progress(rec)["complete"] and not rec.get("recordSavedAt"):
+                items.append(_public(rec))
+        else:
+            c = _parse(rec.get("createdAt") or "")
+            if rec.get("firstOpenedAt") and c and now - c > _dt.timedelta(hours=2) and now - c < _dt.timedelta(days=7):
+                unlinked.append({"token": rec["token"], "name": rec.get("name"), "createdAt": rec.get("createdAt"),
+                                 "requesterName": rec.get("requesterName"), "progress": _progress(rec)})
+    return fa._json_response({"ok": True, "items": items[:20], "unlinked": unlinked[:20]})
