@@ -209,9 +209,18 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
     return fetch(API + '/kyouiku/progress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true, body: body })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r; });
   }
+  function devLabel() {   // iPadOS の Safari は Mac と名乗るので、タッチ対応かどうかで見分ける
+    var ua = navigator.userAgent || '';
+    if (/iPhone/.test(ua)) return 'iPhone';
+    if (/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'iPad';
+    if (/Android/.test(ua)) return /Mobile/.test(ua) ? 'Android' : 'Androidタブレット';
+    if (/Windows/.test(ua)) return 'PC(Windows)';
+    if (/Macintosh/.test(ua)) return 'PC(Mac)';
+    return 'その他';
+  }
   var failed = {}, retryTimer = null;
   function post(k, ev) {
-    var body = JSON.stringify({ t: TOKEN, k: k, ev: ev, lang: curLang || lang });
+    var body = JSON.stringify({ t: TOKEN, k: k, ev: ev, lang: curLang || lang, dev: devLabel() });
     postQ = postQ.then(function () {
       return sendOnce(body).catch(function () {
         return new Promise(function (r) { setTimeout(r, 1200); }).then(function () { return sendOnce(body); });

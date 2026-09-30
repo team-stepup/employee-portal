@@ -245,7 +245,7 @@ def _progress(rec: Dict[str, Any]) -> Dict[str, Any]:
 
 def _public(rec: Dict[str, Any]) -> Dict[str, Any]:
     keys = ("token", "syainNo", "name", "lang", "commute", "createdAt", "expiresAt", "requester",
-            "requesterName", "done", "opened", "completedAt", "firstOpenedAt", "device", "recordSavedAt", "recordPath", "attested")
+            "requesterName", "done", "opened", "completedAt", "firstOpenedAt", "device", "deviceLabel", "recordSavedAt", "recordPath", "attested")
     out = {k: rec.get(k) for k in keys}
     out["url"] = _page_url(rec["token"])
     out["expired"] = _is_expired(rec)
@@ -499,6 +499,10 @@ def handle_progress(req: func.HttpRequest) -> func.HttpResponse:
     lang = str(b.get("lang") or "")[:3]
     # 変更が無いときは保存しない (同時に届いた別の記録を上書きで消さないため・9/30 完了が消える不具合の対策)
     changed = False
+    dev = str(b.get("dev") or "")[:20]   # 本人の画面で判定した端末 (iPhone/iPad/Android/PC)。iPad は UA だと Mac と名乗るため
+    if dev and not rec.get("deviceLabel"):
+        rec["deviceLabel"] = dev
+        changed = True
     if ev == "open":
         if k not in (rec.get("opened") or {}):
             rec.setdefault("opened", {})[k] = now
@@ -739,8 +743,8 @@ def handle_handover_doc(req: func.HttpRequest) -> func.HttpResponse:
         if d not in (rec.get("opened") or {}):
             rec.setdefault("opened", {})[d] = now_s
         ua = str(req.headers.get("User-Agent") or "")
-        dev = ("iPhone" if "iPhone" in ua else "iPad" if "iPad" in ua else "Android" if "Android" in ua
-               else "Windows" if "Windows" in ua else "Mac" if "Macintosh" in ua else "その他")
+        dev = ("iPhone" if "iPhone" in ua else "iPad" if ("iPad" in ua or "Macintosh" in ua) else "Android" if "Android" in ua
+               else "Windows" if "Windows" in ua else "その他")   # iPadOS は Macintosh と名乗る (事務所に Mac は無い)
         acc = rec.setdefault("access", [])
         acc.append({"d": d, "at": now_s, "dl": req.params.get("dl") == "1", "dev": dev})
         rec["access"] = acc[-100:]
