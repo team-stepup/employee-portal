@@ -850,3 +850,25 @@ def handle_handover_recorded(req: func.HttpRequest) -> func.HttpResponse:
     rec["recordHash"] = str(b.get("hash") or "")[:80]
     _ho_save(rec)
     return fa._json_response({"ok": True, "handover": _ho_public(rec)})
+
+
+def handle_unlinked(req: func.HttpRequest) -> func.HttpResponse:
+    """社員番号にひも付いていない最近の教育記録 (staff・3日以内・新しい順)。登録時のひも付け漏れを担当者が選んで直す用"""
+    fa = _fa()
+    try:
+        files = _list_files("startswith(Name,'0__')")
+    except Exception as e:
+        return fa._json_response({"error": "list_failed", "detail": str(e)[:200]}, 500)
+    limit = _iso(_now() - _dt.timedelta(days=3))
+    out = []
+    for f in files:
+        if str(f.get("TimeLastModified") or "") < limit:
+            continue
+        m = re.match(r"^0__([A-Za-z0-9_-]+)\.json$", f.get("Name", ""))
+        if not m:
+            continue
+        rec = _load_rec(m.group(1), use_cache=False)
+        if rec and not rec.get("syainNo"):
+            out.append(_public(rec))
+    out.sort(key=lambda r: r.get("createdAt") or "", reverse=True)
+    return fa._json_response({"ok": True, "items": out[:20]})
